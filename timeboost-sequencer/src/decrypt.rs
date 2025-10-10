@@ -208,6 +208,8 @@ impl Decrypter {
 
     /// Send the inclusion list to the Worker for decryption.
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
+        #[cfg(feature = "times")]
+        times::record("tb-decrypt-start", *incl.round());
         let round = incl.round();
         let is_encrypted = incl.is_encrypted();
         if is_encrypted {
@@ -378,6 +380,8 @@ impl Decrypter {
                     self.metrics.output_decrypted.update(1);
                 }
 
+                #[cfg(feature = "times")]
+                times::record("tb-decrypt-end", *dec_incl.round());
                 return Ok(dec_incl);
             } else {
                 error!(

@@ -1,18 +1,20 @@
 id = 0
-effective_timestamp = "2025-10-06T00:00:00Z"
+effective_timestamp = "2025-09-01T02:00:00Z"
 
 [[members]]
-signing_key = "21wRaLyFR7BvwDWqsM39x32aWMpVjkZ2V4S6kC9EjHWux"
-dh_key = "9Pf4f9qBGW2GPjYran5qoXBhsrGYc1VJXrM6eBL3QT9U"
-dkg_enc_key = "7Eaki21UsoaB1c9TBdQzsV5A8WxnYE3oWD69fvvh2uNG2LLeUYUSwsRn3YcTQsmjKe"
+node = "node_0"
+signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
+dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 public_address = "127.0.0.1:8000"
 http_api = "127.0.0.1:8004"
 internal_api = "0.0.0.0:8003"
 
 [[members]]
-signing_key = "mFAvAjzE9CjEeiatSfEQHfQ94d5PaByVrQcaMP8YnGub"
-dh_key = "2EFCjPRyEcdjpcNj8gVca5ukkDakcaTxyecS4THTQEYX"
-dkg_enc_key = "74TrKMU96xQAXATNB3FsHPDXkFpYEryb8XpGjNr9wUQ9qkyHV3YbWFjfWmenD3BkSW"
+node = "node_1"
+signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
 public_address = "127.0.0.1:8010"
 http_api = "127.0.0.1:8014"
 internal_api = "0.0.0.0:8013"

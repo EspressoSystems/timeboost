@@ -132,6 +132,8 @@ impl Certifier {
                         hash  = %b.data().hash(),
                         "certified block"
                     );
+                    #[cfg(feature = "times")]
+                    times::record("tb-certify-end", *b.data().round());
                     return Ok(b)
                 }
                 error!(node = %self.label, "worker terminated");
@@ -181,6 +183,8 @@ impl Handle {
             hash  = %b.hash(),
             "enqueuing block"
         );
+        #[cfg(feature = "times")]
+        times::record("tb-certify-start", *b.round());
         self.worker_tx
             .send(Command::Certify(b))
             .await

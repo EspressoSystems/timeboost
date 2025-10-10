@@ -144,7 +144,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run network simulation
-      run: just forward-ipv4 true create-net netsim
+      run: just forward-ipv4 true create-net netsim 5
 
   contracts:
     runs-on: ubuntu-latest
