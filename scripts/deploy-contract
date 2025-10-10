@@ -80,7 +80,8 @@ env RUST_LOG=info $register_cmd \
     -i "$manager_account_index" \
     -u "$url" \
     -k "$km_addr" \
-    -c "$committee"
+    -c "$committee" \
+    --max-members "$max_nodes"
 
 # Clean up the temporary deployment file
 rm -f "$deployment_file"
