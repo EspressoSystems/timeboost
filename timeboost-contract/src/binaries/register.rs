@@ -41,6 +41,9 @@ struct Args {
     /// What to register (new committee or threshold enc key?)
     #[clap(short, long)]
     action: Action,
+
+    #[clap(long)]
+    max_members: usize,
 }
 
 /// Specific register action
@@ -57,9 +60,11 @@ async fn main() -> Result<()> {
     logging::init_logging();
     let args = Args::parse();
 
-    let config = CommitteeConfig::read(&args.config)
+    let mut config = CommitteeConfig::read(&args.config)
         .await
         .context(format!("Failed to read config file: {:?}", &args.config))?;
+
+    config.members.truncate(args.max_members);
 
     let provider = build_provider(args.mnemonic.clone(), args.index, args.url.clone())?;
     let addr = args.key_manager_addr;

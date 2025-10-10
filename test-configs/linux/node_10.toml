@@ -1,0 +1,38 @@
+committee = 0
+stamp = "/tmp/timeboost.10.stamp"
+
+[net.public]
+address = "11.0.0.11:8000"
+http-api = "11.0.0.11:8004"
+
+[net.internal]
+address = "11.0.0.11:8003"
+nitro = "11.0.1.0:55000"
+
+[keys.signing]
+secret = "4DXdtKDNBs1DeLGP7GeqGWeSuX3RgkRhwcT9aXKwzu9p"
+public = "pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es"
+
+[keys.dh]
+secret = "7X3bBjha3wEUGvCNUWf7627RTqpNFGo6uwUtHM1nFYrW"
+public = "EBPENaYdA28xAV7cHh6q1ESJcsf7P2LpZUWv5dEmo2Sv"
+
+[keys.dkg]
+secret = "3hBZLhBJM3hmYzLrGy2AGijUcEvo6Wh1f2ej6KtHvNmX"
+public = "6yKj81Wuj6eBuMT5jmUu3HGX9AvvX3njQFaZXJoKX9CjmsSJNDMoQJTPA5M9ug1hpr"
+
+[chain]
+namespace = 10101
+
+[chain.parent]
+id = 31337
+rpc-url = "http://11.0.1.0:8545/"
+ws-url = "ws://11.0.1.0:8545/"
+ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+block-tag = "finalized"
+key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
+[espresso]
+base-url = "https://query.decaf.testnet.espresso.network/v1/"
+websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
+max-transaction-size = 1048576

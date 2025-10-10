@@ -50,6 +50,9 @@ struct Cli {
     /// Nitro node url.
     #[clap(long)]
     nitro_url: Option<Url>,
+
+    #[clap(long)]
+    max_nodes: usize,
 }
 
 #[tokio::main]
@@ -57,7 +60,9 @@ async fn main() -> Result<()> {
     init_logging();
 
     let cli = Cli::parse();
-    let conf = CommitteeConfig::read(cli.config.join("committee.toml")).await?;
+    let mut conf = CommitteeConfig::read(cli.config.join("committee.toml")).await?;
+
+    conf.members.truncate(cli.max_nodes);
 
     let node = NodeConfig::read(cli.config.join("node_0.toml")).await?;
 

@@ -71,7 +71,7 @@ impl NodeConfig {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         tokio::fs::read_to_string(path.as_ref())
             .await
-            .map_err(|e| ConfigError(Box::new(e)))?
+            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?
             .parse()
     }
 }
@@ -80,7 +80,7 @@ impl FromStr for NodeConfig {
     type Err = ConfigError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| ConfigError(Box::new(e)))
+        toml::from_str(s).map_err(|e| ConfigError(Path::new("").into(), Box::new(e)))
     }
 }
 
