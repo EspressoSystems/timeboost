@@ -259,6 +259,7 @@ test-dyn-comm: build-release-until build-test-utils
                  --public-addr 127.0.0.1:9000 \
                  --internal-addr 127.0.0.1:9003 \
                  --http-api 127.0.0.1:9004 \
+                 --batch-poster-api 127.0.0.1:9004 \
                  --chain-namespace 10101 \
                  --parent-rpc-url http://127.0.0.1:8545 \
                  --parent-ws-url ws://127.0.0.1:8545 \
