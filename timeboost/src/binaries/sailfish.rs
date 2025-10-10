@@ -139,6 +139,9 @@ async fn main() -> Result<()> {
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
 
+    #[cfg(feature = "times")]
+    let start = std::time::Instant::now();
+
     for a in coordinator.init() {
         if let Err(err) = coordinator.execute(a).await {
             error!(%err, "error executing coordinator action");
@@ -179,6 +182,17 @@ async fn main() -> Result<()> {
                 break;
             }
         }
+    }
+
+    #[cfg(feature = "times")]
+    {
+        let elapsed = start.elapsed();
+        info!(
+            target: "times",
+            elapsed      = ?elapsed,
+            rounds       = %cli.until,
+            ms_per_round = %(elapsed.as_secs_f64() / cli.until as f64 * 1000.0)
+        );
     }
 
     Ok(())

@@ -13,7 +13,7 @@ build *ARGS:
 update-submodules:
   git submodule update --remote --recursive
   cd timeboost-proto && cargo build
-  cd ../contracts && forge build
+  cd contracts && forge build
 
 build-release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
