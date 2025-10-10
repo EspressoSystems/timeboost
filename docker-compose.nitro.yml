@@ -430,7 +430,7 @@ services:
         "-c", "/config",
         "-b", "20000",
         "--https-only", "false",
-        "--max-members,", "4"
+        "--max-nodes", "4"
       ]
     volumes:
       - "config:/config"
