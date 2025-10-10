@@ -5,13 +5,13 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use futures::FutureExt;
 use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
-use timeboost_types::{Bundle, BundleVariant, DecryptionKeyCell, SignedPriorityBundle};
+use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle, ThresholdKeyCell};
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
     app_tx: Sender<BundleVariant>,
-    enc_key: DecryptionKeyCell,
+    enc_key: ThresholdKeyCell,
 }
 
 #[async_trait]
@@ -21,7 +21,7 @@ pub trait TimeboostApi {
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<BundleVariant>, enc_key: DecryptionKeyCell) -> Self {
+    pub fn new(app_tx: Sender<BundleVariant>, enc_key: ThresholdKeyCell) -> Self {
         Self { app_tx, enc_key }
     }
 
