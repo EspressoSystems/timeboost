@@ -1,42 +1,47 @@
 id = 0
-effective_timestamp = "2025-10-06T00:00:00Z"
+effective_timestamp = "2025-09-01T02:00:00Z"
 
 [[members]]
-signing_key = "x8R5rLeSEAy6BTDZ6ppzUHCMBsuuEigTQ1Ab7JGJRXJv"
-dh_key = "Ch4kBmDpweDPT5WpeA3345981RAXn4q7JuHw9dZPW6eC"
-dkg_enc_key = "79JoBYBquBQn7SrNbok7tEnB5ZUnxxhczrdepwssPSuFtTUzSxhj8tRs1frK6eaKrB"
+signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
+dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 public_address = "127.0.0.1:8000"
 http_api = "127.0.0.1:8004"
 internal_api = "127.0.0.1:8003"
+batch_poster_api = "http://127.0.0.1:8547"
 
 [[members]]
-signing_key = "z1y1wd941EWWeJzhbRBACs3uNbuaSVpS8vxaiEHY4xoo"
-dh_key = "AmCvNNHdfZrWStxkkLCRrCSrk1BQbeQ1oYC7RRGjWzki"
-dkg_enc_key = "6WgCNFZDNhf1GjEvDZjrMXxQMeAQJ2Ak1wyhqGdWedzvkSwqZdjVS95FapJWFhy3N6"
+signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
 public_address = "127.0.0.1:8010"
 http_api = "127.0.0.1:8014"
 internal_api = "127.0.0.1:8013"
+batch_poster_api = "http://127.0.0.1:8557"
 
 [[members]]
-signing_key = "2A7G9nv7cEZo89LBs8KqhD8gYeB6iFphSGkYeoFcBFvdw"
-dh_key = "CdQvXJum7X6aSisrBzKXcYjvj61hVjkXLaRPrd35NkPk"
-dkg_enc_key = "5mQmEhakPa5GLUpm5zNCSc5p3WC4KA96FzEQMczufAve2roN2z7psiRRiDq3H3NSqt"
+signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+dkg_enc_key = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
 public_address = "127.0.0.1:8020"
 http_api = "127.0.0.1:8024"
 internal_api = "127.0.0.1:8023"
+batch_poster_api = "http://127.0.0.1:8567"
 
 [[members]]
-signing_key = "s9wANTxANjhRM1TJWtomAKHmEe2kBHJ3mXf6fbZWz4iQ"
-dh_key = "gURXCPz62ftGo2wq1zZM5Zx7CiKJocfP3y9XzjbL4TY"
-dkg_enc_key = "6KKsvcXE2QBTdYVtNj1A97ES8kr9CjWbEf4TJtXPJYXbfRG4MDzMBfJkHNSSgPybAx"
+signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+dkg_enc_key = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
 public_address = "127.0.0.1:8030"
 http_api = "127.0.0.1:8034"
 internal_api = "127.0.0.1:8033"
+batch_poster_api = "http://127.0.0.1:8577"
 
 [[members]]
-signing_key = "y3RwEehLiCoUuEGBtLWJ8Si94hJCtQtwvFoEScCrfQ3C"
-dh_key = "C83cLbFnbhQjgd4NVTxQMJXA1yvnE6a2SD1hFEbetCXd"
-dkg_enc_key = "7oUrDZH5rrY8M5pTLT4HtvA331PzkYaxrU4aen5gCxfHbaH58Y2FdDoXjmkjH4RYX7"
+signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
+dkg_enc_key = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnYV"
 public_address = "127.0.0.1:8040"
 http_api = "127.0.0.1:8044"
 internal_api = "127.0.0.1:8043"
+batch_poster_api = "http://127.0.0.1:8587"

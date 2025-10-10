@@ -36,6 +36,7 @@ pub struct NodeNet {
 pub struct PublicNet {
     pub address: Address,
     pub http_api: Address,
+    pub batch_poster_api: Address,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -24,6 +24,7 @@ pub struct CommitteeMember {
     pub public_address: Address,
     pub http_api: Address,
     pub internal_api: Address,
+    pub batch_poster_api: Address,
 }
 
 impl CommitteeConfig {

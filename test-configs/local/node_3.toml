@@ -4,22 +4,23 @@ stamp = "/tmp/timeboost.3.stamp"
 [net.public]
 address = "127.0.0.1:8030"
 http-api = "127.0.0.1:8034"
+batch-poster-api = "http://127.0.0.1:8577"
 
 [net.internal]
 address = "127.0.0.1:8033"
 nitro = "127.0.0.1:55000"
 
 [keys.signing]
-secret = "FeNA9hhCKSNxxyfsWHE2ucJ92ezqB1d9FruhTwRpLj83"
-public = "s9wANTxANjhRM1TJWtomAKHmEe2kBHJ3mXf6fbZWz4iQ"
+secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
+public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
 
 [keys.dh]
-secret = "E7xp4DX3WxvhgfHkNgjnAgePvwxKewi3a6cR4H5aMMaN"
-public = "gURXCPz62ftGo2wq1zZM5Zx7CiKJocfP3y9XzjbL4TY"
+secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
+public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
 
 [keys.dkg]
-secret = "9ACJD69bFZ5GaHfpZc5ivPMVr32qLF9oQs2FkgPLdoP5"
-public = "6KKsvcXE2QBTdYVtNj1A97ES8kr9CjWbEf4TJtXPJYXbfRG4MDzMBfJkHNSSgPybAx"
+secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
+public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
 
 [chain]
 namespace = 10101

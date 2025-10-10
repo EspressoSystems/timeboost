@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
                         dhKey: m.dh_key.as_bytes().into(),
                         dkgKey: m.dkg_enc_key.to_bytes()?.into(),
                         networkAddress: m.public_address.to_string(),
-                        batchPosterAddress: m.public_address.to_string(),
+                        batchPosterAddress: m.batch_poster_api.to_string(),
                         sigKeyAddress: public_key_to_address(pub_key),
                     })
                 })
