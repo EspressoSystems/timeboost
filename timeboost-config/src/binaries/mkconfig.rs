@@ -171,7 +171,7 @@ impl Mode {
                     bail!("increment dns requires dns name")
                 };
                 if name.contains("host.docker") {
-                    Ok(Address::Name(format!("{}", name), *port + (i as u16 * 10)))
+                    Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)))
                 } else {
                     Ok(Address::Name(format!("{}{}", name, i), *port))
                 }
