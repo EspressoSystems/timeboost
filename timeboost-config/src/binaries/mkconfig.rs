@@ -105,6 +105,13 @@ struct Args {
     )]
     espresso_base_url: Url,
 
+    /// Builder base URL of Espresso's REST API.
+    #[clap(
+        long,
+        default_value = "https://builder.decaf.testnet.espresso.network/v0/"
+    )]
+    espresso_builder_base_url: Url,
+
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: Url,
@@ -253,6 +260,7 @@ impl Args {
                 },
                 espresso: Espresso {
                     base_url: self.espresso_base_url.clone(),
+                    builder_base_url: self.espresso_builder_base_url.clone(),
                     websockets_base_url: self.espresso_websocket_url.clone(),
                     max_transaction_size: self.max_transaction_size,
                 },
