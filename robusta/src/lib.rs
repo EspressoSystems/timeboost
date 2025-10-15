@@ -13,7 +13,7 @@ use multisig::Validated;
 use reqwest::{StatusCode, Url};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
-use timeboost_types::sailfish::CommitteeVec;
+use timeboost_types::sailfish::{CommitteeVec, RoundNumber};
 use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -69,7 +69,7 @@ impl Client {
         N: Into<NamespaceId>,
     {
         let trx = Transaction::new(nsid.into(), minicbor::to_vec(SendBody { blocks })?);
-        let url = self.config.base_url.join("submit/submit")?;
+        let url = self.config.builder_base_url.join("txn_submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
         Ok(())
@@ -80,7 +80,7 @@ impl Client {
         nsid: N,
         hdr: &Header,
         cvec: &CommitteeVec<C>,
-    ) -> impl Iterator<Item = BlockNumber>
+    ) -> impl Iterator<Item = (RoundNumber, BlockNumber)>
     where
         N: Into<NamespaceId>,
     {
@@ -121,7 +121,7 @@ impl Client {
                         return None;
                     };
                     if let Some(b) = b.validated(c) {
-                        Some(b.cert().data().num())
+                        Some((b.cert().data().round().num(), b.cert().data().num()))
                     } else {
                         warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
                         None
@@ -285,6 +285,11 @@ mod tests {
         let cfg = Config::builder()
             .base_url(
                 "https://query.decaf.testnet.espresso.network/v1/"
+                    .parse()
+                    .unwrap(),
+            )
+            .builder_base_url(
+                "https://builder.decaf.testnet.espresso.network/v0/"
                     .parse()
                     .unwrap(),
             )
