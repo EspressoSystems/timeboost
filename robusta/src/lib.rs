@@ -69,7 +69,7 @@ impl Client {
         N: Into<NamespaceId>,
     {
         let trx = Transaction::new(nsid.into(), minicbor::to_vec(SendBody { blocks })?);
-        let url = self.config.base_url.join("submit/submit")?;
+        let url = self.config.builder_base_url.join("txn_submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
         Ok(())
@@ -285,6 +285,11 @@ mod tests {
         let cfg = Config::builder()
             .base_url(
                 "https://query.decaf.testnet.espresso.network/v1/"
+                    .parse()
+                    .unwrap(),
+            )
+            .builder_base_url(
+                "https://builder.decaf.testnet.espresso.network/v0/"
                     .parse()
                     .unwrap(),
             )

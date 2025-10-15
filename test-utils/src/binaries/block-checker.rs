@@ -47,6 +47,7 @@ async fn main() -> Result<()> {
     let conf = Config::builder()
         .https_only(args.https_only)
         .base_url(node.espresso.base_url)
+        .builder_base_url(node.espresso.builder_base_url)
         .wss_base_url(node.espresso.websockets_base_url)
         .label("block-checker")
         .build();
