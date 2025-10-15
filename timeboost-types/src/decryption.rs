@@ -129,7 +129,7 @@ impl ThresholdKey {
     }
 }
 
-/// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
+/// `ThresholdKeyCell` is a thread-safe container for an optional `ThresholdKey`
 /// that allows asynchronous notification when the key is set.
 #[derive(Clone, Debug, Default)]
 pub struct ThresholdKeyCell {
