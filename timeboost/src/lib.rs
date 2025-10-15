@@ -111,6 +111,8 @@ impl Timeboost {
     pub async fn go(mut self) -> Result<()> {
         #[cfg(feature = "times")]
         let mut writer = crate::times::TimesWriter::new(self.label);
+        #[cfg(feature = "times")]
+        let start = std::time::Instant::now();
 
         loop {
             select! {
@@ -133,6 +135,13 @@ impl Timeboost {
                                 info!(target: "times", node = %self.label, round = %*round)
                             }
                             if !writer.is_timeboost_saved() && *round >= self.config.times_until {
+                                let elapsed = start.elapsed();
+                                info!(
+                                    target: "times",
+                                    elapsed      = ?elapsed,
+                                    rounds       = %self.config.times_until,
+                                    ms_per_round = %(elapsed.as_secs_f64() / self.config.times_until as f64 * 1000.0)
+                                );
                                 writer.save_timeboost_series().await?
                             }
                         }

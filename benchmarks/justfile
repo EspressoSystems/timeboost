@@ -5,7 +5,7 @@ build *features:
 
 [working-directory: ".."]
 sailfish-times: (build "until" "times")
-    env RUST_LOG=error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4 \
+    env RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4 \
     target/release/run \
         --verbose \
         --env PATH \
