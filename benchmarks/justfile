@@ -24,13 +24,17 @@ sailfish-times: (build "until" "times")
 
 [working-directory: ".."]
 timeboost-times nodes: (build "times")
-    env RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4 \
-    run0 --setenv=PATH \
-        --setenv=HOME \
-        --setenv=RUST_LOG \
-        --setenv=TOKIO_WORKER_THREADS \
-        --setenv=RAYON_NUM_THREADS \
-        target/release/run \
+    #!/usr/bin/env bash
+    set -eo pipefail
+    function run_as_root {
+        if [ "$CI" == "true" ]; then
+            sudo --preserve-env=PATH,HOME,RUST_LOG,TOKIO_WORKER_THREADS,RAYON_NUM_THREADS "$@"
+        else
+            run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG --setenv=TOKIO_WORKER_THREADS --setenv=RAYON_NUM_THREADS "$@"
+        fi
+    }
+    export RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4
+    run_as_root target/release/run \
             --verbose \
             --clear-env \
             --env PATH \
