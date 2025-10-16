@@ -35,6 +35,9 @@ pub mod committee;
 pub mod forwarder;
 pub mod metrics;
 
+#[cfg(feature = "times")]
+pub mod times;
+
 pub struct Timeboost {
     label: PublicKey,
     config: TimeboostConfig,
@@ -106,6 +109,11 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
+        #[cfg(feature = "times")]
+        let mut writer = crate::times::TimesWriter::new(self.label);
+        #[cfg(feature = "times")]
+        let start = std::time::Instant::now();
+
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -121,6 +129,22 @@ impl Timeboost {
                             trxs  = %transactions.len(),
                             "sequencer output"
                         );
+                        #[cfg(feature = "times")]
+                        {
+                            if *round % 100 == 0 {
+                                info!(target: "times", node = %self.label, round = %*round)
+                            }
+                            if !writer.is_timeboost_saved() && *round >= self.config.times_until {
+                                let elapsed = start.elapsed();
+                                info!(
+                                    target: "times",
+                                    elapsed      = ?elapsed,
+                                    rounds       = %self.config.times_until,
+                                    ms_per_round = %(elapsed.as_secs_f64() / self.config.times_until as f64 * 1000.0)
+                                );
+                                writer.save_timeboost_series().await?
+                            }
+                        }
                         if let Some(ref mut f) = self.nitro_forwarder {
                             f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
                         } else {

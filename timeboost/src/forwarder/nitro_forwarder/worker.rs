@@ -3,13 +3,14 @@ use std::{iter::repeat, time::Duration};
 use multisig::PublicKey;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use tokio::{sync::mpsc::Receiver, time::sleep};
-use tonic::transport::Channel;
+use tonic::{Request, metadata::AsciiMetadataValue, transport::Channel};
 use tracing::warn;
 
 pub struct Worker {
     key: PublicKey,
     client: ForwardApiClient<Channel>,
     incls_rx: Receiver<InclusionList>,
+    sender: AsciiMetadataValue,
 }
 
 impl Worker {
@@ -22,14 +23,24 @@ impl Worker {
             key,
             client,
             incls_rx,
+            sender: {
+                let mut k = key.to_string();
+                k.retain(|c| c.is_ascii());
+                AsciiMetadataValue::try_from(k).expect("`k` is ASCII string")
+            },
         }
     }
 
     pub async fn go(mut self) {
         let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let mk_req = |i: &InclusionList| {
+            let mut r = Request::new(i.clone());
+            r.metadata_mut().insert("src", self.sender.clone());
+            r
+        };
         while let Some(incl) = self.incls_rx.recv().await {
             let mut d = delays();
-            while let Err(err) = self.client.submit_inclusion_list(incl.clone()).await {
+            while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
                 warn!(node = %self.key, %err, "failed to forward data to nitro");
                 let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
                 sleep(t).await;

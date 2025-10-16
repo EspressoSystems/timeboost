@@ -923,7 +923,7 @@ where
         let io = IoTask {
             rh,
             wh,
-            tx: to_remote.clone(),
+            tx: to_remote,
         };
         self.active.insert(k, io);
         self.metrics.connections.set(self.active.len());

@@ -26,6 +26,8 @@ timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+# optional:
+times = { path = "../times", optional = true }
 
 [dev-dependencies]
 ark-std = { workspace = true }

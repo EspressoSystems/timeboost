@@ -15,6 +15,9 @@ struct Args {
     #[clap(long, short)]
     configs: PathBuf,
 
+    #[clap(long)]
+    max_nodes: usize,
+
     #[clap(long, short)]
     blocks: usize,
 
@@ -33,6 +36,7 @@ async fn main() -> Result<()> {
         let mems = conf
             .members
             .into_iter()
+            .take(args.max_nodes)
             .enumerate()
             .map(|(i, m)| (i as u8, m.signing_key));
         CommitteeVec::<1>::new(Committee::new(conf.id, mems))
@@ -43,6 +47,7 @@ async fn main() -> Result<()> {
     let conf = Config::builder()
         .https_only(args.https_only)
         .base_url(node.espresso.base_url)
+        .builder_base_url(node.espresso.builder_base_url)
         .wss_base_url(node.espresso.websockets_base_url)
         .label("block-checker")
         .build();
@@ -65,7 +70,7 @@ async fn main() -> Result<()> {
         offset += start
             .clone()
             .zip(start.skip(1))
-            .take_while(|(a, b)| **a + 1 == **b)
+            .take_while(|(a, b)| a.1 + 1 == b.1)
             .count();
         info!(blocks = %offset, "validated")
     }

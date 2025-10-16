@@ -11,6 +11,7 @@ deploy_cmd=target/release/deploy
 register_cmd=target/release/register
 committee=
 url=
+max_nodes=5
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -20,6 +21,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--register)
             register_cmd="$2"
+            shift 2
+            ;;
+        -m|--max-nodes)
+            max_nodes="$2"
             shift 2
             ;;
         -c|--committee)
@@ -44,6 +49,9 @@ Options:
 
     -c | --committee <PATH>
         Path to committee configuration.
+
+    -m | --max-nodes <NUMBER>
+        How many committee nodes to use.
 
     -u | --url <URL>
         Contract URL"
@@ -72,7 +80,8 @@ env RUST_LOG=info $register_cmd \
     -i "$manager_account_index" \
     -u "$url" \
     -k "$km_addr" \
-    -c "$committee"
+    -c "$committee" \
+    --max-members "$max_nodes"
 
 # Clean up the temporary deployment file
 rm -f "$deployment_file"

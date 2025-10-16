@@ -23,4 +23,5 @@ timeboost-config = { path = "../timeboost-config" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-
+# optional:
+times = { path = "../times", optional = true }

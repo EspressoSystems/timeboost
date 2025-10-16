@@ -63,7 +63,7 @@ just build
 
 Release build
 ```shell
-just build_release
+just build-release
 ```
 
 ## Contracts Build
@@ -75,7 +75,7 @@ just build-contracts
 
 Run in docker
 ```shell
-just run_integration
+just run-integration
 ```
 
 ### Accessing Metrics

@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,7 +40,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
     - name: Build
-      run: just build_release
+      run: just build-release
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
@@ -61,7 +65,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
-      run: just test_ci
+      run: just test-ci
 
   lint:
     runs-on: ubuntu-latest
@@ -94,7 +98,7 @@ jobs:
     - uses: docker/setup-buildx-action@v3
     - uses: taiki-e/install-action@just
     - name: Build Docker
-      run: just build_docker
+      run: just build-docker
 
   integration:
     runs-on: ubuntu-latest
@@ -114,9 +118,9 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
-      run: just run_demo --ignore-stamp --yapper -c test-configs/c0
+      run: just run-demo --ignore-stamp --yapper -c test-configs/c0
     - name: Run tests with late-start node
-      run: just run_demo -l --ignore-stamp --yapper -c test-configs/c0
+      run: just run-demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
       run: just run-sailfish-demo
     - name: Test with block-maker
@@ -144,7 +148,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run network simulation
-      run: just forward-ipv4 true create-net netsim
+      run: just forward-ipv4 true create-net netsim 5
 
   contracts:
     runs-on: ubuntu-latest
@@ -187,10 +191,10 @@ jobs:
           --decentralized-timeboost \
           --init &
     - name: Run test timeboost with nitro sequencer
-      run: just run_demo --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro http://localhost:8547
+      run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --yapper --nitro http://localhost:8547
     - name: Verify sequencer blocks
       run: |
-        RUST_LOG=info just verify_blocks
+        RUST_LOG=info just verify-blocks
     - name: Docker Logs Sequencer 1
       if: failure()
       run: docker logs test-node-sequencer-1

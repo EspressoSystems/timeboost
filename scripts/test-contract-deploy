@@ -5,11 +5,16 @@ set -emuo pipefail
 # Check if --keep-anvil flag was passed
 KEEP_ANVIL=false
 NITRO_ENABLED=false
+MAX_MEMBERS=5
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --keep-anvil)
         KEEP_ANVIL=true
         shift
+        ;;
+    -m|--max-members)
+        MAX_MEMBERS="$2"
+        shift 2
         ;;
     --nitro-enabled)
         NITRO_ENABLED=true
@@ -42,7 +47,7 @@ URL="http://localhost:8545"
 DEPLOYMENT_FILE=".tmp.deploy.toml"
 COMMITTEE_PATH=c0
 if $NITRO_ENABLED; then
-    COMMITTEE_PATH=nitro-ci-committee
+    COMMITTEE_PATH=nitro-ci
 fi
 
 # Make sure foundry toolchain is installed locally
@@ -84,7 +89,14 @@ km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$DEPLOYMENT_FILE")
 
 # Update the contract
 committee_config="test-configs/$COMMITTEE_PATH/committee.toml"
-RUST_LOG=info cargo run --release --bin register -- -a new-committee -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -k "$km_addr" -c "$committee_config"
+RUST_LOG=info cargo run --release --bin register -- \
+    -a new-committee \
+    -m "$MANAGER_MNEMONIC" \
+    -i "$MANAGER_ACCOUNT_INDEX" \
+    -u "$URL" \
+    -k "$km_addr" \
+    -c "$committee_config" \
+    --max-members "$MAX_MEMBERS"
 
 # Finally, clean up the temporary deployment file
 rm -f "$DEPLOYMENT_FILE"
