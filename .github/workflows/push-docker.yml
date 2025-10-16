@@ -45,7 +45,7 @@ jobs:
           images: ghcr.io/espressosystems/timeboost
           flavor: |
             latest=true
-            suffix=-arm64,onlatest=true
+            suffix=-amd64,onlatest=true
 
       - name: Build and push Timeboost Docker image
         uses: docker/build-push-action@v6
