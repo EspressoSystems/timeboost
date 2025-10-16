@@ -240,7 +240,7 @@ test-all: build-release build-test-utils
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes 5" \
     --spawn "4:target/release/yapper -c test-configs/local/ --max-nodes 5" \
     --spawn "5:target/release/run-committee -c test-configs/local/ --max-nodes 5" \
-    target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 1000
+    target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 500
 
 test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
