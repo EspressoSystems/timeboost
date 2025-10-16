@@ -40,7 +40,7 @@ struct Cli {
 
     /// The watchdog timeout.
     #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 30)]
+    #[clap(long, default_value_t = 60)]
     watchdog_timeout: u64,
 
     #[cfg(feature = "until")]

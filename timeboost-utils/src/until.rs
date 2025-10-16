@@ -107,14 +107,17 @@ impl Until {
                             if committed_round >= *self.rounds {
                                 if let Some(r) = self.require_decrypted {
                                     if output_decrypted > *r {
-                                        info!(%committed_round);
-                                        info!(%queued_encrypted, %output_decrypted);
-                                        info!("watchdog completed successfully");
+                                        info!(
+                                            %committed_round,
+                                            %queued_encrypted,
+                                            %output_decrypted,
+                                            "watchdog completed successfully"
+                                        );
                                         break;
                                     }
+                                    info!(%committed_round, %queued_encrypted, %output_decrypted);
                                 } else {
-                                    info!(%committed_round);
-                                    info!("watchdog completed successfully");
+                                    info!(%committed_round, "watchdog completed successfully");
                                     break;
                                 }
                             }
