@@ -16,7 +16,7 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apt update && apt-get install -y libcurl4 openssl
+RUN apt update && apt-get install -y libcurl4 openssl jq
 
 RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
