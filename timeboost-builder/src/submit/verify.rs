@@ -64,14 +64,14 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
     /// Returns the number of (unique) block numbers added.
     fn insert<I>(&self, it: I) -> usize
     where
-        I: IntoIterator<Item = (RoundNumber, BlockNumber)>,
+        I: IntoIterator<Item = (BlockNumber, RoundNumber)>,
     {
         let mut set = self.set.write();
         let len = set.len();
         for b in it {
-            set.insert(b.1);
+            set.insert(b.0);
             #[cfg(feature = "times")]
-            times::record("tb-verified", *b.0)
+            times::record("tb-verified", *b.1)
         }
         let len = set.len() - len;
         while set.len() > MAX_SIZE {

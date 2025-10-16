@@ -80,7 +80,7 @@ impl Client {
         nsid: N,
         hdr: &Header,
         cvec: &CommitteeVec<C>,
-    ) -> impl Iterator<Item = (RoundNumber, BlockNumber)>
+    ) -> impl Iterator<Item = (BlockNumber, RoundNumber)>
     where
         N: Into<NamespaceId>,
     {
@@ -121,7 +121,7 @@ impl Client {
                         return None;
                     };
                     if let Some(b) = b.validated(c) {
-                        Some((b.cert().data().round().num(), b.cert().data().num()))
+                        Some((b.cert().data().num(), b.cert().data().round().num()))
                     } else {
                         warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
                         None
