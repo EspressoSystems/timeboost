@@ -230,7 +230,7 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  env RUST_LOG=timeboost_builder::submit=trace,block_checker=info,warn \
   target/release/run \
     --verbose \
     --timeout 120 \
