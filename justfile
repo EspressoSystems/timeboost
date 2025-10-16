@@ -278,13 +278,13 @@ test-dyn-comm: build-release-until build-test-utils
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml \
-                 --max-members 5" \
-    --spawn "9:target/release/yapper --config test-configs/c1/ --max-nodes 5" \
+                 --max-members 4" \
+    --spawn "9:target/release/yapper --config test-configs/c1/ --max-nodes 4" \
     target/release/run-committee -- \
       -c test-configs/c1/ \
       --until 800 \
       --required-decrypt-rounds 3 \
-      --max-nodes 5 && rm -rf test-configs/c1
+      --max-nodes 4 && rm -rf test-configs/c1
 
 [linux]
 forward-ipv4 val: build-test-utils
