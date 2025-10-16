@@ -8,7 +8,7 @@ use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
 use timeboost::config::{CommitteeConfig, NodeConfig};
 use timeboost_utils::types::logging::init_logging;
-use tracing::{debug, info};
+use tracing::info;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -64,15 +64,16 @@ async fn main() -> Result<()> {
         let Either::Right(hdr) = watcher.next().await else {
             continue;
         };
-        debug!(height = %hdr.height(), "inspecting header");
+        info!(height = %hdr.height(), "inspecting header");
         set.extend(client.verified(nspace, &hdr, &committees).await);
         let start = set.iter().skip(offset);
         offset += start
             .clone()
             .zip(start.skip(1))
-            .take_while(|(a, b)| a.1 + 1 == b.1)
+            .take_while(|(a, b)| a.0 + 1 == b.0)
             .count();
-        info!(blocks = %offset, "validated")
+        let (b, _) = set.iter().nth(offset).expect("valid offset");
+        info!(%offset, total = %set.len(), last = %b, "validated")
     }
 
     Ok(())
