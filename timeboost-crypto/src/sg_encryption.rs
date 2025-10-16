@@ -302,7 +302,7 @@ where
     // maintenance note: update domain separator when Timeboost has minor version upgrade or there
     // are multiple usages of HashToCurve oracle (currently we only have 1 in threshold
     // signature, assigned with `CS01`). e.g. Timeboost upgraded to `2.4.x` and there are 3
-    // occurences of this oracles, the full tag should be:
+    // occurrences of this oracles, the full tag should be:
     // `TIMEBOOST-V24-CS03-with-BLS12381G1_XMD:SHA-256_SSWU_RO_`
     // See: <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-domain-separation-requireme>
     // and <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-suite-id-naming-conventions>

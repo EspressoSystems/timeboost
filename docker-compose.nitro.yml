@@ -17,7 +17,7 @@ services:
       retries: 10
   espresso-dev-node:
     pid: host
-    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:latest
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:main
     ports:
       - "41000:41000"
       - "41003:41003"
@@ -33,7 +33,7 @@ services:
       - ESPRESSO_DEV_NODE_EPOCH_HEIGHT=1000000
       - ESPRESSO_DEV_NODE_MAX_BLOCK_SIZE=10485760
       - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
-      - RUST_LOG=INFO
+      - RUST_LOG=WARN
       - RUST_LOG_FORMAT
       - ESPRESSO_DEV_NODE_VERSION=0.4
     volumes:
@@ -87,7 +87,7 @@ services:
         condition: service_healthy
   config-producer:
     user: root
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     environment:
       - RUST_LOG=trace
     volumes:
@@ -121,7 +121,7 @@ services:
       rollup-creator:
         condition: service_completed_successfully
   contract-deployer:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     environment:
       - RUST_LOG=debug
     volumes:
@@ -269,7 +269,7 @@ services:
       timeout: 3s
       retries: 12
   node0:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       [
         "/app/timeboost",
@@ -302,7 +302,7 @@ services:
       retries: 10
     restart: on-failure
   node1:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       [
         "/app/timeboost",
@@ -335,7 +335,7 @@ services:
       retries: 10      
     restart: on-failure
   node2:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       [
         "/app/timeboost",
@@ -368,7 +368,7 @@ services:
       retries: 10
     restart: on-failure
   node3:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       [
         "/app/timeboost",
@@ -401,7 +401,7 @@ services:
         condition: service_healthy
     restart: on-failure
   threshold-key-register:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     environment:
       - RUST_LOG=info
     volumes:
@@ -409,6 +409,7 @@ services:
     entrypoint:
       - sh
       - -c
+      - "sleep 30s && /app/register --max-members 4 -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
       - "sleep 30s && /app/register -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml --max-members 4"
     depends_on:
       nitro0:
@@ -423,7 +424,7 @@ services:
       - timeboost
     restart: on-failure
   block-checker:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       [
         "/app/block-checker",
@@ -442,7 +443,7 @@ services:
       contract-deployer:
         condition: service_completed_successfully
   yapper:
-    image: timeboost:latest
+    image: ghcr.io/espressosystems/timeboost:main
     command:
       - /app/yapper
       - --config
@@ -451,6 +452,8 @@ services:
       - http://nitro0:8547
       - --max-nodes
       - "4"
+      - --max-nodes
+      - '4'
     volumes:
       - "config:/config"
     environment:

@@ -46,6 +46,8 @@ pub(crate) struct Yapper {
     client: Client,
     interval: Duration,
     chain_id: u64,
+    enc_ratio: f64,
+    prio_ratio: f64,
     nitro: Option<(RootProvider, Vec<PrivateKeySigner>)>,
     enc_key: Option<ThresholdEncKey>,
 }
@@ -72,17 +74,28 @@ impl Yapper {
         let nitro = if let Some(nitro_url) = cfg.nitro_url {
             let nitro_provider = RootProvider::<Ethereum>::connect(nitro_url.as_str()).await?;
             let l1_provider = RootProvider::<Ethereum>::connect(cfg.parent_url.as_str()).await?;
-            // TODO: parameterize number of sender addresses
-            let keys: Vec<_> = (0..20).map(|_| LocalSigner::random()).collect();
-            Self::fund_addresses(
-                &l1_provider,
-                &nitro_provider,
-                cfg.parent_id,
-                &keys,
-                cfg.bridge_addr,
-            )
-            .await?;
-            Some((nitro_provider, keys))
+            let funded_keys: Vec<_> = {
+                let sampled_keys: Vec<_> = (0..cfg.nitro_senders)
+                    .map(|_| LocalSigner::random())
+                    .collect();
+
+                if Self::fund_addresses(
+                    &l1_provider,
+                    &nitro_provider,
+                    cfg.parent_id,
+                    &sampled_keys,
+                    cfg.bridge_addr,
+                )
+                .await
+                .is_ok()
+                {
+                    sampled_keys
+                } else {
+                    info!("bridging to senders failed; using dev account");
+                    vec![PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?]
+                }
+            };
+            Some((nitro_provider, funded_keys))
         } else {
             None
         };
@@ -91,8 +104,10 @@ impl Yapper {
             urls,
             interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
-            nitro,
             chain_id: cfg.chain_id,
+            enc_ratio: cfg.enc_ratio,
+            prio_ratio: cfg.prio_ratio,
+            nitro,
             enc_key: cfg.threshold_enc_key,
         })
     }
@@ -126,7 +141,8 @@ impl Yapper {
                         }
                     },
                 };
-                let Ok(b) = make_dev_acct_bundle(enc_key, txn) else {
+                let Ok(b) = make_dev_acct_bundle(enc_key, txn, self.enc_ratio, self.prio_ratio)
+                else {
                     warn!("failed to generate dev account bundle");
                     continue;
                 };
@@ -254,10 +270,11 @@ impl Yapper {
         for k in keys {
             Self::fund_address(parent, chain_id, k, nonce).await?;
             Self::bridge_funds(parent, chain_id, k, bridge_addr).await?;
+            info!("bridged ETH to L2 for address {}", k.address());
             nonce += 1;
         }
         info!("waiting for funds to settle on L2");
-        Self::wait_for_balances(nitro, keys).await;
+        Self::wait_for_balances(nitro, keys).await?;
         Ok(())
     }
 
@@ -322,12 +339,11 @@ impl Yapper {
         let raw_tx: bytes::Bytes = rlp.freeze();
         let pending = p.send_raw_transaction(&raw_tx).await?;
         let _ = pending.get_receipt().await?;
-        info!("bridged ETH to L2 for address {}", key.address());
         Ok(())
     }
 
-    async fn wait_for_balances(p: &RootProvider, keys: &[PrivateKeySigner]) {
-        loop {
+    async fn wait_for_balances(p: &RootProvider, keys: &[PrivateKeySigner]) -> Result<()> {
+        for _ in 0..10 {
             let mut all_non_zero = true;
 
             for key in keys.iter() {
@@ -340,8 +356,9 @@ impl Yapper {
 
             sleep(Duration::from_secs(5)).await;
             if all_non_zero {
-                break;
+                return Ok(());
             }
         }
+        Err(anyhow::anyhow!("unable to bridge funds"))
     }
 }
