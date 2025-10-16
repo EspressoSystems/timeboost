@@ -200,6 +200,8 @@ where
             );
             let env = Envelope::signed(vtx, &self.keypair);
             let rnd = Round::new(r, self.committee.id());
+            #[cfg(feature = "times")]
+            times::record("sf-round-start", *env.data().round().data().num());
             vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
         } else {
             self.advance_from_round(r, e)
@@ -732,6 +734,8 @@ where
     fn broadcast_vertex(&mut self, v: Vertex<T>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), vertex = %v, "broadcast vertex");
         let e = Envelope::signed(v, &self.keypair);
+        #[cfg(feature = "times")]
+        times::record("sf-round-start", *e.data().round().data().num());
         vec![Action::SendProposal(e)]
     }
 
@@ -921,6 +925,8 @@ where
                 let b = to_deliver.payload().clone();
                 let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
+                #[cfg(feature = "times")]
+                times::record_once("sf-delivered", *r.num());
                 actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
                 self.delivered.insert((r.num(), s));
             }
@@ -1154,6 +1160,9 @@ where
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
+
+        #[cfg(feature = "times")]
+        times::record("sf-round-start", *env.data().round().data().num());
 
         actions.extend([
             Action::UseCommittee(round),

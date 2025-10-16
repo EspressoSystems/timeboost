@@ -9568,7 +9568,6 @@ dependencies = [
  "sailfish-consensus",
  "sailfish-rbc",
  "sailfish-types",
- "times",
  "tokio",
 ]
 
@@ -9583,6 +9582,7 @@ dependencies = [
  "multisig",
  "rayon",
  "sailfish-types",
+ "times",
  "tracing",
 ]
 
@@ -9602,6 +9602,7 @@ dependencies = [
  "sailfish-types",
  "serde",
  "thiserror 2.0.17",
+ "times",
  "tokio",
  "tracing",
 ]
