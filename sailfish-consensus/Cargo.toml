@@ -14,6 +14,8 @@ metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 tracing = { workspace = true }
+# optional:
+times = { path = "../times", optional = true }
 
 [dev-dependencies]
 arbtest = { workspace = true }

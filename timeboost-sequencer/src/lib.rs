@@ -373,8 +373,6 @@ impl Task {
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
                 if let Action::Deliver(payload) = action {
-                    #[cfg(feature = "times")]
-                    times::record_once("sf-round-end", *payload.round().num());
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
                             if let Some(dkg) = data.dkg_bundle() {
