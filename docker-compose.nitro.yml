@@ -44,11 +44,12 @@ services:
     networks:
       - timeboost
   rollup-creator:    
-    pid: host
-    build:
-      context: rollupcreator/
-      args:
-        NITRO_CONTRACTS_BRANCH: v3.1.0
+    #pid: host
+    #build:
+    #  context: rollupcreator/
+    #  args:
+    #    NITRO_CONTRACTS_BRANCH: v3.1.0
+    image: ghcr.io/espressosystems/timeboost/rollup-creator:main
     volumes:
       - "config:/config"
       - "./nitro-config:/nitro-config"
