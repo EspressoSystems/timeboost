@@ -288,8 +288,6 @@ where
                 }
             }
             Action::SendProposal(e) => {
-                #[cfg(feature = "times")]
-                times::record("sf-round-start", *e.data().round().data().num());
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }
             Action::SendTimeout(e) => {
@@ -319,11 +317,7 @@ where
                 }
             }
             Action::Catchup(r) => return Ok(Some(Event::Catchup(r))),
-            Action::Deliver(v) => {
-                #[cfg(feature = "times")]
-                times::record_once("sf-round-end", *v.round().num());
-                return Ok(Some(Event::Deliver(v)));
-            }
+            Action::Deliver(v) => return Ok(Some(Event::Deliver(v))),
         }
         Ok(None)
     }
