@@ -65,14 +65,19 @@ async fn main() -> Result<()> {
             continue;
         };
         info!(height = %hdr.height(), "inspecting header");
-        set.extend(client.verified(nspace, &hdr, &committees).await);
+        set.extend(
+            client
+                .verified(nspace, &hdr, &committees)
+                .await
+                .map(|(b, _)| b),
+        );
         let start = set.iter().skip(offset);
         offset += start
             .clone()
             .zip(start.skip(1))
-            .take_while(|(a, b)| a.0 + 1 == b.0)
+            .take_while(|(a, b)| **a + 1 == **b)
             .count();
-        let (b, _) = set.iter().nth(offset).expect("valid offset");
+        let b = set.iter().nth(offset).expect("valid offset");
         info!(%offset, total = %set.len(), last = %b, "validated")
     }
 
