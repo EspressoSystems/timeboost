@@ -4,6 +4,7 @@ stamp = "/tmp/timeboost.4.stamp"
 [net.public]
 address = "127.0.0.1:8040"
 http-api = "127.0.0.1:8044"
+batch-poster-api = "http://127.0.0.1:8587"
 
 [net.internal]
 address = "127.0.0.1:8043"
