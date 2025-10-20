@@ -78,7 +78,7 @@ struct Task {
     commands: Receiver<Command>,
     output: Sender<Output>,
     mode: Mode,
-    round: Option<RoundNumber>,
+    round: RoundNumber,
     metrics: Arc<SequencerMetrics>,
 }
 
@@ -183,7 +183,7 @@ impl Sequencer {
             output: tx,
             commands: cr,
             mode: Mode::Passive,
-            round: None,
+            round: RoundNumber::genesis(),
             metrics: seq_metrics,
         };
 
@@ -266,7 +266,7 @@ impl Task {
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
-            candidates = self.execute(actions).await?;
+            candidates = self.execute(actions, &mut dkg_bundles).await?;
         }
 
         // DKG bundle generation
@@ -278,7 +278,7 @@ impl Task {
 
         loop {
             if pending.is_none() {
-                while let Some(ilist) = self.next_inclusion(&mut candidates, &mut dkg_bundles) {
+                while let Some(ilist) = self.next_inclusion(&mut candidates) {
                     if !self.decrypter.has_capacity() {
                         pending = Some(ilist);
                         break;
@@ -305,7 +305,7 @@ impl Task {
                 result = self.sailfish.next(), if pending.is_none() => match result {
                     Ok(actions) => {
                         debug_assert!(candidates.is_empty());
-                        candidates = self.execute(actions).await?
+                        candidates = self.execute(actions, &mut dkg_bundles).await?
                     },
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
@@ -341,7 +341,7 @@ impl Task {
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
                             let acts = self.sailfish.set_next_consensus(cons);
-                            candidates = self.execute(acts).await?
+                            candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
                         if let Err(err) = self.decrypter.next_committee(a, k.clone()).await {
                             error!(node = %self.label, %err, "decrypt next committee error");
@@ -360,7 +360,11 @@ impl Task {
     }
 
     /// Execute Sailfish actions and collect candidate lists.
-    async fn execute(&mut self, actions: Vec<Action<CandidateListBytes>>) -> Result<Candidates> {
+    async fn execute(
+        &mut self,
+        actions: Vec<Action<CandidateListBytes>>,
+        dkg_bundles: &mut VecDeque<DkgBundle>,
+    ) -> Result<Candidates> {
         let mut actions = VecDeque::from(actions);
         let mut candidates = Vec::new();
         while !actions.is_empty() {
@@ -371,18 +375,17 @@ impl Task {
                 if let Action::Deliver(payload) = action {
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
-                            if self
-                                .round
-                                .map(|r| r < payload.round().num())
-                                .unwrap_or(true)
-                            {
+                            if let Some(dkg) = data.dkg_bundle() {
+                                dkg_bundles.push_back(dkg.clone());
+                            }
+                            if self.round < payload.round().num() {
                                 round = payload.round().num();
                                 evidence = payload.into_evidence();
                                 lists.push(data)
                             } else {
                                 debug!(
                                     node   = %self.label,
-                                    ours   = ?self.round.map(u64::from),
+                                    ours   = ?*self.round,
                                     theirs = %payload.round().num(),
                                     src    = %payload.source(),
                                     "dropping delayed payload"
@@ -404,9 +407,9 @@ impl Task {
                 }
             }
             if !lists.is_empty() {
-                debug_assert!(self.round < Some(round));
-                self.round = Some(round);
-                candidates.push((round, evidence, lists))
+                debug_assert!(self.round < round);
+                self.round = round;
+                candidates.push((round, evidence, lists));
             }
             while let Some(action) = actions.pop_front() {
                 if action.is_deliver() {
@@ -451,20 +454,8 @@ impl Task {
     }
 
     /// Handle candidate lists and return the next inclusion list.
-    /// While processing candidates, will append the DKG bundles to `pending_dkgs`.
-    fn next_inclusion(
-        &mut self,
-        candidates: &mut Candidates,
-        pending_dkgs: &mut VecDeque<DkgBundle>,
-    ) -> Option<InclusionList> {
+    fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
         while let Some((round, evidence, lists)) = candidates.pop_front() {
-            // preprocess the candidate list to pull out the DKG bundles first
-            for cl in lists.iter() {
-                if let Some(dkg) = cl.dkg_bundle() {
-                    pending_dkgs.push_back(dkg.clone());
-                }
-            }
-            // then process it to construct the next inclusion list
             let outcome = self.includer.inclusion_list(round, evidence, lists);
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {

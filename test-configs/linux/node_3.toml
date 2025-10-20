@@ -10,16 +10,16 @@ address = "11.0.0.4:8003"
 nitro = "11.0.1.0:55000"
 
 [keys.signing]
-secret = "a1yLkHPXik9DZNqLn1zoeCn8SM33vpYrWVcyR2tEjWm"
-public = "pe9nmHpt5AUsKN3xmybKieVJ2fGkYNjMJ53G5V2EHV19"
+secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
+public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
 
 [keys.dh]
-secret = "3Ywa5H2zAnjRmQUFwEJGXgm35ntTAVv3xQiMmWcaXEhA"
-public = "313gVu9SbE3htQwrhA8VHPPXowUvUsLm9pPPXzfbXLth"
+secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
+public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
 
 [keys.dkg]
-secret = "8om9LfoFRDpPXeESUyfCGuUKgzRqHQXBSHKMr9tkuuuk"
-public = "7Gi72MeWgZRNVaLoVGb9uYvrx5wp4FmJu2WRfCBk4RNW9JbrXBUAdJeo7UdLxwfBiT"
+secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
+public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
 
 [chain]
 namespace = 10101
@@ -34,5 +34,6 @@ key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
 base-url = "https://query.decaf.testnet.espresso.network/v1/"
+builder-base-url = "https://builder.decaf.testnet.espresso.network/v0/"
 websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
 max-transaction-size = 1048576

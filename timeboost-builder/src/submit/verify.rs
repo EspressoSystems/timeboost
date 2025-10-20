@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use robusta::{Client, Config, Multiwatcher, espresso_types::NamespaceId};
 use timeboost_types::{
     BlockNumber,
-    sailfish::{CommitteeVec, Empty},
+    sailfish::{CommitteeVec, Empty, RoundNumber},
 };
 use tokio::{sync::Mutex, time::sleep};
 use tracing::debug;
@@ -64,11 +64,15 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
     /// Returns the number of (unique) block numbers added.
     fn insert<I>(&self, it: I) -> usize
     where
-        I: IntoIterator<Item = BlockNumber>,
+        I: IntoIterator<Item = (BlockNumber, RoundNumber)>,
     {
         let mut set = self.set.write();
         let len = set.len();
-        set.extend(it);
+        for b in it {
+            set.insert(b.0);
+            #[cfg(feature = "times")]
+            times::record("tb-verified", *b.1)
+        }
         let len = set.len() - len;
         while set.len() > MAX_SIZE {
             set.pop_first();

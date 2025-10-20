@@ -24,6 +24,7 @@ tps=1
 ignore_stamp=false
 nitro_url=
 yapper=false
+max_nodes=5
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--rounds)
             rounds="$2"
+            shift 2
+            ;;
+        -m|--max-nodes)
+            max_nodes="$2"
             shift 2
             ;;
         -t|--tps)
@@ -69,6 +74,9 @@ Options:
 
     -r | --rounds <NUMBER>
         Run for the given number of rounds (default = 1000).
+
+    -m | --max-nodes <NUMBER>
+        Max. number of nodes to run.
 
     -t | --tps <number>
         number of transactions per second to generate.
@@ -104,7 +112,7 @@ if [ -z "$RUST_LOG" ]; then
     RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info,robusta=debug"
 fi
 
-cmd=("test-contract-deploy" "--keep-anvil")
+cmd=("test-contract-deploy" "--keep-anvil" "--max-members" "$max_nodes")
 if [ $nitro_url ]; then
     cmd+=("--nitro-enabled")
 fi
@@ -114,6 +122,10 @@ echo "=== Contract deployment completed ==="
 pids=()
 i=0
 for f in "$config_dir"/node_*.toml; do
+    if [[ $i -ge $max_nodes ]]; then
+        break
+    fi
+
     cmd=(target/release/timeboost -c "$f" --until "$rounds" --watchdog-timeout 120)
 
     if $ignore_stamp; then
@@ -136,7 +148,7 @@ for f in "$config_dir"/node_*.toml; do
 done
 
 if $yapper; then
-    cmd=(target/release/yapper --tps "$tps" -c "$config_dir/")
+    cmd=(target/release/yapper --tps "$tps" -c "$config_dir/" --max-nodes "$max_nodes")
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi

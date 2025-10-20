@@ -136,8 +136,8 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // The following check does not apply to the genesis round:
-                if round.num() != RoundNumber::genesis() {
+                // The following check does not apply to the genesis round or after handover:
+                if !(round.num().is_genesis() || env.data().is_first_after_handover()) {
                     // The number of vertex edges must be >= to the committee quorum:
                     if env.data().num_edges() < c.quorum_size().get() {
                         warn!(%signer, "vertex has not enough edges");

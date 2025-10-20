@@ -8,12 +8,15 @@ use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
 use timeboost::config::{CommitteeConfig, NodeConfig};
 use timeboost_utils::types::logging::init_logging;
-use tracing::{debug, info};
+use tracing::info;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
     configs: PathBuf,
+
+    #[clap(long)]
+    max_nodes: usize,
 
     #[clap(long, short)]
     blocks: usize,
@@ -33,6 +36,7 @@ async fn main() -> Result<()> {
         let mems = conf
             .members
             .into_iter()
+            .take(args.max_nodes)
             .enumerate()
             .map(|(i, m)| (i as u8, m.signing_key));
         CommitteeVec::<1>::new(Committee::new(conf.id, mems))
@@ -43,6 +47,7 @@ async fn main() -> Result<()> {
     let conf = Config::builder()
         .https_only(args.https_only)
         .base_url(node.espresso.base_url)
+        .builder_base_url(node.espresso.builder_base_url)
         .wss_base_url(node.espresso.websockets_base_url)
         .label("block-checker")
         .build();
@@ -59,15 +64,21 @@ async fn main() -> Result<()> {
         let Either::Right(hdr) = watcher.next().await else {
             continue;
         };
-        debug!(height = %hdr.height(), "inspecting header");
-        set.extend(client.verified(nspace, &hdr, &committees).await);
+        info!(height = %hdr.height(), "inspecting header");
+        set.extend(
+            client
+                .verified(nspace, &hdr, &committees)
+                .await
+                .map(|(b, _)| b),
+        );
         let start = set.iter().skip(offset);
         offset += start
             .clone()
             .zip(start.skip(1))
             .take_while(|(a, b)| **a + 1 == **b)
             .count();
-        info!(blocks = %offset, "validated")
+        let b = set.iter().nth(offset).expect("valid offset");
+        info!(%offset, total = %set.len(), last = %b, "validated")
     }
 
     Ok(())

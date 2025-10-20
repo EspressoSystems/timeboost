@@ -68,7 +68,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.votes.get(c).map(|e| e.sigs.len()).unwrap_or(0)
     }
 
-    /// Return iterator for each public key for a given committment.
+    /// Return iterator for each public key for a given commitment.
     pub fn voters(&self, c: &Commitment<D>) -> impl Iterator<Item = &PublicKey> {
         if let Some(e) = self.votes.get(c) {
             Either::Right(e.sigs.keys().filter_map(|i| self.committee.get_key(*i)))

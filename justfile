@@ -13,7 +13,7 @@ build *ARGS:
 update-submodules:
   git submodule update --remote --recursive
   cd timeboost-proto && cargo build
-  cd ../contracts && forge build
+  cd contracts && forge build
 
 build-release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
@@ -180,8 +180,8 @@ mkconfig-local DATETIME *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/local" {{ARGS}}
 
-mkconfig-linux DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n 5 \
+mkconfig-linux NUM_NODES DATETIME *ARGS:
+  cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
     --committee-id 0 \
     --public-addr "11.0.0.1:8000" \
     --public-mode "increment-address" \
@@ -197,7 +197,7 @@ mkconfig-linux DATETIME *ARGS:
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
-    --output "test-configs/linux" {{ARGS}}            
+    --output "test-configs/linux" {{ARGS}}
 
 verify-blocks *ARGS:
   cargo run --release --bin block-verifier {{ARGS}}
@@ -230,17 +230,17 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  env RUST_LOG=timeboost_builder::submit=trace,block_checker=info,warn \
   target/release/run \
     --verbose \
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
-    --spawn "4:target/release/yapper -c test-configs/local/" \
-    --spawn "5:target/release/run-committee -c test-configs/local/" \
-    target/release/block-checker -- -c test-configs/local -b 1000
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes 5" \
+    --spawn "4:target/release/yapper -c test-configs/local/ --max-nodes 5" \
+    --spawn "5:target/release/run-committee -c test-configs/local/ --max-nodes 5" \
+    target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 500
 
 test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
@@ -249,7 +249,7 @@ test-dyn-comm: build-release-until build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/run-committee -c test-configs/c0/ --until 2000" \
+    --spawn "4:target/release/run-committee -c test-configs/c0/ --max-nodes 5 --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
                  --public-addr 127.0.0.1:9000 \
@@ -270,18 +270,21 @@ test-dyn-comm: build-release-until build-test-utils
                  -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c0/committee.toml" \
+                 -c test-configs/c0/committee.toml \
+                 --max-members 5" \
     --run   "8:target/release/register \
                  -a new-committee \
                  -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c1/committee.toml" \
-    --spawn "9:target/release/yapper --config test-configs/c1/" \
+                 -c test-configs/c1/committee.toml \
+                 --max-members 4" \
+    --spawn "9:target/release/yapper --config test-configs/c1/ --max-nodes 4" \
     target/release/run-committee -- \
       -c test-configs/c1/ \
       --until 800 \
-      --required-decrypt-rounds 3 && rm -rf test-configs/c1
+      --required-decrypt-rounds 3 \
+      --max-nodes 4 && rm -rf test-configs/c1
 
 [linux]
 forward-ipv4 val: build-test-utils
@@ -296,7 +299,7 @@ delete-net: build-test-utils
     {{run_as_root}} target/release/net-setup delete -c test-configs/linux/net.toml
 
 [linux]
-netsim: build-release build-test-utils
+netsim nodes: build-release build-test-utils
     #!/usr/bin/env bash
     set -eo pipefail
     function run_as_root {
@@ -318,8 +321,8 @@ netsim: build-release build-test-utils
         --gid $(id -g) \
         --spawn "1:anvil --host 11.0.1.0 --port 8545" \
         --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml -u http://11.0.1.0:8545" \
-        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
-        --spawn "4:target/release/yapper -c test-configs/linux/" \
-        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
-        target/release/block-checker -- -c test-configs/linux -b 200
+        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+        --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --max-nodes {{nodes}}" \
+        target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}

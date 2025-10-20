@@ -87,7 +87,7 @@ struct Args {
     #[clap(long)]
     parent_chain_id: u64,
 
-    /// Parent chain inbox contract adddress
+    /// Parent chain inbox contract address
     #[clap(long)]
     parent_ibox_contract: alloy::primitives::Address,
 
@@ -106,6 +106,13 @@ struct Args {
         default_value = "https://query.decaf.testnet.espresso.network/v1/"
     )]
     espresso_base_url: Url,
+
+    /// Builder base URL of Espresso's REST API.
+    #[clap(
+        long,
+        default_value = "https://builder.decaf.testnet.espresso.network/v0/"
+    )]
+    espresso_builder_base_url: Url,
 
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
@@ -260,12 +267,14 @@ impl Args {
                 },
                 espresso: Espresso {
                     base_url: self.espresso_base_url.clone(),
+                    builder_base_url: self.espresso_builder_base_url.clone(),
                     websockets_base_url: self.espresso_websocket_url.clone(),
                     max_transaction_size: self.max_transaction_size,
                 },
             };
 
             members.push(CommitteeMember {
+                node: format!("node_{i}"),
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
