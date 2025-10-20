@@ -1,13 +1,16 @@
 services:
   demo-l1-network:
-    image: ghcr.io/espressosystems/geth-l1:main
-    command: --dev --dev.period=1
+    #build:
+    #  dockerfile: docker/geth-l1.Dockerfile
+    #  context: .
+    image: ghcr.io/espressosystems/timeboost/geth-l1:main
+    command: --dev --dev.period=1 --verbosity=2
     ports:
       - 8545:8545
       - 8546:8546
-    volumes:
-      - "./geth-config/genesis-default.json:/genesis.json"
-      - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+    #volumes:
+    #  - "./geth-config/genesis-default.json:/genesis.json"
+    #  - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
     networks:
       - timeboost
     healthcheck:
@@ -44,15 +47,16 @@ services:
     networks:
       - timeboost
   rollup-creator:    
-    #pid: host
+    pid: host
     #build:
-    #  context: rollupcreator/
+    #  dockerfile: docker/rollupcreator.Dockerfile
+    #  context: .
     #  args:
     #    NITRO_CONTRACTS_BRANCH: v3.1.0
     image: ghcr.io/espressosystems/timeboost/rollup-creator:main
     volumes:
       - "config:/config"
-      - "./nitro-config:/nitro-config"
+    #  - "./nitro-config:/nitro-config"
     environment:
       PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
       DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
@@ -82,7 +86,7 @@ services:
     entrypoint: 
       - sh
       - -c
-      - > 
+      - >
         /app/mkconfig -n 4 --committee-id 0 \
           --public-addr "node:8000" \
           --public-mode "docker-dns" \
@@ -173,6 +177,7 @@ services:
       - "./nitro-config:/nitro-config"
       - "tokenbridge-data:/tokenbridge-data"
     command:
+      - --log-level=2
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro1:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
@@ -204,6 +209,7 @@ services:
       - "./nitro-config:/nitro-config"
       - "tokenbridge-data:/tokenbridge-data"
     command:
+      - --log-level=2
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro2:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
@@ -235,6 +241,7 @@ services:
       - "./nitro-config:/nitro-config"
       - "tokenbridge-data:/tokenbridge-data"
     command:
+      - --log-level=2
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro3:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
@@ -296,7 +303,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=error
     ports:
       - "8101:8004"
       - "8801:8800"
@@ -329,7 +336,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=error
     ports:
       - "8102:8004"
       - "8802:8800"
@@ -362,7 +369,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=error
     ports:
       - "8103:8004"
       - "8803:8800"
@@ -412,6 +419,7 @@ services:
         "-c", "/config",
         "-b", "20000",
         "--https-only", "false",
+        "--max-nodes", "4",
       ]
     volumes:
       - "config:/config"
