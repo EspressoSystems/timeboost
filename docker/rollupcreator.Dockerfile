@@ -12,4 +12,5 @@ ENV PATH="${PATH}:/root/.foundry/bin"
 RUN foundryup --install 1.0.0
 RUN touch scripts/config.ts
 RUN yarn build:all
+COPY nitro-config /nitro-config
 ENTRYPOINT ["yarn"]
