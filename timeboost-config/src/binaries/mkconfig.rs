@@ -173,13 +173,9 @@ impl Mode {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
-                if name.contains(".") {
-                    let parts: Vec<&str> = name.split(".").collect();
-                    assert_eq!(parts.len(), 2);
-                    return Ok(Address::Name(
-                        format!("{}{}.{}", parts[0], i, parts[1]),
-                        *port,
-                    ));
+                if let Some(index) = name.find('.') {
+                    let (first, rest) = name.split_at(index);
+                    return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
                 }
                 Ok(Address::Name(format!("{}{}", name, i), *port))
             }
