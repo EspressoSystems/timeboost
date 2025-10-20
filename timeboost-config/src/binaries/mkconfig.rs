@@ -1,7 +1,9 @@
+use std::fmt::format;
 use std::fs::{self, File};
 use std::io::Write;
 use std::net::IpAddr;
 use std::num::NonZeroU8;
+use std::ops::Add;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -166,6 +168,11 @@ impl Mode {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
+                if name.contains(".") {
+                    let parts: Vec<&str> = name.split(".").collect();
+                    assert_eq!(parts.len(), 2);
+                    return Ok(Address::Name(format!("{}{}.{}", parts[0], i, parts[1]), *port));
+                }
                 Ok(Address::Name(format!("{}{}", name, i), *port))
             }
         }
