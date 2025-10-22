@@ -28,29 +28,36 @@ timeboost-times nodes: (build "times")
     set -eo pipefail
     function run_as_root {
         if [ "$CI" == "true" ]; then
-            sudo --preserve-env=PATH,HOME,RUST_LOG,TOKIO_WORKER_THREADS,RAYON_NUM_THREADS "$@"
+            sudo --preserve-env=PATH,HOME,RUST_LOG,TOKIO_WORKER_THREADS,RAYON_NUM_THREADS,TIMEBOOST_NO_SUBMIT "$@"
         else
-            run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG --setenv=TOKIO_WORKER_THREADS --setenv=RAYON_NUM_THREADS "$@"
+            run0 --setenv=PATH \
+                --setenv=HOME \
+                --setenv=RUST_LOG \
+                --setenv=TOKIO_WORKER_THREADS \
+                --setenv=RAYON_NUM_THREADS \
+                --setenv=TIMEBOOST_NO_SUBMIT \
+                "$@"
         fi
     }
-    export RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4
+    export RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4 TIMEBOOST_NO_SUBMIT=1
     run_as_root target/release/run \
-            --verbose \
-            --clear-env \
-            --env PATH \
-            --env HOME \
-            --env RUST_LOG \
-            --env TOKIO_WORKER_THREADS \
-            --env RAYON_NUM_THREADS \
-            --uid $(id -u) \
-            --gid $(id -g) \
-            --spawn "1:anvil --host 11.0.1.0 --port 8545" \
-            --run   "2:sleep 3" \
-            --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
-            --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
-            --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
-            --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 10000 --max-nodes {{nodes}}" \
-            target/release/block-checker -- -c test-configs/linux -b 10000 --max-nodes {{nodes}}
+        --verbose \
+        --clear-env \
+        --env PATH \
+        --env HOME \
+        --env RUST_LOG \
+        --env TOKIO_WORKER_THREADS \
+        --env RAYON_NUM_THREADS \
+        --env TIMEBOOST_NO_SUBMIT \
+        --uid $(id -u) \
+        --gid $(id -g) \
+        --spawn "1:anvil --host 11.0.1.0 --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+        --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 10000 --max-nodes {{nodes}}" \
+        target/release/block-checker -- -c test-configs/linux -b 10000 --max-nodes {{nodes}}
 
 plot-node gnuplot output csv:
     #!/usr/bin/env bash

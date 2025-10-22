@@ -1,5 +1,6 @@
 mod conf;
 
+use std::env;
 use std::iter::once;
 use std::sync::Arc;
 
@@ -37,6 +38,8 @@ pub mod metrics;
 
 #[cfg(feature = "times")]
 pub mod times;
+
+pub(crate) const TIMEBOOST_NO_SUBMIT: &str = "TIMEBOOST_NO_SUBMIT";
 
 pub struct Timeboost {
     label: PublicKey,
@@ -111,8 +114,8 @@ impl Timeboost {
     pub async fn go(mut self) -> Result<()> {
         #[cfg(feature = "times")]
         let mut writer = crate::times::TimesWriter::new(self.label);
-        #[cfg(feature = "times")]
-        let start = std::time::Instant::now();
+
+        let no_submit = env::var(TIMEBOOST_NO_SUBMIT).is_ok();
 
         loop {
             select! {
@@ -135,13 +138,6 @@ impl Timeboost {
                                 info!(target: "times", node = %self.label, round = %*round)
                             }
                             if !writer.is_timeboost_saved() && *round >= self.config.times_until {
-                                let elapsed = start.elapsed();
-                                info!(
-                                    target: "times",
-                                    elapsed      = ?elapsed,
-                                    rounds       = %self.config.times_until,
-                                    ms_per_round = %(elapsed.as_secs_f64() / self.config.times_until as f64 * 1000.0)
-                                );
                                 writer.save_timeboost_series().await?
                             }
                         }
@@ -164,7 +160,13 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        if let Err(e) = self.submitter.submit(b).await {
+                        if no_submit {
+                            warn!(
+                                node  = %self.label,
+                                block = %b.data().round(),
+                                "TIMEBOOST_NO_SUBMIT is set, not submitting block"
+                            );
+                        } else if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
                         }

@@ -21,15 +21,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
-    - uses: actions/cache@v4
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
       with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        shared-key: "build"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: build
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -54,6 +52,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "tests"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: tests
     - uses: taiki-e/install-action@nextest
     - name: Install protobuf compiler
       run: |
@@ -74,6 +79,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "lint"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: lint
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -108,6 +120,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "integration"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: integration
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -136,6 +155,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "netsim"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: netsim
     - name: Show net devices
       run: ip -o addr show scope global
     - name: Install protobuf compiler
@@ -177,6 +203,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "nitro"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: nitro
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt

@@ -382,6 +382,7 @@ impl Decrypter {
 
                 #[cfg(feature = "times")]
                 times::record("tb-decrypt-end", *dec_incl.round());
+
                 return Ok(dec_incl);
             } else {
                 error!(

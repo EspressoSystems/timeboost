@@ -179,9 +179,11 @@ impl Mode {
                 };
                 if name.contains("host.docker") {
                     Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)))
-                } else {
-                    Ok(Address::Name(format!("{}{}", name, i), *port))
+                } else if let Some(index) = name.find('.') {
+                    let (first, rest) = name.split_at(index);
+                    return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
                 }
+                Ok(Address::Name(format!("{}{}", name, i), *port))
             }
         }
     }
