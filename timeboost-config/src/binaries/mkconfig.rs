@@ -173,6 +173,10 @@ impl Mode {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
+                if let Some(index) = name.find('.') {
+                    let (first, rest) = name.split_at(index);
+                    return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
+                }
                 Ok(Address::Name(format!("{}{}", name, i), *port))
             }
         }
