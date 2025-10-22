@@ -58,6 +58,10 @@ struct Args {
     #[clap(long)]
     http_api: Address,
 
+    /// HTTP API of a batch poster node.
+    #[clap(long)]
+    batch_poster_api: Address,
+
     /// Directory to store timeboost stamp file in.
     #[clap(long, short)]
     stamp_dir: PathBuf,
@@ -173,7 +177,9 @@ impl Mode {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
-                if let Some(index) = name.find('.') {
+                if name.contains("host.docker") {
+                    return Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)));
+                } else if let Some(index) = name.find('.') {
                     let (first, rest) = name.split_at(index);
                     return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
                 }
@@ -217,6 +223,7 @@ impl Args {
             let nitro_mode = self.nitro_mode;
             let public_addr = public_mode.adjust_addr(i, &self.public_addr)?;
             let http_addr = public_mode.adjust_addr(i, &self.http_api)?;
+            let batch_poster_api = public_mode.adjust_addr(i, &self.batch_poster_api)?;
             let internal_addr = public_mode.adjust_addr(i, &self.internal_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
                 Some(nitro_mode.adjust_addr(i, addr)?)
@@ -231,6 +238,7 @@ impl Args {
                     public: PublicNet {
                         address: public_addr,
                         http_api: http_addr,
+                        batch_poster_api,
                     },
                     internal: InternalNet {
                         address: internal_addr,
@@ -277,6 +285,7 @@ impl Args {
                 dkg_enc_key: config.keys.dkg.public.clone(),
                 public_address: config.net.public.address.clone(),
                 http_api: config.net.public.http_api.clone(),
+                batch_poster_api: config.net.public.batch_poster_api.clone(),
                 internal_api: config.net.internal.address.clone(),
             });
 
