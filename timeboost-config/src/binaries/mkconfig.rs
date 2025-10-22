@@ -178,7 +178,7 @@ impl Mode {
                     bail!("increment dns requires dns name")
                 };
                 if name.contains("host.docker") {
-                    Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)))
+                    return Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)));
                 } else if let Some(index) = name.find('.') {
                     let (first, rest) = name.split_at(index);
                     return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
