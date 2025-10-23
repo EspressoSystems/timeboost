@@ -1,13 +1,10 @@
 services:
   demo-l1-network:
-    image: ghcr.io/espressosystems/geth-l1:main
-    command: --dev --dev.period=1
+    image: ghcr.io/espressosystems/geth-l1-staging:main
+    command: --dev.period=1
     ports:
       - 8545:8545
       - 8546:8546
-    volumes:
-      - "./geth-config/genesis-default.json:/genesis.json"
-      - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
     networks:
       - timeboost
     healthcheck:
@@ -16,7 +13,6 @@ services:
       timeout: 3s
       retries: 10
   espresso-dev-node:
-    pid: host
     image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:main
     ports:
       - "41000:41000"
@@ -27,7 +23,8 @@ services:
       - ESPRESSO_DEPLOYER_ACCOUNT_INDEX=5
       - ESPRESSO_DEV_NODE_PORT=20000
       - ESPRESSO_SEQUENCER_API_PORT=41000
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      #- ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=test test test test test test test test test test test junk
       - ESPRESSO_SEQUENCER_L1_PROVIDER=http://demo-l1-network:8545
       - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
       - ESPRESSO_DEV_NODE_EPOCH_HEIGHT=1000000
@@ -55,11 +52,11 @@ services:
       - "./nitro-config:/nitro-config"
     environment:
       PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
-      DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
-      PARENT_CHAIN_ID: 1337
+      DEPLOYER_PRIVKEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      PARENT_CHAIN_ID: 900
       CHILD_CHAIN_NAME: "arb-dev-test"
       MAX_DATA_SIZE: 117964
-      OWNER_ADDRESS: 0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
+      OWNER_ADDRESS: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
       WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
       SEQUENCER_ADDRESS: 0x2F1eAe7Dd46D88f08fC2f8ED27Fcb2Ab183eb2d0
       AUTHORIZE_VALIDATORS: 10
@@ -82,7 +79,7 @@ services:
     entrypoint: 
       - sh
       - -c
-      - > 
+      - >
         /app/mkconfig -n 4 --committee-id 0 \
           --public-addr "node:8000" \
           --public-mode "docker-dns" \
@@ -93,7 +90,7 @@ services:
           --chain-namespace 412346 \
           --parent-rpc-url "http://demo-l1-network:8545" \
           --parent-ws-url "ws://demo-l1-network:8546" \
-          --parent-chain-id 1337 \
+          --parent-chain-id 900 \
           --parent-ibox-contract "$(jq -r '.inbox' /config/deployment.json)" \
           --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --timestamp $(date -u +"%Y-%m-%dT%H:%M:%SZ") \
