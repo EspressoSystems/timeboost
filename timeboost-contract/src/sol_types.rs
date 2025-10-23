@@ -3,9 +3,9 @@
 // We manually re-export the type here carefully due to alloy's lack of shared type:
 // tracking issue: https://github.com/foundry-rs/foundry/issues/10153
 pub use crate::bindings::{
-    erc1967proxy::ERC1967Proxy,
-    keymanager::KeyManager,
-    keymanager::KeyManager::{Committee as CommitteeSol, CommitteeMember as CommitteeMemberSol},
+    r#erc1967proxy::ERC1967Proxy,
+    r#keymanager::KeyManager,
+    r#keymanager::KeyManager::{Committee as CommitteeSol, CommitteeMember as CommitteeMemberSol},
 };
 
 impl CommitteeMemberSol {
