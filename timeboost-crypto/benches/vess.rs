@@ -6,8 +6,7 @@ use ark_std::{
     rand::{Rng, SeedableRng, rngs::StdRng},
 };
 use criterion::{Criterion, criterion_group, criterion_main};
-use timeboost_crypto::mre::{self, LabeledDecryptionKey};
-use timeboost_crypto::vess::ShoupVess;
+use timeboost_crypto::{LabeledDecryptionKey, ShoupVess, DecryptionKey, EncryptionKey};
 
 const KB: usize = 1 << 10;
 
@@ -38,13 +37,13 @@ fn shoup_vess<C: CurveGroup>(c: &mut Criterion, vess: ShoupVess<C>) {
         let aad = b"vess aad";
 
         // prepare their encryption keys for secure communication
-        let recv_sks: Vec<mre::DecryptionKey<C>> = repeat_with(|| mre::DecryptionKey::rand(rng))
+        let recv_sks: Vec<DecryptionKey<C>> = repeat_with(|| DecryptionKey::rand(rng))
             .take(n)
             .collect();
-        let recv_pks: BTreeMap<usize, mre::EncryptionKey<C>> = recv_sks
+        let recv_pks: BTreeMap<usize, EncryptionKey<C>> = recv_sks
             .iter()
             .enumerate()
-            .map(|(i, sk)| (i, mre::EncryptionKey::from(sk)))
+            .map(|(i, sk)| (i, EncryptionKey::from(sk)))
             .collect();
         let labeled_sks: Vec<LabeledDecryptionKey<C>> = recv_sks
             .into_iter()
