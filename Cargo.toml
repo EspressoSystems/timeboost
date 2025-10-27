@@ -77,7 +77,7 @@ parking_lot = "0.12.3"
 prometheus = "0.14"
 prost = "0.14.1"
 quickcheck = "1.0.3"
-quick_cache = "0.6.16"
+quick_cache = "0.6.18"
 rand = "0.9"
 rayon = "1.10"
 rustix = { version = "1.1.2", features = ["process"] }
