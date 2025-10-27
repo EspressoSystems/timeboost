@@ -6,7 +6,7 @@ use bytes::{BufMut, BytesMut};
 use cliquenet::{AddressableCommittee, Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, CommitteeId, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, CommitteeVec, Evidence, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Comm, CommitteeVec, Event, Evidence, Message, Round, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -130,7 +130,7 @@ impl RbcConfig {
 #[derive(Debug)]
 pub struct Rbc<T: Committable> {
     // Inbound, RBC-delivered messages.
-    rx: mpsc::Receiver<Message<T, Validated>>,
+    rx: mpsc::Receiver<Event<T, Validated>>,
     // Directives to the RBC worker.
     tx: mpsc::Sender<Command<T>>,
     // The worker task handle.
@@ -193,7 +193,7 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err> {
         self.rx.recv().await.ok_or(RbcError::Shutdown)
     }
 

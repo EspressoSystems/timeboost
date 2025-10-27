@@ -12,7 +12,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Evidence, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -25,7 +25,7 @@ use super::{Command, Nonce, Protocol, RbcConfig, serialize};
 
 type RbcResult<T> = std::result::Result<T, RbcError>;
 type SendResult<T> = std::result::Result<T, NetworkDown>;
-type Sender<T> = mpsc::Sender<Message<T, Validated>>;
+type Sender<T> = mpsc::Sender<Event<T, Validated>>;
 type Receiver<T> = mpsc::Receiver<Command<T>>;
 
 /// A worker is run by `Rbc` to perform the actual work of sending and
@@ -602,7 +602,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let Some(msg) = msg.validated(&self.config.committees) else {
             return Err(RbcError::InvalidMessage);
         };
-        self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
+        self.tx.send(Event::Message(msg)).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
@@ -739,7 +739,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 }
 
                 self.tx
-                    .send(Message::Vertex(vertex.clone()))
+                    .send(Event::Message(Message::Vertex(vertex.clone())))
                     .await
                     .map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered;
@@ -758,13 +758,20 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         if !messages.leader_threshold {
-            let prev_round_leader = committee.leader(round.num().saturating_sub(1) as usize);
+            let prev_round = round.num().saturating_sub(1);
+            let prev_round_leader = committee.leader(prev_round as usize);
             if messages.map
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
                 .filter(|e| e.data().has_edge(&prev_round_leader))
                 .count() > committee.quorum_size().get()
             {
+                self.tx
+                    .send(Event::Info(Info::LeaderThresholdReached(prev_round.into())))
+                    .await
+                    .map_err(|_| RbcError::Shutdown)?;
+                #[cfg(feature = "times")]
+                times::record_once("rbc-leader-info", prev_round);
                 messages.leader_threshold = true
             }
         }
@@ -841,7 +848,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             debug!(node = %self.key, %digest, "suppressing cert");
                         }
                         self.tx
-                            .send(Message::Vertex(vertex.clone()))
+                            .send(Event::Message(Message::Vertex(vertex.clone())))
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
                         self.config
@@ -934,7 +941,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         debug!(node = %self.key, %digest, "suppressing cert");
                     }
                     self.tx
-                        .send(Message::Vertex(vertex.clone()))
+                        .send(Event::Message(Message::Vertex(vertex.clone())))
                         .await
                         .map_err(|_| RbcError::Shutdown)?;
                     self.config
@@ -1019,7 +1026,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         self.tx
-            .send(Message::Vertex(vertex.clone()))
+            .send(Event::Message(Message::Vertex(vertex.clone())))
             .await
             .map_err(|_| RbcError::Shutdown)?;
 

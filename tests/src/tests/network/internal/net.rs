@@ -4,7 +4,7 @@ use std::{io, iter};
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
-use sailfish_types::{Comm, Empty, Message};
+use sailfish_types::{Comm, Empty, Event, Message};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -14,8 +14,8 @@ use tracing::warn;
 /// dispatches them to all connected `Conn` endpoints, or to specific ones.
 #[derive(Debug)]
 pub struct Star<T: Clone> {
-    inbound: mpsc::UnboundedReceiver<Event<T>>,
-    outbound: mpsc::UnboundedSender<Event<T>>,
+    inbound: mpsc::UnboundedReceiver<Value<T>>,
+    outbound: mpsc::UnboundedSender<Value<T>>,
     members: HashMap<PublicKey, mpsc::UnboundedSender<T>>,
 }
 
@@ -23,13 +23,13 @@ pub struct Star<T: Clone> {
 #[derive(Debug)]
 pub struct Conn<T> {
     id: PublicKey,
-    tx: mpsc::UnboundedSender<Event<T>>,
+    tx: mpsc::UnboundedSender<Value<T>>,
     rx: mpsc::UnboundedReceiver<T>,
 }
 
 /// A network event.
 #[derive(Clone, Debug)]
-pub enum Event<T> {
+pub enum Value<T> {
     Unicast {
         src: PublicKey,
         dest: PublicKey,
@@ -41,7 +41,7 @@ pub enum Event<T> {
     },
 }
 
-impl<T> Event<T> {
+impl<T> Value<T> {
     pub fn source(&self) -> &PublicKey {
         match self {
             Self::Unicast { src, .. } => src,
@@ -88,7 +88,7 @@ impl<T: Clone> Star<T> {
         self.members.remove(&id).is_some()
     }
 
-    pub async fn recv(&mut self) -> Event<T> {
+    pub async fn recv(&mut self) -> Value<T> {
         self.inbound
             .recv()
             .await
@@ -106,7 +106,7 @@ impl<T: Clone> Star<T> {
         Err(msg)
     }
 
-    pub fn events(&mut self) -> impl Iterator<Item = Event<T>> + '_ {
+    pub fn events(&mut self) -> impl Iterator<Item = Value<T>> + '_ {
         iter::from_fn(|| self.inbound.try_recv().ok())
     }
 
@@ -114,11 +114,11 @@ impl<T: Clone> Star<T> {
         loop {
             match self.inbound.recv().await {
                 Some(event) => match event {
-                    Event::Unicast { dest, data, .. } => {
+                    Value::Unicast { dest, data, .. } => {
                         let tx = self.members.get_mut(&dest).unwrap();
                         tx.send(data).unwrap();
                     }
-                    Event::Multicast { data, .. } => {
+                    Value::Multicast { data, .. } => {
                         for (_, tx) in self.members.iter_mut() {
                             if let Err(e) = tx.send(data.clone()) {
                                 warn!("Failed to send message to member: {:?}", e);
@@ -164,8 +164,8 @@ impl<T: Committable + Clone + Send> Comm<T> for Star<Message<T, Validated>> {
             .map_err(|_| io::Error::other("Star network failed to send"))
     }
 
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
-        Ok(self.recv().await.data().clone())
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err> {
+        Ok(Event::Message(self.recv().await.data().clone()))
     }
 }
 
@@ -181,7 +181,7 @@ impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
     type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
-        let e = Event::Multicast {
+        let e = Value::Multicast {
             src: self.id,
             data: msg,
         };
@@ -191,7 +191,7 @@ impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {
-        let e = Event::Unicast {
+        let e = Value::Unicast {
             src: self.id,
             dest: to,
             data: msg,
@@ -201,10 +201,12 @@ impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
             .map_err(|_| io::Error::other("Comm: failed to send"))
     }
 
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
-        self.rx
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err> {
+        let m = self
+            .rx
             .recv()
             .await
-            .ok_or_else(|| io::ErrorKind::ConnectionAborted.into())
+            .ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionAborted))?;
+        Ok(Event::Message(m))
     }
 }
