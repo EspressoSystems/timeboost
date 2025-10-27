@@ -470,9 +470,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
 
-        #[cfg(feature = "times")]
-        times::record("rbc-proposed", *digest.round().num());
-
         Ok(())
     }
 
@@ -612,16 +609,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         let round = *vertex.data().round().data();
 
-        #[cfg(feature = "times")]
-        times::record("validate-msg-start", *round.num());
-
         let Some(Message::Vertex(vertex)) =
             Message::Vertex(vertex).validated(&self.config.committees) else {
                 return Err(RbcError::InvalidMessage);
             };
-
-        #[cfg(feature = "times")]
-        times::record("validate-msg-end", *round.num());
 
         if *vertex.signing_key() != src {
             warn!(node = %self.key, %src, "message sender != message signer");
@@ -746,8 +737,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 self.config
                     .metrics
                     .add_delivery_duration(tracker.start.elapsed());
-                #[cfg(feature = "times")]
-                times::record_once("rbc-delivered", *vertex.data().round().data().num());
                 debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
             }
             // Nothing to do here:
@@ -855,8 +844,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             .metrics
                             .add_delivery_duration(tracker.start.elapsed());
                         debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-                        #[cfg(feature = "times")]
-                        times::record_once("rbc-delivered", *vertex.data().round().data().num());
                         tracker.status = Status::Delivered
                     } else {
                         let m = Protocol::<'_, T, Validated>::GetRequest(digest);
@@ -948,8 +935,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         .metrics
                         .add_delivery_duration(tracker.start.elapsed());
                     debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-                    #[cfg(feature = "times")]
-                    times::record_once("rbc-delivered", *vertex.data().round().data().num());
                     tracker.status = Status::Delivered
                 } else {
                     let m = Protocol::<'_, T, Validated>::GetRequest(digest);
@@ -1031,9 +1016,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .map_err(|_| RbcError::Shutdown)?;
 
         debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-
-        #[cfg(feature = "times")]
-        times::record_once("rbc-delivered", *vertex.data().round().data().num());
 
         tracker.message = Item::some(vertex);
         tracker.status = Status::Delivered;
