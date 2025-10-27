@@ -753,7 +753,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
                 .filter(|e| e.data().has_edge(&prev_round_leader))
-                .count() > committee.quorum_size().get()
+                .count() >= committee.quorum_size().get()
             {
                 self.tx
                     .send(Event::Info(Info::LeaderThresholdReached(prev_round.into())))
