@@ -78,7 +78,6 @@ pub struct RbcConfig {
     committees: CommitteeVec<2>,
     committee_id: CommitteeId,
     recover: bool,
-    early_delivery: bool,
     metrics: RbcMetrics,
 }
 
@@ -94,16 +93,8 @@ impl RbcConfig {
             committee_id: id,
             committees: c,
             recover: true,
-            early_delivery: true,
             metrics: RbcMetrics::default(),
         }
-    }
-
-    /// Should RBC deliver first messages as soon as 2f + 1 messages
-    /// have been received in a round?
-    pub fn with_early_delivery(mut self, val: bool) -> Self {
-        self.early_delivery = val;
-        self
     }
 
     /// Set the RBC metrics value to use.
