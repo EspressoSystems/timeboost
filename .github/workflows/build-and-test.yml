@@ -217,12 +217,7 @@ jobs:
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run Test Node with Timeboost
       run: |
-        ./test-node/test-node.bash \
-          --build-dev-nitro \
-          --batchposters 0 \
-          --redundantsequencers 1 \
-          --decentralized-timeboost \
-          --init &
+        just run-integration-nitro-ci
     - name: Run test timeboost with nitro sequencer
       run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --yapper --nitro http://localhost:8547
     - name: Verify sequencer blocks

@@ -87,6 +87,10 @@ run-integration-nitro: build-docker-amd
   -docker network create timeboost
   docker compose -f docker-compose.nitro.yml -f docker-compose.metrics.yml up -d
 
+run-integration-nitro-ci:
+  -docker network create timeboost
+  docker compose -f docker-compose.nitro-ci.yml up -d
+
 run-demo *ARGS:
   scripts/run-timeboost-demo {{ARGS}}
 
@@ -156,7 +160,10 @@ mkconfig-nitro-ci DATETIME *ARGS:
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8546" \
     --parent-chain-id 1337 \
-    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --espresso-base-url "http://127.0.0.1:41000/v1/" \
+    --espresso-builder-base-url "http://127.0.0.1:41000/v1/" \
+    --espresso-websocket-url "ws://127.0.0.1:41000/v1/" \
+    --parent-ibox-contract "0xFD537245D7F5398Ff1bA47E553e18F1893E2DfF1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \

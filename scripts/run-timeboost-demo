@@ -140,6 +140,10 @@ for f in "$config_dir"/node_*.toml; do
         cmd+=(--required-decrypt-rounds 3)
     fi
 
+    if [ $nitro_url ]; then 
+        cmd+=(--https-only false)
+    fi
+
     echo "${cmd[@]}"
     RUST_LOG=$RUST_LOG "${cmd[@]}" &
 
