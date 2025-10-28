@@ -19,9 +19,9 @@ services:
     pid: host
     image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:main
     ports:
-      - "127.0.0.1:41000:41000"
-      - "127.0.0.1:41003:41003"
-      - "127.0.0.1:20000:20000"
+      - "41000:41000"
+      - "41003:41003"
+      - "20000:20000"
     environment:
       - ESPRESSO_BUILDER_PORT=41003
       - ESPRESSO_DEPLOYER_ACCOUNT_INDEX=5

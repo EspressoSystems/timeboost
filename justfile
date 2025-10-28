@@ -163,7 +163,7 @@ mkconfig-nitro-ci DATETIME *ARGS:
     --espresso-base-url "http://127.0.0.1:41000/v1/" \
     --espresso-builder-base-url "http://127.0.0.1:41000/v1/" \
     --espresso-websocket-url "ws://127.0.0.1:41000/v1/" \
-    --parent-ibox-contract "0xFD537245D7F5398Ff1bA47E553e18F1893E2DfF1" \
+    --parent-ibox-contract "0xCbfD7eeB1Cbd827a8B4dE3752D3994E9A8641FA2" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \

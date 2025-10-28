@@ -265,13 +265,35 @@ impl Yapper {
         keys: &[PrivateKeySigner],
         bridge_addr: Address,
     ) -> Result<()> {
-        let mut nonce = parent.get_transaction_count(DEV_ACCT_ADDRESS).await?;
-
+        let mut failures = 0;
+        let max = 3;
         for k in keys {
-            Self::fund_address(parent, chain_id, k, nonce).await?;
-            Self::bridge_funds(parent, chain_id, k, bridge_addr).await?;
-            info!("bridged ETH to L2 for address {}", k.address());
-            nonce += 1;
+            loop {
+                if failures == max {
+                    return Err(anyhow::anyhow!(
+                        "max retries hit for key {}. falling back to dev acct only",
+                        k.address()
+                    ));
+                }
+                let Ok(nonce) = parent.get_transaction_count(DEV_ACCT_ADDRESS).await else {
+                    warn!(addr=%k.address(), "failed to get nonce");
+                    failures += 1;
+                    continue;
+                };
+                if let Err(err) = Self::fund_address(parent, chain_id, k, nonce).await {
+                    warn!(addr=%k.address(), %err, "failed to fund address");
+                    failures += 1;
+                    continue;
+                }
+                if let Err(err) = Self::bridge_funds(parent, chain_id, k, bridge_addr).await {
+                    warn!(addr=%k.address(), %err, "failed to bridge funds");
+                    failures += 1;
+                    continue;
+                }
+                info!("bridged ETH to L2 for address {}", k.address());
+                break;
+            }
+            failures = 0;
         }
         info!("waiting for funds to settle on L2");
         Self::wait_for_balances(nitro, keys).await?;

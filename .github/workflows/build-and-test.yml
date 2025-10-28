@@ -219,7 +219,7 @@ jobs:
       run: |
         just run-integration-nitro-ci
     - name: Run test timeboost with nitro sequencer
-      run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --yapper --nitro http://localhost:8547
+      run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --nitro-senders 2 --yapper --nitro http://localhost:8547
     - name: Verify sequencer blocks
       run: |
         RUST_LOG=info just verify-blocks
