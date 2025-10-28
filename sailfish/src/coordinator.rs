@@ -5,7 +5,7 @@ use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
 use multisig::{Committee, CommitteeId, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
+use sailfish_types::{Action, Comm, Event, Evidence, HasTime, Message, Round};
 use sailfish_types::{ConsensusTime, Payload};
 use tokio::select;
 use tokio::time::sleep;
@@ -76,7 +76,7 @@ enum State {
 
 /// Events this coordinator can produce.
 #[derive(Debug, Clone)]
-pub enum Event<T: Committable> {
+pub enum CoordinatorEvent<T: Committable> {
     /// A new committee is in use.
     UseCommittee(Round),
     /// Gargabe collection has been performed.
@@ -249,27 +249,33 @@ where
                     Vec::new()
                 })
             }
-            m = self.comm.receive() => {
-                let m = m?;
-                let c = m.committee();
+            e = self.comm.receive() => {
+                match e? {
+                    Event::Message(m) => {
+                        let c = m.committee();
 
-                if let Some(cons) = self.consensus_mut(c) {
-                    return Ok(cons.handle_message(m))
+                        if let Some(cons) = self.consensus_mut(c) {
+                            return Ok(cons.handle_message(m))
+                        }
+
+                        // Message is for a committee we do not know, so we buffer it
+                        // if it is a handover message or certificate and does not
+                        // belong to an old committee.
+
+                        if !(m.is_handover() || m.is_handover_cert()) {
+                            return Ok(Vec::new())
+                        }
+
+                        if self.previous_committees.contains(&c) {
+                            return Ok(Vec::new())
+                        }
+
+                        self.buffer.insert(m.signing_key().copied(), m);
+                    }
+                    Event::Info(s) => {
+                        return Ok(self.current_consensus_mut().handle_info(s))
+                    }
                 }
-
-                // Message is for a committee we do not know, so we buffer it
-                // if it is a handover message or certificate and does not
-                // belong to an old committee.
-
-                if !(m.is_handover() || m.is_handover_cert()) {
-                    return Ok(Vec::new())
-                }
-
-                if self.previous_committees.contains(&c) {
-                    return Ok(Vec::new())
-                }
-
-                self.buffer.insert(m.signing_key().copied(), m);
 
                 Ok(Vec::new())
             }
@@ -277,14 +283,17 @@ where
     }
 
     /// Execute a given consensus `Action`.
-    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Event<T>>, C::Err> {
+    pub async fn execute(
+        &mut self,
+        action: Action<T>,
+    ) -> Result<Option<CoordinatorEvent<T>>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
                     self.comm.use_committee(r).await?;
-                    return Ok(Some(Event::UseCommittee(r)));
+                    return Ok(Some(CoordinatorEvent::UseCommittee(r)));
                 }
             }
             Action::SendProposal(e) => {
@@ -301,7 +310,7 @@ where
             }
             Action::Gc(r) => {
                 self.comm.gc(r.num()).await?;
-                return Ok(Some(Event::Gc(r)));
+                return Ok(Some(CoordinatorEvent::Gc(r)));
             }
             Action::SendHandover(e) => {
                 self.comm.broadcast(Message::Handover(e)).await?;
@@ -313,11 +322,11 @@ where
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
                     self.comm.use_committee(r).await?;
-                    return Ok(Some(Event::UseCommittee(r)));
+                    return Ok(Some(CoordinatorEvent::UseCommittee(r)));
                 }
             }
-            Action::Catchup(r) => return Ok(Some(Event::Catchup(r))),
-            Action::Deliver(v) => return Ok(Some(Event::Deliver(v))),
+            Action::Catchup(r) => return Ok(Some(CoordinatorEvent::Catchup(r))),
+            Action::Deliver(v) => return Ok(Some(CoordinatorEvent::Deliver(v))),
         }
         Ok(None)
     }
