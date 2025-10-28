@@ -10,8 +10,7 @@ use crate::TIMEBOOST_NO_SUBMIT;
 #[derive(serde::Serialize)]
 struct Durations {
     round: u64,
-    msg_validate: u64,
-    rbc_proposal: u64,
+    rbc_info: u64,
     delivered: u64,
     decrypt: u64,
     certify: u64,
@@ -22,9 +21,8 @@ struct Durations {
 #[derive(serde::Serialize)]
 struct Duration {
     round: u64,
+    rbc_info: u64,
     sf_delivered: u64,
-    msg_validate: u64,
-    rbc_proposal: u64,
 }
 
 pub struct TimesWriter {
@@ -60,20 +58,11 @@ impl TimesWriter {
         let Some(sf_start) = times::time_series("sf-round-start") else {
             bail!("no time series corresponds to sf-round-start")
         };
+        let Some(rbc_leader_info) = times::take_time_series("rbc-leader-info") else {
+            bail!("no time series corresponds to rbc-leader-info");
+        };
         let Some(sf_delivered) = times::time_series("sf-delivered") else {
             bail!("no time series corresponds to sf-delivered")
-        };
-        let Some(msg_validate_start) = times::take_time_series("validate-msg-start") else {
-            bail!("no time series corresponds to validate-msg-start");
-        };
-        let Some(msg_validate_end) = times::take_time_series("validate-msg-end") else {
-            bail!("no time series corresponds to validate-msg-end");
-        };
-        let Some(rbc_proposed) = times::take_time_series("rbc-proposed") else {
-            bail!("no time series corresponds to rbc-proposed");
-        };
-        let Some(rbc_delivered) = times::take_time_series("rbc-delivered") else {
-            bail!("no time series corresponds to rbc-proposed");
         };
         let Some(tb_decrypt_start) = times::time_series("tb-decrypt-start") else {
             bail!("no time series corresponds to tb-decrypt-start")
@@ -101,18 +90,7 @@ impl TimesWriter {
             let Some(sfd) = sf_delivered.records().get(r) else {
                 continue;
             };
-            let Some(rs) = rbc_proposed.records().get(r) else {
-                continue;
-            };
-            let Some(re) = rbc_delivered.records().get(r) else {
-                continue;
-            };
-            let Some(vs) = msg_validate_start.records().get(r) else {
-                continue;
-            };
-            let Some(ve) = msg_validate_end.records().get(r) else {
-                continue;
-            };
+            let info = rbc_leader_info.records().get(r);
             let Some(tbds) = tb_decrypt_start.records().get(r) else {
                 continue;
             };
@@ -134,8 +112,9 @@ impl TimesWriter {
             };
             csv.serialize(Durations {
                 round: *r,
-                msg_validate: ve.duration_since(*vs).as_millis() as u64,
-                rbc_proposal: re.duration_since(*rs).as_millis() as u64,
+                rbc_info: info
+                    .map(|i| i.saturating_duration_since(*sfs).as_millis() as u64)
+                    .unwrap_or(0),
                 delivered: sfd.duration_since(*sfs).as_millis() as u64,
                 decrypt: tbde.duration_since(*tbds).as_millis() as u64,
                 certify: tbce.duration_since(*tbcs).as_millis() as u64,
@@ -159,48 +138,29 @@ impl TimesWriter {
             return Ok(());
         }
 
-        let Some(start) = times::take_time_series("sf-round-start") else {
+        let Some(sf_start) = times::take_time_series("sf-round-start") else {
             bail!("no time series corresponds to sf-round-start");
         };
-        let Some(delivered) = times::take_time_series("sf-delivered") else {
+        let Some(rbc_leader_info) = times::take_time_series("rbc-leader-info") else {
+            bail!("no time series corresponds to rbc-leader-info");
+        };
+        let Some(sf_delivered) = times::take_time_series("sf-delivered") else {
             bail!("no time series corresponds to sf-delivered");
-        };
-        let Some(msg_validate_start) = times::take_time_series("validate-msg-start") else {
-            bail!("no time series corresponds to validate-msg-start");
-        };
-        let Some(msg_validate_end) = times::take_time_series("validate-msg-end") else {
-            bail!("no time series corresponds to validate-msg-end");
-        };
-        let Some(rbc_proposed) = times::take_time_series("rbc-proposed") else {
-            bail!("no time series corresponds to rbc-proposed");
-        };
-        let Some(rbc_delivered) = times::take_time_series("rbc-delivered") else {
-            bail!("no time series corresponds to rbc-proposed");
         };
 
         let mut csv = csv::Writer::from_writer(Vec::new());
 
-        for (r, ss) in start.records() {
-            let Some(se) = delivered.records().get(r) else {
+        for (r, ss) in sf_start.records() {
+            let Some(se) = sf_delivered.records().get(r) else {
                 continue;
             };
-            let Some(rs) = rbc_proposed.records().get(r) else {
-                continue;
-            };
-            let Some(re) = rbc_delivered.records().get(r) else {
-                continue;
-            };
-            let Some(vs) = msg_validate_start.records().get(r) else {
-                continue;
-            };
-            let Some(ve) = msg_validate_end.records().get(r) else {
-                continue;
-            };
+            let info = rbc_leader_info.records().get(r);
             csv.serialize(Duration {
                 round: *r,
+                rbc_info: info
+                    .map(|i| i.saturating_duration_since(*ss).as_millis() as u64)
+                    .unwrap_or(0),
                 sf_delivered: se.duration_since(*ss).as_millis() as u64,
-                msg_validate: ve.duration_since(*vs).as_millis() as u64,
-                rbc_proposal: re.duration_since(*rs).as_millis() as u64,
             })?
         }
 

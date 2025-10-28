@@ -17,7 +17,7 @@ use multisig::{Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
-use sailfish::{Coordinator, Event};
+use sailfish::{Coordinator, CoordinatorEvent};
 use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
     BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
@@ -417,15 +417,15 @@ impl Task {
                     break;
                 }
                 match self.sailfish.execute(action).await {
-                    Ok(Some(Event::Gc(r))) => {
+                    Ok(Some(CoordinatorEvent::Gc(r))) => {
                         if let Err(err) = self.decrypter.gc(r.num()).await {
                             warn!(node = %self.label, %err, "decrypt gc error");
                         }
                     }
-                    Ok(Some(Event::Catchup(_))) => {
+                    Ok(Some(CoordinatorEvent::Catchup(_))) => {
                         self.includer.clear_cache();
                     }
-                    Ok(Some(Event::UseCommittee(r))) => {
+                    Ok(Some(CoordinatorEvent::UseCommittee(r))) => {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c);
@@ -442,7 +442,7 @@ impl Task {
                             warn!(node = %self.label, id = %r.committee(), "committee not found");
                         }
                     }
-                    Ok(Some(Event::Deliver(_)) | None) => {}
+                    Ok(Some(CoordinatorEvent::Deliver(_)) | None) => {}
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
                         return Err(err.into());
