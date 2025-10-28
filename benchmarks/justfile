@@ -56,8 +56,8 @@ timeboost-times nodes: (build "times")
         --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
         --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
-        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 10000 --max-nodes {{nodes}}" \
-        target/release/block-checker -- -c test-configs/linux -b 10000 --max-nodes {{nodes}}
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 3000 --max-nodes {{nodes}}" \
+        target/release/block-checker -- -c test-configs/linux -b 3000 --max-nodes {{nodes}}
 
 plot-node gnuplot output csv:
     #!/usr/bin/env bash

@@ -10,6 +10,7 @@ use crate::TIMEBOOST_NO_SUBMIT;
 #[derive(serde::Serialize)]
 struct Durations {
     round: u64,
+    round_start: u64,
     rbc_info: u64,
     delivered: u64,
     decrypt: u64,
@@ -21,6 +22,7 @@ struct Durations {
 #[derive(serde::Serialize)]
 struct Duration {
     round: u64,
+    round_start: u64,
     rbc_info: u64,
     sf_delivered: u64,
 }
@@ -112,6 +114,11 @@ impl TimesWriter {
             };
             csv.serialize(Durations {
                 round: *r,
+                round_start: sf_start
+                    .records()
+                    .get(&r.saturating_sub(1))
+                    .map(|p| sfs.saturating_duration_since(*p).as_millis() as u64)
+                    .unwrap_or(0),
                 rbc_info: info
                     .map(|i| i.saturating_duration_since(*sfs).as_millis() as u64)
                     .unwrap_or(0),
@@ -157,6 +164,11 @@ impl TimesWriter {
             let info = rbc_leader_info.records().get(r);
             csv.serialize(Duration {
                 round: *r,
+                round_start: sf_start
+                    .records()
+                    .get(&r.saturating_sub(1))
+                    .map(|p| ss.saturating_duration_since(*p).as_millis() as u64)
+                    .unwrap_or(0),
                 rbc_info: info
                     .map(|i| i.saturating_duration_since(*ss).as_millis() as u64)
                     .unwrap_or(0),
