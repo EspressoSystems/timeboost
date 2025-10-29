@@ -28,12 +28,11 @@ namespace = 412346
 id = 1337
 rpc-url = "http://127.0.0.1:8545/"
 ws-url = "ws://127.0.0.1:8546/"
-ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+ibox-contract = "0xcbfd7eeb1cbd827a8b4de3752d3994e9a8641fa2"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
-base-url = "https://query.decaf.testnet.espresso.network/v1/"
-builder-base-url = "https://builder.decaf.testnet.espresso.network/v0/"
-websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
+base-url = "http://127.0.0.1:41000/v1/"
+websockets-base-url = "ws://127.0.0.1:41000/v1/"
 max-transaction-size = 1048576
