@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 use std::{
     ffi::{OsStr, OsString},
+    fmt,
     iter::once,
     process::Command,
 };
@@ -61,23 +62,27 @@ impl Cmd {
     }
 
     pub fn execute(self) -> Result<()> {
+        if self.trace {
+            eprintln!("> {self}");
+        }
         let mut cmd = Command::new(self.exe);
         cmd.args(self.args);
-        if self.trace {
-            eprintln!(
-                "> {}",
-                once(cmd.get_program())
-                    .chain(cmd.get_args())
-                    .map(|os| os.to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-        }
         let status = cmd.status()?;
         if !status.success() {
             bail!("command not successful, status = {status:?}")
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Cmd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = once(self.exe())
+            .chain(self.args().iter().map(|s| &**s))
+            .map(|os| os.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        write!(f, "{s}")
     }
 }
 

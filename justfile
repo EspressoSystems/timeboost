@@ -233,6 +233,7 @@ test-all: build-release build-test-utils
     --spawn "5:target/release/run-committee \
         -c test-configs/local/ \
         -s test-configs/scenarios/rolling-restart.toml \
+        --verbose \
         --max-nodes 5" \
     target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 500
 
@@ -278,6 +279,7 @@ test-dyn-comm: build-release-until build-test-utils
       -c test-configs/c1/ \
       --until 800 \
       --required-decrypt-rounds 3 \
+      --verbose \
       --max-nodes 4 && rm -rf test-configs/c1
 
 [linux]
@@ -323,5 +325,6 @@ netsim nodes: build-release build-test-utils
             -g $(id -g) \
             -c test-configs/linux/ \
             -s test-configs/scenarios/default.toml \
+            --verbose \
             --max-nodes {{nodes}}" \
         target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}

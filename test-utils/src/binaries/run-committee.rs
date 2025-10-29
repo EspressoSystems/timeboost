@@ -49,6 +49,9 @@ struct Args {
 
     #[clap(long)]
     times_until: Option<u64>,
+
+    #[clap(long, short)]
+    verbose: bool,
 }
 
 #[tokio::main]
@@ -83,14 +86,16 @@ async fn main() -> Result<()> {
                 let mut cmd = Cmd::new(&args.timeboost);
                 cmd.with_arg("--config").with_arg(entry.path());
                 if let Some(until) = args.until {
-                    cmd.with_arg("--until").with_arg(until.to_string());
+                    cmd.with_args(["--until", &until.to_string()]);
                 }
                 if let Some(r) = args.required_decrypt_rounds {
-                    cmd.with_arg("--required-decrypt-rounds")
-                        .with_arg(r.to_string());
+                    cmd.with_args(["--required-decrypt-rounds", &r.to_string()]);
                 }
                 if let Some(t) = args.times_until {
-                    cmd.with_arg("--times-until").with_arg(t.to_string());
+                    cmd.with_args(["--times-until", &t.to_string()]);
+                    if args.scenario.is_none() {
+                        cmd.with_arg("--ignore-stamp");
+                    }
                 }
                 commands.insert(name.to_string(), cmd);
             }
@@ -160,12 +165,16 @@ async fn main() -> Result<()> {
             if !s.delay.is_zero() {
                 sleep(s.delay.try_into()?).await
             }
-            eprintln!("> executing scenario action: {}", s.action);
+            if args.verbose {
+                eprintln!("> executing scenario action: {}", s.action);
+            }
             match &s.action {
                 Action::Remove { files } => {
                     for f in files {
                         if f.is_file() {
-                            eprintln!(">> removing file {f:?}");
+                            if args.verbose {
+                                eprintln!(">> removing file {f:?}");
+                            }
                             fs::remove_file(f).await?
                         }
                     }
@@ -197,11 +206,18 @@ async fn main() -> Result<()> {
     } else {
         for (node, cmd) in commands {
             if !subset.contains(&node) {
-                eprintln!("ignoring node {node} command");
+                if args.verbose {
+                    eprintln!("ignoring node {node} command");
+                }
                 continue;
             }
             tasks.spawn(async move {
-                let mut child = Command::from(cmd).spawn()?;
+                if args.verbose {
+                    eprintln!("spawing timeboost: \"{cmd}\"");
+                }
+                let mut cmd = Command::from(cmd);
+                cmd.kill_on_drop(true);
+                let mut child = cmd.spawn()?;
                 child.wait().await
             });
         }
