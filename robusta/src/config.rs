@@ -15,7 +15,7 @@ pub struct Config {
     pub(crate) base_url: Url,
 
     /// Espresso network builder base URL.
-    pub(crate) builder_base_url: Url,
+    pub(crate) builder_base_url: Option<Url>,
 
     /// Espresso network websocket base URL.
     pub(crate) wss_base_url: Url,

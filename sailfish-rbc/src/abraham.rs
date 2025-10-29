@@ -6,7 +6,7 @@ use bytes::{BufMut, BytesMut};
 use cliquenet::{AddressableCommittee, Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, CommitteeId, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, CommitteeVec, Evidence, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Comm, CommitteeVec, Event, Evidence, Message, Round, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -78,7 +78,6 @@ pub struct RbcConfig {
     committees: CommitteeVec<2>,
     committee_id: CommitteeId,
     recover: bool,
-    early_delivery: bool,
     metrics: RbcMetrics,
 }
 
@@ -94,16 +93,8 @@ impl RbcConfig {
             committee_id: id,
             committees: c,
             recover: true,
-            early_delivery: true,
             metrics: RbcMetrics::default(),
         }
-    }
-
-    /// Should RBC deliver first messages as soon as 2f + 1 messages
-    /// have been received in a round?
-    pub fn with_early_delivery(mut self, val: bool) -> Self {
-        self.early_delivery = val;
-        self
     }
 
     /// Set the RBC metrics value to use.
@@ -139,7 +130,7 @@ impl RbcConfig {
 #[derive(Debug)]
 pub struct Rbc<T: Committable> {
     // Inbound, RBC-delivered messages.
-    rx: mpsc::Receiver<Message<T, Validated>>,
+    rx: mpsc::Receiver<Event<T, Validated>>,
     // Directives to the RBC worker.
     tx: mpsc::Sender<Command<T>>,
     // The worker task handle.
@@ -202,7 +193,7 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err> {
         self.rx.recv().await.ok_or(RbcError::Shutdown)
     }
 

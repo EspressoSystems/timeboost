@@ -13,7 +13,7 @@ use multisig::{Committee, CommitteeId, Keypair, x25519};
 use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
-use sailfish::{Coordinator, Event};
+use sailfish::{Coordinator, CoordinatorEvent};
 use test_utils::ports::alloc_ports;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
@@ -279,7 +279,7 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
                     },
                     act = n.next() => {
                         for a in act.unwrap() {
-                            if let Some(Event::Deliver(p)) = n.execute(a).await.unwrap() {
+                            if let Some(CoordinatorEvent::Deliver(p)) = n.execute(a).await.unwrap() {
                                 tx.send((p.round(), p.source(), p.into_data())).unwrap()
                             }
                         }
@@ -319,7 +319,7 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
                     _ = cmd.recv() => unreachable!(),
                     x = n.next() => {
                         for a in x.unwrap() {
-                            if let Some(Event::Deliver(p)) = n.execute(a).await.unwrap() {
+                            if let Some(CoordinatorEvent::Deliver(p)) = n.execute(a).await.unwrap() {
                                 tx.send((p.round(), p.source(), p.into_data())).unwrap()
                             }
                         }

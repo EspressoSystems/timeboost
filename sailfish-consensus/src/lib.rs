@@ -8,10 +8,10 @@ use std::time::Instant;
 use committable::Committable;
 use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
+use sailfish_types::{Info, math};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -284,6 +284,32 @@ where
         );
 
         actions
+    }
+
+    /// Handle information events.
+    pub fn handle_info(&mut self, i: Info) -> Vec<Action<T>> {
+        trace!(
+            target: "sf-trace",
+            node  = %self.public_key(),
+            round = %self.round,
+            trace = ?[Trace::<T>::Info(&i).to_string()]
+        );
+        match i {
+            Info::LeaderThresholdReached(r) => {
+                if r <= self.committed_round {
+                    return Vec::new();
+                }
+                let Some(l) = self.leader_vertex(r).cloned() else {
+                    return Vec::new();
+                };
+                debug!(
+                    node  = %self.public_key(),
+                    round = %r,
+                    "commit leader upon 2t+1 first messages of next round"
+                );
+                self.commit_leader(l)
+            }
+        }
     }
 
     /// An internal timeout occurred.
@@ -1180,6 +1206,7 @@ enum Trace<'a, T: Committable> {
     Timeout(Round),
     Action(&'a Action<T>),
     Message(&'a Message<T, Validated>),
+    Info(&'a Info),
 }
 
 impl<T: Committable> fmt::Display for Trace<'_, T> {
@@ -1188,6 +1215,7 @@ impl<T: Committable> fmt::Display for Trace<'_, T> {
             Self::Timeout(r) => write!(f, "T({r})"),
             Self::Action(a) => write!(f, "A({a})"),
             Self::Message(m) => write!(f, "M({m})"),
+            Self::Info(i) => write!(f, "I({i})"),
         }
     }
 }

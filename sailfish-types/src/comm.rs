@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
 
-use crate::{Message, Round, RoundNumber};
+use crate::{Event, Message, Round, RoundNumber};
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
@@ -19,7 +19,7 @@ pub trait Comm<T: Committable> {
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err>;
 
     /// Await the next message.
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err>;
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err>;
 
     /// Garbage collect up to the given round number.
     async fn gc(&mut self, _: RoundNumber) -> Result<(), Self::Err> {
@@ -50,7 +50,7 @@ impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
         (**self).send(to, msg).await
     }
 
-    async fn receive(&mut self) -> Result<Message<A, Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Event<A, Validated>, Self::Err> {
         (**self).receive().await
     }
 }

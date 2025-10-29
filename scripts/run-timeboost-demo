@@ -25,6 +25,7 @@ ignore_stamp=false
 nitro_url=
 yapper=false
 max_nodes=5
+senders=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--nitro)
             nitro_url="$2"
+            shift 2
+            ;;
+        -s|--nitro-senders)
+            senders="$2"
             shift 2
             ;;
         --ignore-stamp)
@@ -83,6 +88,9 @@ Options:
 
     -n | --nitro <URL>
         Address the local Nitro node is running.
+
+    -s | --nitro-senders <NUMBER>
+        How many sending accounts to generate for yapper.
 
     --yapper
         Run external transaction generator.
@@ -140,6 +148,10 @@ for f in "$config_dir"/node_*.toml; do
         cmd+=(--required-decrypt-rounds 3)
     fi
 
+    if [ $nitro_url ]; then 
+        cmd+=(--https-only false)
+    fi
+
     echo "${cmd[@]}"
     RUST_LOG=$RUST_LOG "${cmd[@]}" &
 
@@ -152,7 +164,10 @@ if $yapper; then
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi
-    "${cmd[@]}" &
+    if [ $senders ]; then
+        cmd+=(--nitro-senders "$senders")
+    fi
+    RUST_LOG="yapper=info" "${cmd[@]}" &
 fi
 
 wait "${pids[@]}"
