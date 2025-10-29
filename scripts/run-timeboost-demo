@@ -89,7 +89,7 @@ Options:
     -n | --nitro <URL>
         Address the local Nitro node is running.
 
-    -s | --nitro-senders <URL>
+    -s | --nitro-senders <NUMBER>
         How many sending accounts to generate for yapper.
 
     --yapper
