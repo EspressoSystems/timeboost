@@ -34,6 +34,5 @@ key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
 base-url = "http://127.0.0.1:41000/v1/"
-builder-base-url = "http://127.0.0.1:41000/v1/"
 websockets-base-url = "ws://127.0.0.1:41000/v1/"
 max-transaction-size = 1048576

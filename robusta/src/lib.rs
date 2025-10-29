@@ -69,10 +69,10 @@ impl Client {
         N: Into<NamespaceId>,
     {
         let trx = Transaction::new(nsid.into(), minicbor::to_vec(SendBody { blocks })?);
-        let url = if self.config.https_only {
-            self.config.builder_base_url.join("txn_submit/submit")?
+        let url = if let Some(u) = &self.config.builder_base_url {
+            u.join("txn_submit/submit")?
         } else {
-            self.config.builder_base_url.join("submit/submit")?
+            self.config.base_url.join("submit/submit")?
         };
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;

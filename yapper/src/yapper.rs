@@ -278,16 +278,19 @@ impl Yapper {
                 let Ok(nonce) = parent.get_transaction_count(DEV_ACCT_ADDRESS).await else {
                     warn!(addr=%k.address(), "failed to get nonce");
                     failures += 1;
+                    sleep(Duration::from_secs(1)).await;
                     continue;
                 };
                 if let Err(err) = Self::fund_address(parent, chain_id, k, nonce).await {
                     warn!(addr=%k.address(), %err, "failed to fund address");
                     failures += 1;
+                    sleep(Duration::from_secs(1)).await;
                     continue;
                 }
                 if let Err(err) = Self::bridge_funds(parent, chain_id, k, bridge_addr).await {
                     warn!(addr=%k.address(), %err, "failed to bridge funds");
                     failures += 1;
+                    sleep(Duration::from_secs(1)).await;
                     continue;
                 }
                 info!("bridged ETH to L2 for address {}", k.address());

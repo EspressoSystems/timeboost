@@ -62,7 +62,7 @@ pub struct NodeKeypair<SK, PK> {
 #[serde(rename_all = "kebab-case")]
 pub struct Espresso {
     pub base_url: Url,
-    pub builder_base_url: Url,
+    pub builder_base_url: Option<Url>,
     pub websockets_base_url: Url,
     pub max_transaction_size: usize,
 }

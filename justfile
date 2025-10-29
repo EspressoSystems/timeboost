@@ -161,7 +161,6 @@ mkconfig-nitro-ci DATETIME *ARGS:
     --parent-ws-url "ws://127.0.0.1:8546" \
     --parent-chain-id 1337 \
     --espresso-base-url "http://127.0.0.1:41000/v1/" \
-    --espresso-builder-base-url "http://127.0.0.1:41000/v1/" \
     --espresso-websocket-url "ws://127.0.0.1:41000/v1/" \
     --parent-ibox-contract "0xCbfD7eeB1Cbd827a8B4dE3752D3994E9A8641FA2" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
