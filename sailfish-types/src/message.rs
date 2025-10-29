@@ -9,6 +9,20 @@ use tracing::warn;
 use crate::{CommitteeVec, Round, RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum Event<T: Committable, Status = Validated> {
+    Message(Message<T, Status>),
+    Info(Info),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub enum Info {
+    /// At least 2t + 1 vertex proposals with an edge to the leader of the
+    /// given round number have been received.
+    LeaderThresholdReached(RoundNumber),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
     /// A vertex proposal from a node.
     Vertex(Envelope<Vertex<T>, Status>),
@@ -136,8 +150,8 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // The following check does not apply to the genesis round:
-                if round.num() != RoundNumber::genesis() {
+                // The following check does not apply to the genesis round or after handover:
+                if !(round.num().is_genesis() || env.data().is_first_after_handover()) {
                     // The number of vertex edges must be >= to the committee quorum:
                     if env.data().num_edges() < c.quorum_size().get() {
                         warn!(%signer, "vertex has not enough edges");
@@ -713,6 +727,14 @@ impl fmt::Display for Handover {
             self.next,
             self.round.num()
         )
+    }
+}
+
+impl fmt::Display for Info {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LeaderThresholdReached(r) => write!(f, "LeaderThresholdReached({r})"),
+        }
     }
 }
 

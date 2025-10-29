@@ -8,10 +8,10 @@ use std::time::Instant;
 use committable::Committable;
 use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
+use sailfish_types::{Info, math};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -200,6 +200,8 @@ where
             );
             let env = Envelope::signed(vtx, &self.keypair);
             let rnd = Round::new(r, self.committee.id());
+            #[cfg(feature = "times")]
+            times::record("sf-round-start", *env.data().round().data().num());
             vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
         } else {
             self.advance_from_round(r, e)
@@ -282,6 +284,32 @@ where
         );
 
         actions
+    }
+
+    /// Handle information events.
+    pub fn handle_info(&mut self, i: Info) -> Vec<Action<T>> {
+        trace!(
+            target: "sf-trace",
+            node  = %self.public_key(),
+            round = %self.round,
+            trace = ?[Trace::<T>::Info(&i).to_string()]
+        );
+        match i {
+            Info::LeaderThresholdReached(r) => {
+                if r <= self.committed_round {
+                    return Vec::new();
+                }
+                let Some(l) = self.leader_vertex(r).cloned() else {
+                    return Vec::new();
+                };
+                debug!(
+                    node  = %self.public_key(),
+                    round = %r,
+                    "commit leader upon 2t+1 first messages of next round"
+                );
+                self.commit_leader(l)
+            }
+        }
     }
 
     /// An internal timeout occurred.
@@ -732,6 +760,8 @@ where
     fn broadcast_vertex(&mut self, v: Vertex<T>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), vertex = %v, "broadcast vertex");
         let e = Envelope::signed(v, &self.keypair);
+        #[cfg(feature = "times")]
+        times::record("sf-round-start", *e.data().round().data().num());
         vec![Action::SendProposal(e)]
     }
 
@@ -921,6 +951,8 @@ where
                 let b = to_deliver.payload().clone();
                 let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
+                #[cfg(feature = "times")]
+                times::record_once("sf-delivered", *r.num());
                 actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
                 self.delivered.insert((r.num(), s));
             }
@@ -1155,6 +1187,9 @@ where
         );
         let env = Envelope::signed(vertex, &self.keypair);
 
+        #[cfg(feature = "times")]
+        times::record("sf-round-start", *env.data().round().data().num());
+
         actions.extend([
             Action::UseCommittee(round),
             Action::SendProposal(env),
@@ -1171,6 +1206,7 @@ enum Trace<'a, T: Committable> {
     Timeout(Round),
     Action(&'a Action<T>),
     Message(&'a Message<T, Validated>),
+    Info(&'a Info),
 }
 
 impl<T: Committable> fmt::Display for Trace<'_, T> {
@@ -1179,6 +1215,7 @@ impl<T: Committable> fmt::Display for Trace<'_, T> {
             Self::Timeout(r) => write!(f, "T({r})"),
             Self::Action(a) => write!(f, "A({a})"),
             Self::Message(m) => write!(f, "M({m})"),
+            Self::Info(i) => write!(f, "I({i})"),
         }
     }
 }

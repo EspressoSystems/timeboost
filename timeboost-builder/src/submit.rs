@@ -193,6 +193,11 @@ impl Sender {
                     }
                     if size + n <= self.size_limit {
                         size += n;
+                        trace!(
+                            node  = %self.label,
+                            block = %b.cert().data().num(),
+                            "adding block to transaction"
+                        );
                         transaction.push(b)
                     } else {
                         outbox.push_front(b);

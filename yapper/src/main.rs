@@ -6,12 +6,15 @@
 
 use std::path::PathBuf;
 
-use alloy::{primitives::Address, providers::ProviderBuilder};
-use anyhow::{Context, Result};
-
+use alloy::providers::ProviderBuilder;
+use anyhow::{Result, ensure};
 use clap::Parser;
 use reqwest::Url;
-use timeboost::{config::CommitteeConfig, crypto::prelude::ThresholdEncKey};
+use timeboost::{
+    config::{CommitteeConfig, NodeConfig},
+    crypto::prelude::ThresholdEncKey,
+};
+
 use timeboost_contract::KeyManager;
 use timeboost_utils::types::logging::init_logging;
 use timeboost_utils::wait_for_live_peer;
@@ -29,9 +32,9 @@ mod yapper;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Path to file containing the committee member's public info.
+    /// Path to folder containing the configs
     ///
-    /// The file contains backend urls and public key material.
+    /// The files contain backend urls and public key material.
     #[clap(long, short)]
     config: PathBuf,
 
@@ -39,63 +42,73 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
-    /// Chain id for l2 chain
-    /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
-    #[clap(long, default_value_t = 412346)]
-    chain_id: u64,
+    /// Specify the fraction of encrypted bundles
+    #[clap(long, short, default_value_t = 0.5)]
+    enc_ratio: f64,
 
-    /// Nitro node url.
+    /// Specify the fraction of priority bundles
+    #[clap(long, short, default_value_t = 0.5)]
+    prio_ratio: f64,
+
+    /// Nitro node url
     #[clap(long)]
     nitro_url: Option<Url>,
 
-    /// Parent chain where KeyManager is deployed
-    #[clap(long)]
-    parent_url: Option<Url>,
+    /// Number of sender addresses on Nitro L2
+    #[clap(long, default_value_t = 20)]
+    nitro_senders: u32,
 
-    /// KeyManager contract address on the parent chain
     #[clap(long)]
-    key_manager_contract: Option<Address>,
+    max_nodes: usize,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging();
 
-    info!("starting yapper");
     let cli = Cli::parse();
+    ensure!(
+        0f64 <= cli.enc_ratio && cli.enc_ratio <= 1f64,
+        "enc_ratio must be a fraction between 0 and 1"
+    );
+    ensure!(
+        0f64 <= cli.prio_ratio && cli.prio_ratio <= 1f64,
+        "prio_ratio must be a fraction between 0 and 1"
+    );
 
-    // Unpack the keyset file which has the urls
-    let keyset = CommitteeConfig::read(&cli.config)
-        .await
-        .with_context(|| format!("opening the config at path {:?}", cli.config))?;
+    let mut conf = CommitteeConfig::read(cli.config.join("committee.toml")).await?;
+    conf.members.truncate(cli.max_nodes);
+    let node = NodeConfig::read(cli.config.join("node_0.toml")).await?;
 
     let mut addresses = Vec::new();
-    for node in keyset.members {
+    for node in conf.members {
         info!("waiting for peer: {}", node.http_api);
         wait_for_live_peer(&node.http_api).await?;
         addresses.push(node.http_api);
     }
 
-    let threshold_enc_key = if let Some(rpc) = cli.parent_url {
-        let km_addr = cli
-            .key_manager_contract
-            .expect("provide both parent chain and key manager contract");
-        let provider = ProviderBuilder::new().connect_http(rpc);
-        let contract = KeyManager::new(km_addr, provider);
+    let km_addr = node.chain.parent.key_manager_contract;
+    let rpc = node.chain.parent.rpc_url.clone();
 
-        Some(ThresholdEncKey::from_bytes(
-            &contract.thresholdEncryptionKey().call().await?.0,
-        )?)
-    } else {
-        None
-    };
+    let provider = ProviderBuilder::new().connect_http(rpc.clone());
+    let contract = KeyManager::new(km_addr, provider);
+
+    let enc_key =
+        ThresholdEncKey::from_bytes(&contract.thresholdEncryptionKey().call().await?.0).ok();
 
     let config = YapperConfig::builder()
         .addresses(addresses)
         .tps(cli.tps)
+        .enc_ratio(cli.enc_ratio)
+        .prio_ratio(cli.prio_ratio)
+        .maybe_threshold_enc_key(enc_key)
+        // nitro-relevant configs
         .maybe_nitro_url(cli.nitro_url)
-        .maybe_threshold_enc_key(threshold_enc_key)
-        .chain_id(cli.chain_id)
+        .parent_url(rpc)
+        .parent_id(node.chain.parent.id)
+        .chain_id(node.chain.namespace)
+        .bridge_addr(node.chain.parent.ibox_contract)
+        .nitro_senders(cli.nitro_senders)
         .build();
     let yapper = Yapper::new(config).await?;
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -9,7 +9,9 @@ use clap::Parser;
 use test_utils::net::Config;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
+use timeboost::config::CommitteeConfig;
 use tokio::time::sleep;
+
 use tokio::{
     fs::{self, read_dir},
     process::Command,
@@ -27,6 +29,9 @@ struct Args {
     #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
 
+    #[clap(long)]
+    max_nodes: usize,
+
     #[clap(long, short)]
     uid: Option<u32>,
 
@@ -41,6 +46,9 @@ struct Args {
 
     #[clap(long)]
     required_decrypt_rounds: Option<u64>,
+
+    #[clap(long)]
+    times_until: Option<u64>,
 }
 
 #[tokio::main]
@@ -60,6 +68,7 @@ async fn main() -> Result<()> {
     }
 
     let mut netconf: Option<Config> = None;
+    let mut committee: Option<CommitteeConfig> = None;
     let mut commands = BTreeMap::new();
     let mut entries = read_dir(&args.configs).await?;
 
@@ -80,15 +89,21 @@ async fn main() -> Result<()> {
                     cmd.with_arg("--required-decrypt-rounds")
                         .with_arg(r.to_string());
                 }
+                if let Some(t) = args.times_until {
+                    cmd.with_arg("--times-until").with_arg(t.to_string());
+                }
                 commands.insert(name.to_string(), cmd);
             }
-            ConfigType::Committee | ConfigType::Unknown => continue,
+            ConfigType::Committee => {
+                ensure!(committee.is_none());
+                committee = Some(CommitteeConfig::read(&entry.path()).await?)
+            }
+            ConfigType::Unknown => continue,
         }
     }
 
     #[cfg(target_os = "linux")]
     if let Some(conf) = netconf {
-        ensure!(conf.device.len() == commands.len());
         for d in conf.device {
             let Some(c) = commands.get_mut(&d.node) else {
                 eprintln!("> no command for device {} node {}", d.name, d.node);
@@ -111,11 +126,35 @@ async fn main() -> Result<()> {
         }
     }
 
+    let Some(conf) = committee else {
+        bail!("missing committee config")
+    };
+
+    let subset: HashSet<String> = conf
+        .members
+        .into_iter()
+        .take(args.max_nodes)
+        .map(|m| m.node)
+        .collect();
+
     let tasks = TaskTracker::new();
 
-    if let Some(path) = args.scenario {
+    if let Some(path) = &args.scenario {
         let bytes = fs::read(path).await?;
         let scenario: Scenario = toml::from_slice(&bytes)?;
+        for s in &scenario.steps {
+            match &s.action {
+                Action::StartNode { node, .. } | Action::StopNode { node, .. } => {
+                    if !subset.contains(node) {
+                        bail!("can not resolve node {node} of scenario {path:?}");
+                    }
+                    if !commands.contains_key(node) {
+                        bail!("node {node} of scenario {path:?} not found");
+                    }
+                }
+                Action::Remove { .. } | Action::Exit => {}
+            }
+        }
         let mut nodes = BTreeMap::new();
         for s in &scenario.steps {
             if !s.delay.is_zero() {
@@ -156,7 +195,11 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        for cmd in commands.into_values() {
+        for (node, cmd) in commands {
+            if !subset.contains(&node) {
+                eprintln!("ignoring node {node} command");
+                continue;
+            }
             tasks.spawn(async move {
                 let mut child = Command::from(cmd).spawn()?;
                 child.wait().await

@@ -12,6 +12,7 @@ pub mod math;
 pub use comm::{Comm, CommError};
 pub use committee::CommitteeVec;
 pub use message::{Action, Evidence, Payload};
+pub use message::{Event, Info};
 pub use message::{Handover, HandoverMessage};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use nodeinfo::NodeInfo;

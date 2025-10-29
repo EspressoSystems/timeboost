@@ -6,7 +6,7 @@ use committable::Committable;
 use crossbeam_queue::SegQueue;
 use multisig::{PublicKey, Validated};
 
-use sailfish_types::{Comm, Empty, Message};
+use sailfish_types::{Comm, Empty, Event, Message};
 
 use super::message_interceptor::NetworkMessageInterceptor;
 
@@ -124,19 +124,24 @@ where
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
-        match self.comm.receive().await {
-            Ok(msg) => match self.interceptor.intercept_message(msg, self.id) {
-                Ok(m) => {
-                    self.msgs.ibox.push(m.clone());
-                    return Ok(m);
+    async fn receive(&mut self) -> Result<Event<T, Validated>, Self::Err> {
+        loop {
+            match self.comm.receive().await {
+                Ok(Event::Message(msg)) => match self.interceptor.intercept_message(msg, self.id) {
+                    Ok(m) => {
+                        self.msgs.ibox.push(m.clone());
+                        return Ok(Event::Message(m));
+                    }
+                    Err(e) => {
+                        return Err(TestNetError::Intercept(e));
+                    }
+                },
+                Ok(Event::Info(_)) => {
+                    // ignored
                 }
                 Err(e) => {
-                    return Err(TestNetError::Intercept(e));
+                    return Err(TestNetError::Recv(e));
                 }
-            },
-            Err(e) => {
-                return Err(TestNetError::Recv(e));
             }
         }
     }

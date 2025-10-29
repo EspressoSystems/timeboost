@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,15 +21,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
-    - uses: actions/cache@v4
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
       with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        shared-key: "build"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: build
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -36,7 +38,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
     - name: Build
-      run: just build_release
+      run: just build-release
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
@@ -50,6 +52,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "tests"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: tests
     - uses: taiki-e/install-action@nextest
     - name: Install protobuf compiler
       run: |
@@ -61,7 +70,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
-      run: just test_ci
+      run: just test-ci
 
   lint:
     runs-on: ubuntu-latest
@@ -70,6 +79,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "lint"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: lint
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -94,7 +110,7 @@ jobs:
     - uses: docker/setup-buildx-action@v3
     - uses: taiki-e/install-action@just
     - name: Build Docker
-      run: just build_docker
+      run: just build-docker
 
   integration:
     runs-on: ubuntu-latest
@@ -104,6 +120,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "integration"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: integration
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -114,9 +137,9 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
-      run: just run_demo --ignore-stamp --yapper -c test-configs/c0
+      run: just run-demo --ignore-stamp --yapper -c test-configs/c0
     - name: Run tests with late-start node
-      run: just run_demo -l --ignore-stamp --yapper -c test-configs/c0
+      run: just run-demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
       run: just run-sailfish-demo
     - name: Test with block-maker
@@ -132,6 +155,13 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "netsim"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: netsim
     - name: Show net devices
       run: ip -o addr show scope global
     - name: Install protobuf compiler
@@ -144,7 +174,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run network simulation
-      run: just forward-ipv4 true create-net netsim
+      run: just forward-ipv4 true create-net netsim 5
 
   contracts:
     runs-on: ubuntu-latest
@@ -173,6 +203,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
+    - uses: Swatinem/rust-cache@v2
+      name: Enable Rust Caching
+      with:
+        shared-key: "nitro"
+        cache-on-failure: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+        prefix-key: nitro
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -180,20 +217,15 @@ jobs:
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run Test Node with Timeboost
       run: |
-        ./test-node/test-node.bash \
-          --build-dev-nitro \
-          --batchposters 0 \
-          --redundantsequencers 1 \
-          --decentralized-timeboost \
-          --init &
+        just run-integration-nitro-ci
     - name: Run test timeboost with nitro sequencer
-      run: just run_demo --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro http://localhost:8547
+      run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --nitro-senders 2 --yapper --nitro http://localhost:8547
     - name: Verify sequencer blocks
       run: |
-        RUST_LOG=info just verify_blocks
+        RUST_LOG=info just verify-blocks
     - name: Docker Logs Sequencer 1
       if: failure()
-      run: docker logs test-node-sequencer-1
+      run: docker logs timeboost-nitro0-1
     - name: Docker Logs Sequencer 2
       if: failure()
-      run: docker logs test-node-sequencer_b-1
+      run: docker logs timeboost-nitro0-1

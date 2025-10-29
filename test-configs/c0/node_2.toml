@@ -33,5 +33,6 @@ key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
 base-url = "https://query.decaf.testnet.espresso.network/v1/"
+builder-base-url = "https://builder.decaf.testnet.espresso.network/v0/"
 websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
 max-transaction-size = 1048576

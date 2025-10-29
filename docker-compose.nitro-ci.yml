@@ -1,0 +1,151 @@
+services:
+  demo-l1-network:
+    image: ghcr.io/espressosystems/geth-l1:main
+    command: --dev --dev.period=1
+    ports:
+      - 8545:8545
+      - 8546:8546
+    volumes:
+      - "./geth-config/genesis-default.json:/genesis.json"
+      - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+    networks:
+      - timeboost
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  espresso-dev-node:
+    pid: host
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:main
+    ports:
+      - "41000:41000"
+      - "41003:41003"
+      - "20000:20000"
+    environment:
+      - ESPRESSO_BUILDER_PORT=41003
+      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX=5
+      - ESPRESSO_DEV_NODE_PORT=20000
+      - ESPRESSO_SEQUENCER_API_PORT=41000
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      - ESPRESSO_SEQUENCER_L1_PROVIDER=http://demo-l1-network:8545
+      - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
+      - ESPRESSO_DEV_NODE_EPOCH_HEIGHT=1000000
+      - ESPRESSO_DEV_NODE_MAX_BLOCK_SIZE=10485760
+      - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
+      - RUST_LOG=WARN
+      - RUST_LOG_FORMAT
+      - ESPRESSO_DEV_NODE_VERSION=0.4
+    volumes:
+      - espresso_storage:/data/espresso
+    depends_on:
+      demo-l1-network:
+        condition: service_healthy
+    networks:
+      - timeboost
+  rollup-creator:    
+    #pid: host
+    #build:
+    #  context: rollupcreator/
+    #  args:
+    #    NITRO_CONTRACTS_BRANCH: v3.1.0
+    image: ghcr.io/espressosystems/timeboost/rollup-creator:main
+    volumes:
+      - "config:/config"
+      - "./nitro-config:/nitro-config"
+    environment:
+      PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
+      DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
+      PARENT_CHAIN_ID: 1337
+      CHILD_CHAIN_NAME: "arb-dev-test"
+      MAX_DATA_SIZE: 117964
+      OWNER_ADDRESS: 0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
+      WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+      SEQUENCER_ADDRESS: 0x2F1eAe7Dd46D88f08fC2f8ED27Fcb2Ab183eb2d0
+      AUTHORIZE_VALIDATORS: 10
+      CHILD_CHAIN_CONFIG_PATH: "/nitro-config/l2_chain_config.json"
+      CHAIN_DEPLOYMENT_INFO: "/config/deployment.json"
+      CHILD_CHAIN_INFO: "/config/deployed_chain_info.json"
+    command: ["create-rollup-testnode"]
+    networks:
+      - timeboost 
+    depends_on:
+      demo-l1-network:
+        condition: service_healthy
+  nitro0:
+    pid: host # allow debugging
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    entrypoint: /usr/local/bin/nitro
+    ports:
+      - "127.0.0.1:8547:8547"
+      - "127.0.0.1:8548:8548"
+      - "127.0.0.1:9642:9642"
+      - "127.0.0.1:55000:55000"
+    volumes:
+      - "nitro0:/home/user/.arbitrum/local/nitro"
+      - "l1keystore:/home/user/l1keystore"
+      - "config:/config"
+      - "./nitro-config:/nitro-config"
+      - "tokenbridge-data:/tokenbridge-data"
+    command:
+      - --conf.file=/nitro-config/sequencer_config.json
+      - --node.feed.output.enable
+      - --node.feed.output.port=9642
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --graphql.enable
+      - --graphql.vhosts=*
+      - --graphql.corsdomain=*
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=host.docker.internal:8003
+    networks:
+       - timeboost
+    depends_on:
+      rollup-creator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      interval: 5s
+      timeout: 3s
+      retries: 12        
+  nitro1:
+    pid: host # allow debugging
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    entrypoint: /usr/local/bin/nitro
+    ports:
+      - "127.0.0.1:8647:8547"
+      - "127.0.0.1:8648:8548"
+      - "127.0.0.1:9742:9642"
+      - "127.0.0.1:55010:55000"
+    volumes:
+      - "nitro1:/home/user/.arbitrum/local/nitro"
+      - "l1keystore:/home/user/l1keystore"
+      - "config:/config"
+      - "./nitro-config:/nitro-config"
+      - "tokenbridge-data:/tokenbridge-data"
+    command:
+      - --conf.file=/nitro-config/sequencer_config.json
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s    
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=host.docker.internal:8013
+    networks:
+       - timeboost
+    depends_on:
+      rollup-creator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+networks:
+  timeboost:
+    driver: bridge
+
+volumes:
+  config:
+  l1keystore:
+  espresso_storage:
+  nitro0:
+  nitro1:
+  tokenbridge-data:
