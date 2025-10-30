@@ -220,7 +220,7 @@ test-individually: build-port-alloc
 test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
-test-all: build-release build-test-utils
+test-all nodes="5": build-release build-test-utils
   env RUST_LOG=timeboost_builder::submit=trace,block_checker=info,warn \
   target/release/run \
     --verbose \
@@ -228,14 +228,14 @@ test-all: build-release build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes 5" \
-    --spawn "4:target/release/yapper -c test-configs/local/ --max-nodes 5" \
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes {{nodes}}" \
+    --spawn "4:target/release/yapper -c test-configs/local/ --max-nodes {{nodes}}" \
     --spawn "5:target/release/run-committee \
         -c test-configs/local/ \
         -s test-configs/scenarios/rolling-restart.toml \
         --verbose \
-        --max-nodes 5" \
-    target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 500
+        --max-nodes {{nodes}}" \
+    target/release/block-checker -- -c test-configs/local --max-nodes {{nodes}} -b 500
 
 test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
