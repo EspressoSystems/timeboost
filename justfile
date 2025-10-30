@@ -221,7 +221,8 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all nodes="5": build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=trace,block_checker=info,warn \
+  env RUST_LOG=error,yapper=error,sf-trace,timeboost_sequencer=info,block_maker=debug \
+  TIMEBOOST_NO_SUBMIT=1 \
   target/release/run \
     --verbose \
     --timeout 120 \

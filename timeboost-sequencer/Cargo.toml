@@ -11,6 +11,7 @@ ark-std = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
+bs58 = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }

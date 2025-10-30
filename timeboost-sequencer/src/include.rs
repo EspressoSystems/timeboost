@@ -1,14 +1,15 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use multisig::Committee;
+use multisig::{Committee, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
     Timestamp,
 };
 use timeboost_types::{RetryList, math};
+use tracing::info;
 
 const CACHE_SIZE: usize = 8;
 
@@ -21,6 +22,7 @@ pub struct Outcome {
 
 #[derive(Debug)]
 pub struct Includer {
+    label: PublicKey,
     committee: Committee,
     next_committee: Option<(RoundNumber, Committee)>,
     /// Consensus round.
@@ -38,9 +40,10 @@ pub struct Includer {
 }
 
 impl Includer {
-    pub fn new(c: Committee) -> Self {
+    pub fn new(label: PublicKey, c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
+            label,
             committee: c,
             next_committee: None,
             round: RoundNumber::genesis(),
@@ -56,12 +59,14 @@ impl Includer {
         &mut self,
         round: RoundNumber,
         evidence: Evidence,
-        lists: Vec<CandidateList>,
+        lists: Vec<(RoundNumber, CandidateList)>,
     ) -> Outcome {
         if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r <= round) {
             self.committee = c;
             self.clear_cache()
         }
+
+        info!(node = %self.label, lists = ?lists.iter().map(|(r, _)| **r).collect::<Vec<_>>());
 
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
@@ -77,7 +82,7 @@ impl Includer {
         self.time = {
             let mut times = lists
                 .iter()
-                .map(|cl| u64::from(cl.timestamp()))
+                .map(|cl| u64::from(cl.1.timestamp()))
                 .collect::<Vec<_>>();
             max(
                 self.time.into(),
@@ -89,7 +94,7 @@ impl Includer {
         self.index = {
             let mut indices = lists
                 .iter()
-                .map(|cl| u64::from(cl.delayed_inbox_index()))
+                .map(|cl| u64::from(cl.1.delayed_inbox_index()))
                 .collect::<Vec<_>>();
             max(
                 self.index.into(),
@@ -110,7 +115,7 @@ impl Includer {
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
-        for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
+        for (pbs, rbs) in lists.into_iter().map(|(_, cl)| cl.into_bundles()) {
             for rb in rbs {
                 *regular.entry(rb).or_default() += 1
             }
@@ -170,10 +175,15 @@ impl Includer {
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);
 
+        info!(
+            node = %self.label,
+            cache = ?self.cache.iter().map(|(r, s)| (**r, s.iter().map(|h| bs58::encode(h).into_string()).collect::<BTreeSet<_>>())).collect::<Vec<_>>()
+        );
+
         Outcome {
             ilist,
             retry,
-            is_valid: self.is_valid_cache(),
+            is_valid: self.cache.len() >= CACHE_SIZE,
         }
     }
 
@@ -225,11 +235,5 @@ impl Includer {
             .last_key_value()
             .expect("non-empty bundle sequence => last entry")
             .0)
-    }
-
-    /// Check if the cache is valid, i.e. contains at least 8 recent rounds (not necessarily
-    /// consecutive).
-    fn is_valid_cache(&self) -> bool {
-        self.cache.len() >= CACHE_SIZE
     }
 }

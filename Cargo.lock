@@ -11371,6 +11371,7 @@ dependencies = [
  "bincode 2.0.1",
  "blake3",
  "bon",
+ "bs58",
  "bytes 1.10.1",
  "cliquenet",
  "ethereum_ssz",
