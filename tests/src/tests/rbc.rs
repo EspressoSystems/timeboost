@@ -65,7 +65,7 @@ fn mk_host<A, const N: usize>(
             .await?;
             let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
             let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-            let cons = Consensus::new(k, c, EmptyBlocks);
+            let cons = Consensus::new(k, c, EmptyBlocks).unwrap();
             let mut coor = Coordinator::new(rbc, cons, false);
             let mut actions = coor.init();
             loop {
@@ -112,7 +112,7 @@ fn small_committee() {
         let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks).unwrap();
         let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
@@ -170,7 +170,7 @@ fn medium_committee() {
         let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks).unwrap();
         let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
@@ -227,7 +227,7 @@ fn medium_committee_partition_network() {
         let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks).unwrap();
         let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {

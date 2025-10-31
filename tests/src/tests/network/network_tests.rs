@@ -32,7 +32,7 @@ where
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if v.data().round().data().num() == RoundNumber::genesis() + 1
-                                && node_public_key == *v.data().source()
+                                && node_public_key == v.data().source().1
                             {
                                 return TestOutcome::Passed;
                             }
@@ -77,7 +77,7 @@ where
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round().data().num() == rounds
-                                && node_public_key == *v.data().source()
+                                && node_public_key == v.data().source().1
                             {
                                 return TestOutcome::Passed;
                             }
@@ -159,7 +159,7 @@ where
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices
                         // from round
                         if *v.data().round().data().num() == timeout_round + 20
-                            && node_public_key == *v.data().source()
+                            && node_public_key == v.data().source().1
                         {
                             return TestOutcome::Passed;
                         }
@@ -240,7 +240,7 @@ where
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices
                         // from round
                         if *v.data().round().data().num() == timeout_round + 20
-                            && node_public_key == *v.data().source()
+                            && node_public_key == v.data().source().1
                         {
                             return TestOutcome::Passed;
                         }

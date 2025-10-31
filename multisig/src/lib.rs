@@ -65,6 +65,12 @@ impl From<KeyId> for u64 {
     }
 }
 
+impl fmt::Display for KeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "KeyId({})", self.0)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Keypair {
     sk: SecretKey,

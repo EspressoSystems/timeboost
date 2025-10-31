@@ -211,7 +211,7 @@ fn basic_liveness() {
             let node = node_handle.node_mut();
             (
                 *id,
-                node.go(Dag::new(node.committee().size()), Evidence::Genesis),
+                node.go(Dag::new(node.committee().clone()), Evidence::Genesis),
             )
         })
         .collect();

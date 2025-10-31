@@ -5,8 +5,7 @@ use std::fmt;
 
 use bytes::Bytes;
 use cliquenet::{
-    AddressableCommittee, Overlay, Role,
-    MAX_MESSAGE_SIZE,
+    AddressableCommittee, MAX_MESSAGE_SIZE, Overlay, Role,
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
@@ -66,7 +65,11 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// reached, the deferred messages from that round number onwards will
     /// be sent out.
-    Recover(Nonce, Option<cliquenet::Id>, HashMap<PublicKey, RoundNumber>),
+    Recover(
+        Nonce,
+        Option<cliquenet::Id>,
+        HashMap<PublicKey, RoundNumber>,
+    ),
     /// This is the normal running state after round numbers have been collected.
     /// The barrier is the maximum of at least 2t + 1 reported round numbers and
     /// restricts when messages are eligible for sending.
@@ -86,9 +89,9 @@ impl<T: Committable> Messages<T> {
     fn digests(&self, s: &PublicKey) -> impl Iterator<Item = &Digest> {
         self.map.iter().filter_map(move |(d, t)| {
             let Some(vertex) = &t.message.item else {
-                return None
+                return None;
             };
-            (vertex.data().source() == s).then_some(d)
+            (vertex.data().source().1 == *s).then_some(d)
         })
     }
 }
@@ -219,7 +222,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     pub async fn go(mut self) {
         if let Err(err) = self.startup().await {
             error!(node = %self.key, %err, "startup failure");
-            return
+            return;
         }
         loop {
             tokio::select! {
@@ -331,11 +334,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if self.config.committees.contains(c.committee().id()) {
             warn!(node = %self.key, committee = %c.committee().id(), "committee already added");
-            return Ok(())
+            return Ok(());
         }
 
         let Some(committee) = self.config.committees.get(self.config.committee_id) else {
-            return Err(RbcError::NoCommittee(self.config.committee_id))
+            return Err(RbcError::NoCommittee(self.config.committee_id));
         };
 
         let mut additional = Vec::new();
@@ -357,26 +360,30 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         debug!(node = %self.key, %round, "use committee");
         let Some(committee) = self.config.committees.get(round.committee()) else {
             error!(node = %self.key, id = %round.committee(), "committee to use does not exist");
-            return Err(RbcError::NoCommittee(round.committee()))
+            return Err(RbcError::NoCommittee(round.committee()));
         };
-        let old = self.comm
+        let old = self
+            .comm
             .parties()
             .map(|(p, _)| p)
             .filter(|p| !committee.contains_key(p))
             .copied();
         self.comm.remove(old.collect()).await?;
-        self.comm.assign(Role::Active, committee.parties().copied().collect()).await?;
+        self.comm
+            .assign(Role::Active, committee.parties().copied().collect())
+            .await?;
         self.config.committee_id = round.committee();
-        for (_, m) in self.buffer.range_mut(round.num() ..) {
+        for (_, m) in self.buffer.range_mut(round.num()..) {
             // Remove all messages from the old committee starting at round.
-            m.map.retain(|d, _| d.round().committee() == round.committee())
+            m.map
+                .retain(|d, _| d.round().committee() == round.committee())
         }
         Ok(())
     }
 
     /// Request round number information when recovering.
     async fn startup(&mut self) -> RbcResult<()> {
-        if let WorkerState::Recover(nonce, id@None, _) = &mut self.state {
+        if let WorkerState::Recover(nonce, id @ None, _) = &mut self.state {
             let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
             let bytes = serialize(&req)?;
             *id = Some(self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?);
@@ -389,7 +396,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> RbcResult<()> {
         if self.barrier().is_gt() {
             debug!(node = %self.key, "suppressing message broadcast");
-            return Ok(())
+            return Ok(());
         }
 
         let digest = Digest::of_msg(&msg);
@@ -400,7 +407,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         // committee boundaries.
         if committee_id != self.config.committee_id {
             let Some(committee) = self.config.committees.get(committee_id) else {
-                return Err(RbcError::NoCommittee(committee_id))
+                return Err(RbcError::NoCommittee(committee_id));
             };
             let dest = committee.parties().copied().collect();
             self.comm.multicast(dest, *msg.round().num(), data).await?;
@@ -414,10 +421,15 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// 1:1 communication.
-    async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
+    async fn send(
+        &mut self,
+        to: PublicKey,
+        msg: Message<T, Validated>,
+        data: Data,
+    ) -> SendResult<()> {
         if self.barrier().is_gt() {
             debug!(node = %self.key, %msg, "suppressing direct send");
-            return Ok(())
+            return Ok(());
         }
         let digest = Digest::of_msg(&msg);
         self.comm.unicast(to, *msg.round().num(), data).await?;
@@ -427,7 +439,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Start RBC broadcast.
-    async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> RbcResult<()> {
+    async fn propose(
+        &mut self,
+        vertex: Envelope<Vertex<T>, Validated>,
+        data: Data,
+    ) -> RbcResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
 
@@ -437,12 +453,15 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 || self.round.0.is_genesis()
         );
 
-        self.round = (vertex.data().round().data().num(), vertex.data().evidence().clone());
+        self.round = (
+            vertex.data().round().data().num(),
+            vertex.data().evidence().clone(),
+        );
 
         let cid = vertex.data().round().data().committee();
 
         let Some(committee) = self.config.committees.get(cid) else {
-            return Err(RbcError::NoCommittee(cid))
+            return Err(RbcError::NoCommittee(cid));
         };
 
         let now = Instant::now();
@@ -462,7 +481,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             tracker.message.defer.prop = Some(data);
             messages.map.insert(digest, tracker);
             debug!(node = %self.key, %digest, "suppressing proposal");
-            return Ok(())
+            return Ok(());
         }
 
         self.comm.broadcast(*digest.round().num(), data).await?;
@@ -485,7 +504,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
             Protocol::Cert(crt) => self.on_cert(src, crt).await?,
             Protocol::InfoRequest(nonce) => self.on_info_request(src, nonce).await?,
-            Protocol::InfoResponse(n, r, e) => self.on_info_response(src, n, r, e.into_owned()).await?,
+            Protocol::InfoResponse(n, r, e) => {
+                self.on_info_response(src, n, r, e.into_owned()).await?
+            }
         }
 
         Ok(())
@@ -497,7 +518,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if self.barrier().is_gt() {
             debug!(node = %self.key, %src, nonce = %n, "suppressed info response");
-            return Ok(())
+            return Ok(());
         }
 
         let (r, e) = &self.round;
@@ -508,22 +529,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// We receveived a response to our round number information request.
-    async fn on_info_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
+    async fn on_info_response(
+        &mut self,
+        src: PublicKey,
+        n: Nonce,
+        r: RoundNumber,
+        e: Evidence,
+    ) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, %r, "info response received");
 
         let WorkerState::Recover(nonce, id, rounds) = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
-            return Ok(())
+            return Ok(());
         };
 
         if rounds.contains_key(&src) {
             // We already received a response from this party.
-            return Ok(())
+            return Ok(());
         }
 
         if *nonce != n {
             warn!(node = %self.key, %src, ours = %nonce, theirs = %n, "nonce mismatch");
-            return Ok(())
+            return Ok(());
         }
 
         if !e.is_valid(r, &self.config.committees) {
@@ -534,7 +561,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         rounds.insert(src, r);
 
         let Some(c) = self.config.committees.get(self.config.committee_id) else {
-            return Err(RbcError::NoCommittee(self.config.committee_id))
+            return Err(RbcError::NoCommittee(self.config.committee_id));
         };
 
         if rounds.len() >= c.quorum_size().get() {
@@ -556,7 +583,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
             debug!(node = %self.key, %barrier, "round number info collected");
 
-            for (round, messages) in self.buffer.range_mut(barrier ..) {
+            for (round, messages) in self.buffer.range_mut(barrier..) {
                 for (digest, tracker) in &mut messages.map {
                     match tracker.status {
                         // A quorum has been formed already => just send the certificate.
@@ -599,33 +626,45 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let Some(msg) = msg.validated(&self.config.committees) else {
             return Err(RbcError::InvalidMessage);
         };
-        self.tx.send(Event::Message(msg)).await.map_err(|_| RbcError::Shutdown)?;
+        self.tx
+            .send(Event::Message(msg))
+            .await
+            .map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
     /// An RBC message proposal has been received.
-    async fn on_propose(&mut self, src: PublicKey, vertex: Envelope<Vertex<T>, Unchecked>) -> RbcResult<()> {
+    async fn on_propose(
+        &mut self,
+        src: PublicKey,
+        vertex: Envelope<Vertex<T>, Unchecked>,
+    ) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %Digest::of_vertex(&vertex), "proposal received");
 
         let round = *vertex.data().round().data();
 
         let Some(Message::Vertex(vertex)) =
-            Message::Vertex(vertex).validated(&self.config.committees) else {
-                return Err(RbcError::InvalidMessage);
-            };
+            Message::Vertex(vertex).validated(&self.config.committees)
+        else {
+            return Err(RbcError::InvalidMessage);
+        };
 
         if *vertex.signing_key() != src {
             warn!(node = %self.key, %src, "message sender != message signer");
             return Err(RbcError::InvalidMessage);
         }
 
-        let current_committee_pos =
-            self.config.committees.position(self.config.committee_id)
-                .expect("current committee is member of committee vec");
+        let current_committee_pos = self
+            .config
+            .committees
+            .position(self.config.committee_id)
+            .expect("current committee is member of committee vec");
 
-        let proposal_committee_pos =
-            self.config.committees.position(round.committee())
-                .expect("validated vertex committee is member of committee vec");
+        let proposal_committee_pos = self
+            .config
+            .committees
+            .position(round.committee())
+            .expect("validated vertex committee is member of committee vec");
 
         if proposal_committee_pos > current_committee_pos {
             debug!(
@@ -670,7 +709,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
         let Some(committee) = self.config.committees.get(round.committee()) else {
-            return Err(RbcError::NoCommittee(round.committee()))
+            return Err(RbcError::NoCommittee(round.committee()));
         };
 
         let tracker = messages.map.entry(digest).or_insert_with(|| {
@@ -748,12 +787,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if !messages.leader_threshold {
             let prev_round = round.num().saturating_sub(1);
-            let prev_round_leader = committee.leader(prev_round as usize);
-            if messages.map
+            let prev_round_leader = committee.leader_index(prev_round as usize);
+            if messages
+                .map
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
                 .filter(|e| e.data().has_edge(&prev_round_leader))
-                .count() >= committee.quorum_size().get()
+                .count()
+                >= committee.quorum_size().get()
             {
                 self.tx
                     .send(Event::Info(Info::LeaderThresholdReached(prev_round.into())))
@@ -769,11 +810,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// A proposal vote has been received.
-    async fn on_vote(&mut self, src: PublicKey, env: Envelope<Digest, Unchecked>, evi: Evidence) -> RbcResult<()> {
+    async fn on_vote(
+        &mut self,
+        src: PublicKey,
+        env: Envelope<Digest, Unchecked>,
+        evi: Evidence,
+    ) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %env.data(), "vote received");
 
         let Some(committee) = self.config.committees.get(env.data().round().committee()) else {
-            return Err(RbcError::NoCommittee(env.data().round().committee()))
+            return Err(RbcError::NoCommittee(env.data().round().committee()));
         };
 
         let Some(env) = env.validated(committee) else {
@@ -797,7 +843,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .map(|(r, _)| *r)
             .unwrap_or_else(RoundNumber::genesis);
 
-        if digest.round().num() > latest_round + 1 && !evi.is_valid(digest.round().num(), &self.config.committees) {
+        if digest.round().num() > latest_round + 1
+            && !evi.is_valid(digest.round().num(), &self.config.committees)
+        {
             warn!(node = %self.key, %src, "invalid vote evidence");
             return Err(RbcError::InvalidMessage);
         }
@@ -889,7 +937,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         let Some(committee) = self.config.committees.get(crt.data().round().committee()) else {
-            return Err(RbcError::NoCommittee(crt.data().round().committee()))
+            return Err(RbcError::NoCommittee(crt.data().round().committee()));
         };
 
         if !crt.is_valid_par(committee) {
@@ -960,7 +1008,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if self.barrier().is_gt() {
             debug!(node = %self.key, %src, %digest, "suppressing response to get request");
-            return Ok(())
+            return Ok(());
         }
 
         if let Some(msg) = self
@@ -981,13 +1029,17 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// We received a response to our get request.
-    async fn on_get_response(&mut self, src: PublicKey, vertex: Envelope<Vertex<T>, Unchecked>) -> RbcResult<()> {
+    async fn on_get_response(
+        &mut self,
+        src: PublicKey,
+        vertex: Envelope<Vertex<T>, Unchecked>,
+    ) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %Digest::of_vertex(&vertex), "get response received");
 
         let round = vertex.data().round().data();
 
         let Some(committee) = self.config.committees.get(round.committee()) else {
-            return Err(RbcError::NoCommittee(round.committee()))
+            return Err(RbcError::NoCommittee(round.committee()));
         };
 
         let Some(vertex) = vertex.validated(committee) else {
@@ -1035,7 +1087,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     retries  = %tracker.retries,
                     "revisiting ..."
                 );
-                let timeout = [1, 3, 6, 10, 15].get(tracker.retries).copied().unwrap_or(30);
+                let timeout = [1, 3, 6, 10, 15]
+                    .get(tracker.retries)
+                    .copied()
+                    .unwrap_or(30);
                 if tracker.timestamp.elapsed() < Duration::from_secs(timeout) {
                     continue;
                 }
@@ -1043,7 +1098,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 let m = Protocol::<'_, T, Validated>::GetRequest(*digest);
                 let b = serialize(&m)?;
                 let c = digest.commit();
-                let s = tracker.choose_voter(&c).expect("status = requested => voter");
+                let s = tracker
+                    .choose_voter(&c)
+                    .expect("status = requested => voter");
                 self.comm.unicast(s, *digest.round().num(), b).await?;
                 tracker.timestamp = now;
                 tracker.retries = tracker.retries.saturating_add(1);
@@ -1057,7 +1114,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         match self.state {
             WorkerState::Genesis => Ordering::Less,
             WorkerState::Recover(..) => Ordering::Greater,
-            WorkerState::Barrier(rn) => rn.cmp(&self.round.0)
+            WorkerState::Barrier(rn) => rn.cmp(&self.round.0),
         }
     }
 }
