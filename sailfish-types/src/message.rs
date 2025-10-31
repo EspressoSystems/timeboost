@@ -122,10 +122,16 @@ impl<T: Committable> Message<T, Unchecked> {
                 let signer = env.signing_key();
 
                 // The signer should be the producer of the vertex:
-                if signer != env.data().source() {
-                    warn!(%signer, source = %env.data().source(), "envelope signer != vertex source");
+                if *signer != env.data().source().1 {
+                    warn!(%signer, source = %env.data().source().1, "envelope signer != vertex source");
                     return None;
                 }
+
+                // The signer's position should match the key ID of the vertex:
+                if c.get_index(signer) != Some(env.data().source().0) {
+                    warn!(%signer, source = %env.data().source().0, "signer pos != vertex source");
+                    return None;
+                };
 
                 // Validate the round signature:
                 if !env.data().round().is_valid(c) {
@@ -692,7 +698,7 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
         match self {
             Self::Vertex(e) => {
                 let r = e.data().round().data();
-                let s = e.data().source();
+                let s = e.data().source().1;
                 write!(f, "Vertex({r},{s})")
             }
             Self::Timeout(e) => {

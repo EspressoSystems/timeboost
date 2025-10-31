@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Keypair, PublicKey, Signed};
+use multisig::{Certificate, KeyId, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
 use crate::{Evidence, NoVote, Round, RoundNumber};
@@ -9,8 +9,8 @@ use crate::{Evidence, NoVote, Round, RoundNumber};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
     round: Signed<Round>,
-    source: PublicKey,
-    edges: BTreeSet<PublicKey>,
+    source: (KeyId, PublicKey),
+    edges: BTreeSet<KeyId>,
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
@@ -18,7 +18,7 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<E>(round: Round, evidence: E, payload: T, keypair: &Keypair) -> Self
+    pub fn new<E>(round: Round, evidence: E, payload: T, key_id: KeyId, keypair: &Keypair) -> Self
     where
         E: Into<Evidence>,
     {
@@ -27,7 +27,7 @@ impl<T> Vertex<T> {
         debug_assert!(evidence.round() + 1 == round.num() || round.num() == RoundNumber::genesis());
 
         Self {
-            source: keypair.public_key(),
+            source: (key_id, keypair.public_key()),
             round: Signed::new(round, keypair),
             edges: BTreeSet::new(),
             evidence,
@@ -57,7 +57,7 @@ impl<T> Vertex<T> {
             && self.no_vote.is_none()
     }
 
-    pub fn source(&self) -> &PublicKey {
+    pub fn source(&self) -> &(KeyId, PublicKey) {
         &self.source
     }
 
@@ -77,11 +77,11 @@ impl<T> Vertex<T> {
         self.edges.len()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &PublicKey> {
+    pub fn edges(&self) -> impl Iterator<Item = &KeyId> {
         self.edges.iter()
     }
 
-    pub fn has_edge(&self, id: &PublicKey) -> bool {
+    pub fn has_edge(&self, id: &KeyId) -> bool {
         self.edges.contains(id)
     }
 
@@ -98,14 +98,14 @@ impl<T> Vertex<T> {
         self
     }
 
-    pub fn add_edge(&mut self, id: PublicKey) -> &mut Self {
+    pub fn add_edge(&mut self, id: KeyId) -> &mut Self {
         self.edges.insert(id);
         self
     }
 
     pub fn add_edges<I>(&mut self, edges: I) -> &mut Self
     where
-        I: IntoIterator<Item = PublicKey>,
+        I: IntoIterator<Item = KeyId>,
     {
         self.edges.extend(edges);
         self
@@ -123,7 +123,7 @@ impl<T> Vertex<T> {
 
 impl<T> Display for Vertex<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vertex({},{})", self.round.data(), self.source)
+        write!(f, "Vertex({},{})", self.round.data(), self.source.1)
     }
 }
 
@@ -131,7 +131,7 @@ impl<T: Committable> Committable for Vertex<T> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
             .field("round", self.round.commit())
-            .fixed_size_field("source", &self.source.to_bytes())
+            .fixed_size_field("source", &self.source.1.to_bytes())
             .field("evidence", self.evidence.commit())
             .field("committed", self.committed.commit())
             .optional("no_vote", &self.no_vote)

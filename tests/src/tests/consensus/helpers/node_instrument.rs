@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
-use multisig::{Certificate, Committee, PublicKey};
+use multisig::{Certificate, Committee, KeyId};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
 use sailfish::types::CommitteeVec;
 use sailfish::types::{
@@ -77,7 +77,7 @@ impl TestNodeInstrument {
     pub(crate) fn expected_vertex_proposal(
         &self,
         round: RoundNumber,
-        edges: Vec<PublicKey>,
+        edges: Vec<KeyId>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
@@ -85,6 +85,7 @@ impl TestNodeInstrument {
                 Round::new(round, UNKNOWN_COMMITTEE_ID),
                 tc,
                 EmptyBlocks.next(round),
+                KeyId::from(0),
                 &self.kpair,
             )
         } else {
@@ -92,6 +93,7 @@ impl TestNodeInstrument {
                 Round::new(round, UNKNOWN_COMMITTEE_ID),
                 self.manager.gen_round_cert(round - 1),
                 EmptyBlocks.next(round),
+                KeyId::from(0),
                 &self.kpair,
             )
         };
@@ -160,7 +162,7 @@ impl TestNodeInstrument {
 }
 
 fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &CommitteeVec<N>) {
-    let parties: BTreeSet<PublicKey> = c.parties().copied().collect();
+    let parties: BTreeSet<KeyId> = c.idxs().copied().collect();
     match (a, b) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
             assert_eq!(x, y)

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use committable::Committable;
 use multisig::{
-    Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
+    Certificate, Committee, Envelope, KeyId, Keypair, Signed, Validated, VoteAccumulator,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -52,6 +52,7 @@ impl KeyManager {
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
                 let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
+                    .unwrap()
                     .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
@@ -59,7 +60,7 @@ impl KeyManager {
     }
 
     /// For a given round create vertex message for each node in committee.
-    pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<PublicKey>) -> Vec<Message> {
+    pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<KeyId>) -> Vec<Message> {
         self.keys
             .keys()
             .map(|id| self.create_vertex_msg_for_node_id(*id, round, edges.clone()))
@@ -72,13 +73,14 @@ impl KeyManager {
         &self,
         id: u8,
         round: u64,
-        edges: Vec<PublicKey>,
+        edges: Vec<KeyId>,
     ) -> Message {
         let kpair = &self.keys[&id];
         let mut v = Vertex::new(
             Round::new(round, UNKNOWN_COMMITTEE_ID),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round.into()),
+            id.into(),
             kpair,
         );
         v.add_edges(edges);
@@ -112,14 +114,20 @@ impl KeyManager {
         round: RoundNumber,
         committee: &Committee,
         ignore_leader: bool,
-    ) -> Vec<PublicKey> {
+    ) -> Vec<KeyId> {
         // 2f + 1 edges
         let threshold = committee.quorum_size().get();
         let leader = committee.leader(*round as usize);
         self.keys
             .values()
-            .map(|kpair| kpair.public_key())
-            .filter(|pub_key| !ignore_leader || *pub_key != leader)
+            .filter_map(|kpair| {
+                let pub_key = kpair.public_key();
+                if !ignore_leader || pub_key != leader {
+                    Some(committee.get_index(&pub_key).unwrap())
+                } else {
+                    None
+                }
+            })
             .take(threshold)
             .collect()
     }
@@ -141,21 +149,22 @@ impl KeyManager {
         &self,
         round: u64,
         committee: &Committee,
-    ) -> (Dag, Evidence, Vec<PublicKey>) {
-        let mut dag = Dag::new(committee.size());
+    ) -> (Dag, Evidence, Vec<KeyId>) {
+        let mut dag = Dag::new(committee.clone());
         let edges = self
             .keys
-            .values()
-            .map(|kpair| {
+            .iter()
+            .map(|(ix, kpair)| {
                 let r = round.into();
                 let v = Vertex::new(
                     Round::new(round, UNKNOWN_COMMITTEE_ID),
                     self.gen_round_cert(round - 1),
                     EmptyBlocks.next(r),
+                    (*ix).into(),
                     kpair,
                 );
                 dag.add(v.clone());
-                *v.source()
+                v.source().0
             })
             .collect();
         let evidence = Evidence::Regular(self.gen_round_cert(round));
@@ -172,6 +181,7 @@ impl KeyManager {
             Round::new(round, UNKNOWN_COMMITTEE_ID),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round),
+            KeyId::from(0),
             kpair,
         );
         let e = Envelope::signed(d, kpair);

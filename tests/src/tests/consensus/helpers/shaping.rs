@@ -328,7 +328,7 @@ impl Simulator {
             .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
+                    logic: Consensus::new(k, committee.clone(), EmptyBlocks).unwrap(),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -338,7 +338,7 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
-        let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
+        let dag = Dag::new(committee.clone());
 
         let mut actions = Vec::new();
 

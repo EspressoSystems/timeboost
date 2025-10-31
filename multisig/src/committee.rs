@@ -79,6 +79,11 @@ impl Committee {
         self.parties.iter().map(|e| (*e.0, e.1))
     }
 
+    /// Returns an iterator over all key IDs in the committee.
+    pub fn idxs(&self) -> impl Iterator<Item = &KeyId> {
+        self.parties.left_values()
+    }
+
     /// Provides an iterator over all public keys in the committee.
     pub fn parties(&self) -> impl Iterator<Item = &PublicKey> {
         self.parties.right_values()
@@ -87,21 +92,13 @@ impl Committee {
     /// Determines the leader for a given round number using a round-robin method.
     pub fn leader(&self, round: usize) -> PublicKey {
         let i = round % self.parties.len();
-        self.parties
-            .right_values()
-            .nth(i)
-            .copied()
-            .expect("round % len < len")
+        self.parties().nth(i).copied().expect("round % len < len")
     }
 
     /// Returns the key ID of the leader for a given round number.
     pub fn leader_index(&self, round: usize) -> KeyId {
         let i = round % self.parties.len();
-        self.parties
-            .left_values()
-            .nth(i)
-            .copied()
-            .expect("round % len < len")
+        self.idxs().nth(i).copied().expect("round % len < len")
     }
 }
 

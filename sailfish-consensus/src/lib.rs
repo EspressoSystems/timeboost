@@ -6,8 +6,8 @@ use std::fmt;
 use std::time::Instant;
 
 use committable::Committable;
-use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use multisig::{CommitteeId, KeyId};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
@@ -56,6 +56,9 @@ impl State {
 }
 
 pub struct Consensus<T> {
+    /// The key ID of the node.
+    key_id: KeyId,
+
     /// The public and private key of this node.
     keypair: Keypair,
 
@@ -149,19 +152,27 @@ impl<T> Consensus<T>
 where
     T: Committable + HasTime + Clone + PartialEq,
 {
-    pub fn new<D>(keypair: Keypair, committee: Committee, datasource: D) -> Self
+    pub fn new<D>(
+        keypair: Keypair,
+        committee: Committee,
+        datasource: D,
+    ) -> Result<Self, ConsensusError>
     where
         D: DataSource<Data = T> + Send + 'static,
     {
-        Self {
+        let key_id = committee
+            .get_index(&keypair.public_key())
+            .ok_or(ConsensusError::UnknownKey(keypair.public_key()))?;
+        Ok(Self {
+            key_id,
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
             nodes: NodeInfo::new(&committee, committee.quorum_size()),
-            dag: Dag::new(committee.size()),
+            dag: Dag::new(committee.clone()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committee.size()),
+            buffer: Dag::new(committee.clone()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -173,7 +184,7 @@ where
             datasource: Box::new(datasource),
             metrics: Default::default(),
             metrics_timer: Instant::now(),
-        }
+        })
     }
 
     /// (Re-)start consensus.
@@ -196,6 +207,7 @@ where
                 Round::new(r, self.committee.id()),
                 Evidence::Genesis,
                 self.datasource.next(r),
+                self.key_id,
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
@@ -377,7 +389,7 @@ where
             return actions;
         }
 
-        self.nodes.record(v.source(), v.committed_round());
+        self.nodes.record(&v.source().1, v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
             actions.extend(self.cleanup());
@@ -778,9 +790,10 @@ where
             Round::new(r, self.committee.id()),
             e,
             payload,
+            self.key_id,
             &self.keypair,
         );
-        new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
+        new.add_edges(self.dag.vertices(r - 1).map(|v| &v.source().0).cloned())
             .set_committed_round(self.committed_round);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
@@ -848,7 +861,7 @@ where
             if self
                 .dag
                 .vertices(r)
-                .filter(|v| v.has_edge(l.source()))
+                .filter(|v| v.has_edge(&l.source().0))
                 .count()
                 >= self.committee.quorum_size().get()
             {
@@ -868,7 +881,7 @@ where
 
         let quorum = self.committee.quorum_size().get();
 
-        for v in self.buffer.drain().map(|(.., v)| v) {
+        for (.., v) in self.buffer.drain() {
             let r = v.round().data().num();
             match self.try_to_add_to_dag(v) {
                 Ok(a) => {
@@ -945,7 +958,7 @@ where
             {
                 let r = to_deliver.round().data();
                 let s = *to_deliver.source();
-                if self.delivered.contains(&(r.num(), s)) {
+                if self.delivered.contains(&(r.num(), s.1)) {
                     continue;
                 }
                 let b = to_deliver.payload().clone();
@@ -953,8 +966,8 @@ where
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
                 #[cfg(feature = "times")]
                 times::record_once("sf-delivered", *r.num());
-                actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
-                self.delivered.insert((r.num(), s));
+                actions.push(Action::Deliver(Payload::new(*r, s.1, b, e)));
+                self.delivered.insert((r.num(), s.1));
             }
         }
         // If there is an upcoming committee change, start the clock and
@@ -1082,11 +1095,15 @@ where
             return true;
         }
 
-        if v.has_edge(&self.committee.leader(*v.round().data().num() as usize - 1)) {
+        if v.has_edge(
+            &self
+                .committee
+                .leader_index(*v.round().data().num() as usize - 1),
+        ) {
             return true;
         }
 
-        if v.source() != &self.committee.leader(*v.round().data().num() as usize) {
+        if v.source().1 != self.committee.leader(*v.round().data().num() as usize) {
             return true;
         }
 
@@ -1104,7 +1121,8 @@ where
 
     /// Retrieve leader vertex for a given round.
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex<T>> {
-        self.dag.vertex(r, &self.committee.leader(*r as usize))
+        self.dag
+            .vertex(r, &self.committee.leader_index(*r as usize))
     }
 
     /// Do we have `Evidence` that a message is valid for a given round?
@@ -1183,6 +1201,7 @@ where
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
+            self.key_id,
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
@@ -1198,6 +1217,12 @@ where
 
         actions
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConsensusError {
+    #[error("Unknown public key: {0}")]
+    UnknownKey(PublicKey),
 }
 
 /// Trace log helper.

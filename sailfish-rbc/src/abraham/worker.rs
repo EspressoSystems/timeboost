@@ -88,7 +88,7 @@ impl<T: Committable> Messages<T> {
             let Some(vertex) = &t.message.item else {
                 return None
             };
-            (vertex.data().source() == s).then_some(d)
+            (vertex.data().source().1 == *s).then_some(d)
         })
     }
 }
@@ -748,8 +748,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if !messages.leader_threshold {
             let prev_round = round.num().saturating_sub(1);
-            let prev_round_leader = committee.leader(prev_round as usize);
-            if messages.map
+            let prev_round_leader = committee.leader_index(prev_round as usize);
+	        if messages.map
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
                 .filter(|e| e.data().has_edge(&prev_round_leader))
