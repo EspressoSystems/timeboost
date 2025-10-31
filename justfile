@@ -221,8 +221,7 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all nodes="5": build-release build-test-utils
-  env RUST_LOG=error,yapper=error,sf-trace,timeboost_sequencer=info,block_maker=debug \
-  TIMEBOOST_NO_SUBMIT=1 \
+  env RUST_LOG=timeboost_builder::submit=trace,block_checker=info,warn \
   target/release/run \
     --verbose \
     --timeout 120 \
@@ -306,7 +305,7 @@ netsim nodes: build-release build-test-utils
             run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG "$@"
         fi
     }
-    export RUST_LOG=sailfish=info,timeboost=warn,cliquenet=warn,timeboost_builder::submit=debug,block_checker=info,error
+    export RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn
     run_as_root target/release/run \
         --verbose \
         --timeout 120 \

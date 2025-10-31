@@ -1,19 +1,20 @@
-use std::cmp::max;
-use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
-use std::sync::Arc;
+mod cache;
 
-use multisig::{Committee, PublicKey};
-use parking_lot::RwLock;
+use std::cmp::max;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+
+use multisig::Committee;
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
     Timestamp,
 };
 use timeboost_types::{RetryList, math};
-use tracing::info;
 
-const CACHE_SIZE: usize = 8;
+pub use cache::IncluderCache;
+
+use crate::include::cache::CACHE_SIZE;
 
 #[derive(Debug)]
 pub struct Outcome {
@@ -22,62 +23,8 @@ pub struct Outcome {
     pub(crate) is_valid: bool,
 }
 
-#[allow(clippy::type_complexity)]
-#[derive(Clone, Debug, Default)]
-pub struct IncluderCache {
-    cache: Arc<RwLock<(RoundNumber, BTreeMap<RoundNumber, HashSet<[u8; 32]>>)>>,
-}
-
-impl IncluderCache {
-    pub fn contains(&self, digest: &[u8; 32]) -> bool {
-        let cache = self.cache.read();
-        for hashes in cache.1.values().rev() {
-            if hashes.contains(digest) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn len(&self) -> usize {
-        self.cache.read().1.len()
-    }
-
-    fn clear(&self) {
-        let mut cache = self.cache.write();
-        cache.0 = RoundNumber::default();
-        cache.1.clear()
-    }
-
-    fn start(&self, r: RoundNumber) {
-        let mut cache = self.cache.write();
-        cache.0 = r;
-        cache.1.entry(r).or_default();
-    }
-
-    fn insert_if_new(&self, digest: &[u8; 32]) -> bool {
-        let mut cache = self.cache.write();
-        for hashes in cache.1.values().rev() {
-            if hashes.contains(digest) {
-                return false;
-            }
-        }
-        let round = cache.0;
-        cache.1.entry(round).or_default().insert(*digest);
-        true
-    }
-
-    fn end(&self) {
-        let mut cache = self.cache.write();
-        while cache.1.len() > CACHE_SIZE {
-            cache.1.pop_first();
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Includer {
-    label: PublicKey,
     committee: Committee,
     next_committee: Option<(RoundNumber, Committee)>,
     /// Consensus round.
@@ -91,14 +38,13 @@ pub struct Includer {
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
     /// Cache of transaction hashes for the previous 8 rounds.
-    cache: IncluderCache,
+    cache: IncluderCache<[u8; 32]>,
 }
 
 impl Includer {
-    pub fn new(label: PublicKey, cache: IncluderCache, c: Committee) -> Self {
+    pub fn new(cache: IncluderCache<[u8; 32]>, c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
-            label,
             committee: c,
             next_committee: None,
             round: RoundNumber::genesis(),
@@ -114,26 +60,23 @@ impl Includer {
         &mut self,
         round: RoundNumber,
         evidence: Evidence,
-        lists: Vec<(RoundNumber, CandidateList)>,
+        lists: Vec<CandidateList>,
     ) -> Outcome {
         if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r <= round) {
             self.committee = c;
             self.clear_cache()
         }
 
-        info!(node = %self.label, lists = ?lists.iter().map(|(r, _)| **r).collect::<Vec<_>>());
-
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
 
-        // Ensure cache has an entry for this round.
         self.cache.start(self.round);
 
         self.time = {
             let mut times = lists
                 .iter()
-                .map(|cl| u64::from(cl.1.timestamp()))
+                .map(|cl| u64::from(cl.timestamp()))
                 .collect::<Vec<_>>();
             max(
                 self.time.into(),
@@ -145,7 +88,7 @@ impl Includer {
         self.index = {
             let mut indices = lists
                 .iter()
-                .map(|cl| u64::from(cl.1.delayed_inbox_index()))
+                .map(|cl| u64::from(cl.delayed_inbox_index()))
                 .collect::<Vec<_>>();
             max(
                 self.index.into(),
@@ -166,7 +109,7 @@ impl Includer {
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
-        for (pbs, rbs) in lists.into_iter().map(|(_, cl)| cl.into_bundles()) {
+        for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
             for rb in rbs {
                 *regular.entry(rb).or_default() += 1
             }

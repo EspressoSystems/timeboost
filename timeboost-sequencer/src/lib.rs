@@ -39,7 +39,7 @@ use crate::delayed_inbox::DelayedInbox;
 use crate::include::IncluderCache;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
-type Candidates = VecDeque<(RoundNumber, Evidence, Vec<(RoundNumber, CandidateList)>)>;
+type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
 #[derive(Debug)]
 pub enum Output {
@@ -179,11 +179,7 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(
-                public_key,
-                cache,
-                cfg.sailfish_committee.committee().clone(),
-            ),
+            includer: Includer::new(cache, cfg.sailfish_committee.committee().clone()),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,
@@ -385,16 +381,9 @@ impl Task {
                                 dkg_bundles.push_back(dkg.clone());
                             }
                             if self.round < payload.round().num() {
-                                info!(
-                                    node  = %self.label,
-                                    round = %payload.round().num(),
-                                    src   = %payload.source(),
-                                    trxs  = ?data.regular_bundles().iter().map(|b| bs58::encode(b.digest()).into_string()).collect::<Vec<_>>(),
-                                    "received candidate list"
-                                );
                                 round = payload.round().num();
                                 evidence = payload.into_evidence();
-                                lists.push((round, data))
+                                lists.push(data)
                             } else {
                                 debug!(
                                     node   = %self.label,

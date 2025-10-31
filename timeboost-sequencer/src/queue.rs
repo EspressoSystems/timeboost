@@ -33,7 +33,7 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
-    cache: IncluderCache,
+    cache: IncluderCache<[u8; 32]>,
 }
 
 impl Inner {
@@ -49,7 +49,7 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, cache: IncluderCache, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(prio: Address, c: IncluderCache<[u8; 32]>, m: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
@@ -57,10 +57,10 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             dkg: None,
-            metrics,
+            metrics: m,
             max_len: usize::MAX,
             mode: Mode::Passive,
-            cache,
+            cache: c,
         })))
     }
 
@@ -91,9 +91,6 @@ impl BundleQueue {
             match b {
                 BundleVariant::Dkg(b) => inner.dkg = Some(b),
                 BundleVariant::Regular(b) => {
-                    if let Some((_, x)) = inner.regular.iter().find(|(_, a)| *a == b) {
-                        error!(bundle = %bs58::encode(x.digest()).into_string(), "submitted again");
-                    }
                     if !inner.cache.contains(b.digest()) {
                         inner.regular.push_back((now, b))
                     }
