@@ -271,7 +271,7 @@ impl Network {
     {
         let listener = T::bind(&bind_to.into()).await?;
 
-        debug!(%name, n = %label, a = %listener.local_addr()?, "listening");
+        debug!(%name, node = %label, addr = %listener.local_addr()?, "listening");
 
         let mut parties = HashMap::new();
         let mut peers = HashMap::new();

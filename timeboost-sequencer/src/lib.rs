@@ -36,6 +36,7 @@ use sort::Sorter;
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 use crate::delayed_inbox::DelayedInbox;
+use crate::include::IncluderCache;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
@@ -112,7 +113,8 @@ impl Sequencer {
 
         let public_key = cfg.sign_keypair.public_key();
 
-        let queue = BundleQueue::new(cfg.priority_addr, seq_metrics.clone());
+        let cache = IncluderCache::default();
+        let queue = BundleQueue::new(cfg.priority_addr, cache.clone(), seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
@@ -177,7 +179,7 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(cfg.sailfish_committee.committee().clone()),
+            includer: Includer::new(cache, cfg.sailfish_committee.committee().clone()),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,

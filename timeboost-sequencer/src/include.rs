@@ -1,6 +1,8 @@
+mod cache;
+
 use std::cmp::max;
+use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::{Evidence, RoundNumber};
@@ -10,7 +12,9 @@ use timeboost_types::{
 };
 use timeboost_types::{RetryList, math};
 
-const CACHE_SIZE: usize = 8;
+pub use cache::IncluderCache;
+
+use crate::include::cache::CACHE_SIZE;
 
 #[derive(Debug)]
 pub struct Outcome {
@@ -34,11 +38,11 @@ pub struct Includer {
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
     /// Cache of transaction hashes for the previous 8 rounds.
-    cache: BTreeMap<RoundNumber, HashSet<[u8; 32]>>,
+    cache: IncluderCache<[u8; 32]>,
 }
 
 impl Includer {
-    pub fn new(c: Committee) -> Self {
+    pub fn new(cache: IncluderCache<[u8; 32]>, c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
             committee: c,
@@ -48,7 +52,7 @@ impl Includer {
             epoch: now.into(),
             seqno: SeqNo::zero(),
             index: 0.into(),
-            cache: BTreeMap::new(),
+            cache,
         }
     }
 
@@ -67,12 +71,7 @@ impl Includer {
 
         self.round = round;
 
-        // Ensure cache has an entry for this round.
-        self.cache.entry(self.round).or_default();
-
-        while self.cache.len() > CACHE_SIZE {
-            self.cache.pop_first();
-        }
+        self.cache.start(self.round);
 
         self.time = {
             let mut times = lists
@@ -153,14 +152,10 @@ impl Includer {
 
         for (rb, n) in regular {
             if n > self.committee.one_honest_threshold().get() {
-                if self.is_unknown(&rb) {
-                    self.cache
-                        .entry(self.round)
-                        .or_default()
-                        .insert(*rb.digest());
+                if self.cache.insert_if_new(rb.digest()) {
                     iregular.push(rb)
                 }
-            } else if self.is_unknown(&rb) {
+            } else if !self.cache.contains(rb.digest()) {
                 retry.add_regular(rb);
             }
         }
@@ -170,10 +165,12 @@ impl Includer {
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);
 
+        self.cache.end();
+
         Outcome {
             ilist,
             retry,
-            is_valid: self.is_valid_cache(),
+            is_valid: self.cache.len() >= CACHE_SIZE,
         }
     }
 
@@ -183,15 +180,6 @@ impl Includer {
 
     pub fn clear_cache(&mut self) {
         self.cache.clear();
-    }
-
-    fn is_unknown(&self, t: &Bundle) -> bool {
-        for hashes in self.cache.values().rev() {
-            if hashes.contains(t.digest()) {
-                return false;
-            }
-        }
-        true
     }
 
     fn validate_bundles(
@@ -225,11 +213,5 @@ impl Includer {
             .last_key_value()
             .expect("non-empty bundle sequence => last entry")
             .0)
-    }
-
-    /// Check if the cache is valid, i.e. contains at least 8 recent rounds (not necessarily
-    /// consecutive).
-    fn is_valid_cache(&self) -> bool {
-        self.cache.len() >= CACHE_SIZE
     }
 }

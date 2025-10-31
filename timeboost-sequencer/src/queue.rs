@@ -14,6 +14,7 @@ use timeboost_types::{
 use tracing::{error, trace};
 
 use super::Mode;
+use crate::include::IncluderCache;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -32,6 +33,7 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
+    cache: IncluderCache<[u8; 32]>,
 }
 
 impl Inner {
@@ -47,7 +49,7 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(prio: Address, c: IncluderCache<[u8; 32]>, m: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
@@ -55,9 +57,10 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             dkg: None,
-            metrics,
+            metrics: m,
             max_len: usize::MAX,
             mode: Mode::Passive,
+            cache: c,
         })))
     }
 
@@ -87,7 +90,11 @@ impl BundleQueue {
         for b in it.into_iter() {
             match b {
                 BundleVariant::Dkg(b) => inner.dkg = Some(b),
-                BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
+                BundleVariant::Regular(b) => {
+                    if !inner.cache.contains(b.digest()) {
+                        inner.regular.push_back((now, b))
+                    }
+                }
                 BundleVariant::Priority(b) => {
                     match b.validate(epoch_now, Some(inner.priority_addr)) {
                         Ok(_) => {
@@ -127,10 +134,10 @@ impl BundleQueue {
             });
         }
 
-        // Retain regular bundles not in the inclusion list.
-        inner
-            .regular
-            .retain(|(_, t)| !incl.regular_bundles().contains(t));
+        // Retain regular bundles not in the inclusion list or to be retried.
+        inner.regular.retain(|(_, t)| {
+            !(incl.regular_bundles().contains(t) || retry.regular_bundles().contains(t))
+        });
 
         // Process bundles that should be retried:
         let (priority, regular) = retry.into_parts();
