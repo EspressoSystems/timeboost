@@ -1,8 +1,10 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use multisig::{Committee, PublicKey};
+use parking_lot::RwLock;
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
@@ -18,6 +20,59 @@ pub struct Outcome {
     pub(crate) ilist: InclusionList,
     pub(crate) retry: RetryList,
     pub(crate) is_valid: bool,
+}
+
+#[allow(clippy::type_complexity)]
+#[derive(Clone, Debug, Default)]
+pub struct IncluderCache {
+    cache: Arc<RwLock<(RoundNumber, BTreeMap<RoundNumber, HashSet<[u8; 32]>>)>>,
+}
+
+impl IncluderCache {
+    pub fn contains(&self, digest: &[u8; 32]) -> bool {
+        let cache = self.cache.read();
+        for hashes in cache.1.values().rev() {
+            if hashes.contains(digest) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn len(&self) -> usize {
+        self.cache.read().1.len()
+    }
+
+    fn clear(&self) {
+        let mut cache = self.cache.write();
+        cache.0 = RoundNumber::default();
+        cache.1.clear()
+    }
+
+    fn start(&self, r: RoundNumber) {
+        let mut cache = self.cache.write();
+        cache.0 = r;
+        cache.1.entry(r).or_default();
+    }
+
+    fn insert_if_new(&self, digest: &[u8; 32]) -> bool {
+        let mut cache = self.cache.write();
+        for hashes in cache.1.values().rev() {
+            if hashes.contains(digest) {
+                return false;
+            }
+        }
+        let round = cache.0;
+        cache.1.entry(round).or_default().insert(*digest);
+        true
+    }
+
+    fn end(&self) {
+        let mut cache = self.cache.write();
+        while cache.1.len() > CACHE_SIZE {
+            cache.1.pop_first();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -36,11 +91,11 @@ pub struct Includer {
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
     /// Cache of transaction hashes for the previous 8 rounds.
-    cache: BTreeMap<RoundNumber, HashSet<[u8; 32]>>,
+    cache: IncluderCache,
 }
 
 impl Includer {
-    pub fn new(label: PublicKey, c: Committee) -> Self {
+    pub fn new(label: PublicKey, cache: IncluderCache, c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
             label,
@@ -51,7 +106,7 @@ impl Includer {
             epoch: now.into(),
             seqno: SeqNo::zero(),
             index: 0.into(),
-            cache: BTreeMap::new(),
+            cache,
         }
     }
 
@@ -73,7 +128,7 @@ impl Includer {
         self.round = round;
 
         // Ensure cache has an entry for this round.
-        self.cache.entry(self.round).or_default();
+        self.cache.start(self.round);
 
         self.time = {
             let mut times = lists
@@ -154,14 +209,10 @@ impl Includer {
 
         for (rb, n) in regular {
             if n > self.committee.one_honest_threshold().get() {
-                if self.is_unknown(&rb) {
-                    self.cache
-                        .entry(self.round)
-                        .or_default()
-                        .insert(*rb.digest());
+                if self.cache.insert_if_new(rb.digest()) {
                     iregular.push(rb)
                 }
-            } else if self.is_unknown(&rb) {
+            } else if !self.cache.contains(rb.digest()) {
                 retry.add_regular(rb);
             }
         }
@@ -171,14 +222,7 @@ impl Includer {
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);
 
-        while self.cache.len() > CACHE_SIZE {
-            self.cache.pop_first();
-        }
-
-        info!(
-            node = %self.label,
-            cache = ?self.cache.iter().map(|(r, s)| (**r, s.iter().map(|h| bs58::encode(h).into_string()).collect::<BTreeSet<_>>())).collect::<Vec<_>>()
-        );
+        self.cache.end();
 
         Outcome {
             ilist,
@@ -193,15 +237,6 @@ impl Includer {
 
     pub fn clear_cache(&mut self) {
         self.cache.clear();
-    }
-
-    fn is_unknown(&self, t: &Bundle) -> bool {
-        for hashes in self.cache.values().rev() {
-            if hashes.contains(t.digest()) {
-                return false;
-            }
-        }
-        true
     }
 
     fn validate_bundles(

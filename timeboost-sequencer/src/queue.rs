@@ -14,6 +14,7 @@ use timeboost_types::{
 use tracing::{error, trace};
 
 use super::Mode;
+use crate::include::IncluderCache;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -32,6 +33,7 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
+    cache: IncluderCache,
 }
 
 impl Inner {
@@ -47,7 +49,7 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(prio: Address, cache: IncluderCache, metrics: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
@@ -58,6 +60,7 @@ impl BundleQueue {
             metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
+            cache,
         })))
     }
 
@@ -87,7 +90,14 @@ impl BundleQueue {
         for b in it.into_iter() {
             match b {
                 BundleVariant::Dkg(b) => inner.dkg = Some(b),
-                BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
+                BundleVariant::Regular(b) => {
+                    if let Some((_, x)) = inner.regular.iter().find(|(_, a)| *a == b) {
+                        error!(bundle = %bs58::encode(x.digest()).into_string(), "submitted again");
+                    }
+                    if !inner.cache.contains(b.digest()) {
+                        inner.regular.push_back((now, b))
+                    }
+                }
                 BundleVariant::Priority(b) => {
                     match b.validate(epoch_now, Some(inner.priority_addr)) {
                         Ok(_) => {

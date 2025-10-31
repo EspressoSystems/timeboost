@@ -479,6 +479,7 @@ mod tests {
         }
 
         // Verify reshares
+        #[allow(clippy::needless_range_loop)]
         for i in 0..old_n {
             for j in 0..new_n {
                 assert!(
