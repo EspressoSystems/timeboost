@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
         cfg.with_metrics(rbc_metrics),
     );
 
-    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
+    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))?
         .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
