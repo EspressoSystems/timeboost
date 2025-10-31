@@ -46,7 +46,8 @@ services:
   rollup-creator:    
     pid: host
     build:
-      context: rollupcreator/
+      dockerfile: docker/rollupcreator.dockerfile
+      context: .
       args:
         NITRO_CONTRACTS_BRANCH: v3.1.0
     volumes:

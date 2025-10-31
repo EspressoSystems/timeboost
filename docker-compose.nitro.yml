@@ -1,13 +1,16 @@
 services:
   demo-l1-network:
-    image: ghcr.io/espressosystems/geth-l1:main
-    command: --dev --dev.period=1
+    #build:
+    #  dockerfile: docker/geth-l1.Dockerfile
+    #  context: .
+    image: ghcr.io/espressosystems/timeboost/geth-l1:rollup-creator-round2
+    command: --dev --dev.period=1 --verbosity=2
     ports:
       - 8545:8545
       - 8546:8546
-    volumes:
-      - "./geth-config/genesis-default.json:/genesis.json"
-      - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+    #volumes:
+    #  - "./geth-config/genesis-default.json:/genesis.json"
+    #  - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
     networks:
       - timeboost
     healthcheck:
@@ -44,28 +47,29 @@ services:
     networks:
       - timeboost
   rollup-creator:    
-    #pid: host
+    pid: host
     #build:
-    #  context: rollupcreator/
+    #  dockerfile: docker/rollupcreator.Dockerfile
+    #  context: .
     #  args:
     #    NITRO_CONTRACTS_BRANCH: v3.1.0
-    image: ghcr.io/espressosystems/timeboost/rollup-creator:main
+    image: ghcr.io/espressosystems/timeboost/rollup-creator:rollup-creator-round2
     volumes:
       - "config:/config"
-      - "./nitro-config:/nitro-config"
+    #  - "./nitro-config:/nitro-config"
     environment:
-      PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
-      DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
-      PARENT_CHAIN_ID: 1337
+      AUTHORIZE_VALIDATORS: 10
+      CHAIN_DEPLOYMENT_INFO: "/config/deployment.json"
+      CHILD_CHAIN_CONFIG_PATH: "/nitro-config/l2_chain_config.json"
+      CHILD_CHAIN_INFO: "/config/deployed_chain_info.json"
       CHILD_CHAIN_NAME: "arb-dev-test"
+      DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
       MAX_DATA_SIZE: 117964
       OWNER_ADDRESS: 0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
-      WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+      PARENT_CHAIN_ID: 1337
+      PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
       SEQUENCER_ADDRESS: 0x2F1eAe7Dd46D88f08fC2f8ED27Fcb2Ab183eb2d0
-      AUTHORIZE_VALIDATORS: 10
-      CHILD_CHAIN_CONFIG_PATH: "/nitro-config/l2_chain_config.json"
-      CHAIN_DEPLOYMENT_INFO: "/config/deployment.json"
-      CHILD_CHAIN_INFO: "/config/deployed_chain_info.json"
+      WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
     command: ["create-rollup-testnode"]
     networks:
       - timeboost 
@@ -82,7 +86,7 @@ services:
     entrypoint: 
       - sh
       - -c
-      - > 
+      - >
         /app/mkconfig -n 4 --committee-id 0 \
           --public-addr "node:8000" \
           --public-mode "docker-dns" \
@@ -412,6 +416,7 @@ services:
         "-c", "/config",
         "-b", "20000",
         "--https-only", "false",
+        "--max-nodes", "4",
       ]
     volumes:
       - "config:/config"
