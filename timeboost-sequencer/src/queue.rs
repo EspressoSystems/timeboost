@@ -127,10 +127,10 @@ impl BundleQueue {
             });
         }
 
-        // Retain regular bundles not in the inclusion list.
-        inner
-            .regular
-            .retain(|(_, t)| !incl.regular_bundles().contains(t));
+        // Retain regular bundles not in the inclusion list or to be retried.
+        inner.regular.retain(|(_, t)| {
+            !(incl.regular_bundles().contains(t) || retry.regular_bundles().contains(t))
+        });
 
         // Process bundles that should be retried:
         let (priority, regular) = retry.into_parts();
