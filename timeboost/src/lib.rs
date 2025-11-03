@@ -1,7 +1,6 @@
 mod conf;
 
 use std::env;
-use std::iter::once;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
@@ -121,7 +120,7 @@ impl Timeboost {
             select! {
                 trx = self.receiver.recv() => {
                     if let Some(t) = trx {
-                        self.sequencer.add_bundles(once(t))
+                        self.sequencer.add_bundle(t).await?
                     }
                 },
                 out = self.sequencer.next() => match out {

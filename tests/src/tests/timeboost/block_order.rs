@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::once;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,7 +57,7 @@ async fn block_order() {
             loop {
                 select! {
                     t = brx.recv() => match t {
-                        Ok(trx) => s.add_bundles(once(trx)),
+                        Ok(trx) => s.add_bundle(trx).await.unwrap(),
                         Err(RecvError::Lagged(_)) => {
                             error!(node = %s.public_key(), "lagging behind");
                             continue

@@ -14,7 +14,6 @@ use timeboost_types::{
 use tracing::{error, trace};
 
 use super::Mode;
-use crate::include::IncluderCache;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -33,7 +32,6 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
-    cache: IncluderCache<[u8; 32]>,
 }
 
 impl Inner {
@@ -49,7 +47,7 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, c: IncluderCache<[u8; 32]>, m: Arc<SequencerMetrics>) -> Self {
+    pub fn new(prio: Address, metrics: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
@@ -57,10 +55,9 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             dkg: None,
-            metrics: m,
+            metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
-            cache: c,
         })))
     }
 
@@ -76,10 +73,7 @@ impl BundleQueue {
         self.0.lock().max_len = n
     }
 
-    pub fn add_bundles<I>(&self, it: I)
-    where
-        I: IntoIterator<Item = BundleVariant>,
-    {
+    pub fn add_bundle(&self, b: BundleVariant) {
         let time = Timestamp::now();
         let now = Instant::now();
 
@@ -87,30 +81,23 @@ impl BundleQueue {
 
         inner.set_time(time);
         let epoch_now = inner.time.into();
-        for b in it.into_iter() {
-            match b {
-                BundleVariant::Dkg(b) => inner.dkg = Some(b),
-                BundleVariant::Regular(b) => {
-                    if !inner.cache.contains(b.digest()) {
-                        inner.regular.push_back((now, b))
-                    }
+
+        match b {
+            BundleVariant::Dkg(b) => inner.dkg = Some(b),
+            BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
+            BundleVariant::Priority(b) => match b.validate(epoch_now, Some(inner.priority_addr)) {
+                Ok(_) => {
+                    let epoch = b.bundle().epoch();
+                    inner
+                        .priority
+                        .entry(epoch)
+                        .or_default()
+                        .insert(b.seqno(), b);
                 }
-                BundleVariant::Priority(b) => {
-                    match b.validate(epoch_now, Some(inner.priority_addr)) {
-                        Ok(_) => {
-                            let epoch = b.bundle().epoch();
-                            inner
-                                .priority
-                                .entry(epoch)
-                                .or_default()
-                                .insert(b.seqno(), b);
-                        }
-                        Err(e) => {
-                            trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
-                        }
-                    }
+                Err(e) => {
+                    trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
                 }
-            }
+            },
         }
 
         inner

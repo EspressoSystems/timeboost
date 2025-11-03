@@ -221,7 +221,7 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all nodes="5": build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error,robusta=debug \
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error \
   target/release/run \
     --verbose \
     --timeout 120 \
@@ -235,7 +235,7 @@ test-all nodes="5": build-release build-test-utils
         -s test-configs/scenarios/rolling-restart.toml \
         --verbose \
         --max-nodes {{nodes}}" \
-    target/release/block-checker -- -c test-configs/local --max-nodes {{nodes}} -b 200
+    target/release/block-checker -- -c test-configs/local --max-nodes {{nodes}} -b 500
 
 test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
