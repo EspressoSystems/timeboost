@@ -52,6 +52,9 @@ struct Args {
 
     #[clap(long, short)]
     verbose: bool,
+
+    #[clap(long, default_value_t = false)]
+    ignore_stamp: bool,
 }
 
 #[tokio::main]
@@ -93,9 +96,9 @@ async fn main() -> Result<()> {
                 }
                 if let Some(t) = args.times_until {
                     cmd.with_args(["--times-until", &t.to_string()]);
-                    if args.scenario.is_none() {
-                        cmd.with_arg("--ignore-stamp");
-                    }
+                }
+                if args.scenario.is_none() || args.ignore_stamp {
+                    cmd.with_arg("--ignore-stamp");
                 }
                 commands.insert(name.to_string(), cmd);
             }

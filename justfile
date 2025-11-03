@@ -244,7 +244,11 @@ test-dyn-comm: build-release-until build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/run-committee -c test-configs/c0/ --max-nodes 5 --until 2000" \
+    --spawn "4:target/release/run-committee \
+        -c test-configs/c0/ \
+        --ignore-stamp \
+        --max-nodes 5 \
+        --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
                  --public-addr 127.0.0.1:9000 \
@@ -280,6 +284,7 @@ test-dyn-comm: build-release-until build-test-utils
       --until 800 \
       --required-decrypt-rounds 3 \
       --verbose \
+      --ignore-stamp \
       --max-nodes 4 && rm -rf test-configs/c1
 
 [linux]
