@@ -80,12 +80,16 @@ impl TestNodeInstrument {
         edges: Vec<KeyId>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
+        let idx = self
+            .committee()
+            .get_index(&self.kpair.public_key())
+            .unwrap();
         let mut v = if let Some(tc) = timeout_cert {
             Vertex::new(
                 Round::new(round, UNKNOWN_COMMITTEE_ID),
                 tc,
                 EmptyBlocks.next(round),
-                KeyId::from(0),
+                idx,
                 &self.kpair,
             )
         } else {
@@ -93,7 +97,7 @@ impl TestNodeInstrument {
                 Round::new(round, UNKNOWN_COMMITTEE_ID),
                 self.manager.gen_round_cert(round - 1),
                 EmptyBlocks.next(round),
-                KeyId::from(0),
+                idx,
                 &self.kpair,
             )
         };
