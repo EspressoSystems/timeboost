@@ -97,8 +97,8 @@ impl Committee {
 
     /// Returns the key ID of the leader for a given round number.
     pub fn leader_index(&self, round: usize) -> KeyId {
-        let i = round % self.parties.len();
-        self.idxs().nth(i).copied().expect("round % len < len")
+        self.get_index(&self.leader(round))
+            .expect("round % len < len")
     }
 }
 
