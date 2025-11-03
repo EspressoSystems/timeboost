@@ -749,7 +749,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         if !messages.leader_threshold {
             let prev_round = round.num().saturating_sub(1);
             let prev_round_leader = committee.leader_index(prev_round as usize);
-	        if messages.map
+            if messages.map
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
                 .filter(|e| e.data().has_edge(&prev_round_leader))
