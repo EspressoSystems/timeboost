@@ -61,11 +61,7 @@ services:
       MAX_DATA_SIZE: 117964
       OWNER_ADDRESS: 0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
       WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
-      SEQUENCER_ADDRESS: 0x2F1eAe7Dd46D88f08fC2f8ED27Fcb2Ab183eb2d0
-      AUTHORIZE_VALIDATORS: 10
-      CHILD_CHAIN_CONFIG_PATH: "/nitro-config/l2_chain_config.json"
-      CHAIN_DEPLOYMENT_INFO: "/config/deployment.json"
-      CHILD_CHAIN_INFO: "/config/deployed_chain_info.json"
+      BATCH_POSTERS: 0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e
     command: ["create-rollup-testnode"]
     networks:
       - timeboost 
