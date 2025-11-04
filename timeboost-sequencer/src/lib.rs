@@ -7,7 +7,6 @@ mod queue;
 mod sort;
 
 use std::collections::VecDeque;
-use std::iter::once;
 use std::sync::Arc;
 
 use cliquenet::MAX_MESSAGE_SIZE;
@@ -17,7 +16,7 @@ use multisig::{Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
-use sailfish::{Coordinator, Event};
+use sailfish::{Coordinator, CoordinatorEvent};
 use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
     BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
@@ -55,7 +54,6 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     ibox_task: JoinHandle<()>,
-    bundles: BundleQueue,
     commands: Sender<Command>,
     output: Receiver<Output>,
 }
@@ -83,7 +81,8 @@ struct Task {
 }
 
 enum Command {
-    NextCommittee(ConsensusTime, AddressableCommittee, KeyStore, BundleQueue),
+    AddBundle(BundleVariant),
+    NextCommittee(ConsensusTime, AddressableCommittee, KeyStore),
 }
 
 /// Mode of operation.
@@ -175,7 +174,7 @@ impl Sequencer {
         let task = Task {
             kpair: cfg.sign_keypair,
             label: public_key,
-            bundles: queue.clone(),
+            bundles: queue,
             sailfish,
             includer: Includer::new(cfg.sailfish_committee.committee().clone()),
             decrypter,
@@ -191,7 +190,6 @@ impl Sequencer {
             label: public_key,
             task: spawn(task.go()),
             ibox_task: spawn(ibox.go()),
-            bundles: queue,
             output: rx,
             commands: cx,
         })
@@ -201,11 +199,11 @@ impl Sequencer {
         self.label
     }
 
-    pub fn add_bundles<I>(&mut self, it: I)
-    where
-        I: IntoIterator<Item = BundleVariant>,
-    {
-        self.bundles.add_bundles(it)
+    pub async fn add_bundle(&mut self, b: BundleVariant) -> Result<()> {
+        self.commands
+            .send(Command::AddBundle(b))
+            .await
+            .map_err(|_| TimeboostError::ChannelClosed)
     }
 
     pub async fn next(&mut self) -> Result<Output> {
@@ -235,7 +233,7 @@ impl Sequencer {
         k: KeyStore,
     ) -> Result<()> {
         self.commands
-            .send(Command::NextCommittee(t, a, k, self.bundles.clone()))
+            .send(Command::NextCommittee(t, a, k))
             .await
             .map_err(|_| TimeboostError::ChannelClosed)
     }
@@ -272,7 +270,7 @@ impl Task {
         // DKG bundle generation
         if !self.sailfish.awaits_handover() {
             if let Some(bundle) = self.decrypter.gen_dkg_bundle().await {
-                self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+                self.bundles.add_bundle(BundleVariant::Dkg(bundle));
             }
         }
 
@@ -336,10 +334,22 @@ impl Task {
                     }
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
-                    Some(Command::NextCommittee(t, a, k, b)) => {
+                    Some(Command::AddBundle(b)) => {
+                        if let BundleVariant::Regular(r) = &b {
+                            if self.includer.is_unknown(r) {
+                                self.bundles.add_bundle(b);
+                            } else {
+                                debug!(node = %self.label, "ignoring duplicated bundle");
+                            }
+                        } else {
+                            self.bundles.add_bundle(b);
+                        }
+                    }
+                    Some(Command::NextCommittee(t, a, k)) => {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
-                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
+                            let queue = self.bundles.clone();
+                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
@@ -348,7 +358,7 @@ impl Task {
                         }
                         // Resharing bundle generation
                         if let Some(bundle) = self.decrypter.gen_resharing_bundle(k).await {
-                            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+                            self.bundles.add_bundle(BundleVariant::Dkg(bundle));
                         }
                     }
                     None => {
@@ -417,15 +427,15 @@ impl Task {
                     break;
                 }
                 match self.sailfish.execute(action).await {
-                    Ok(Some(Event::Gc(r))) => {
+                    Ok(Some(CoordinatorEvent::Gc(r))) => {
                         if let Err(err) = self.decrypter.gc(r.num()).await {
                             warn!(node = %self.label, %err, "decrypt gc error");
                         }
                     }
-                    Ok(Some(Event::Catchup(_))) => {
+                    Ok(Some(CoordinatorEvent::Catchup(_))) => {
                         self.includer.clear_cache();
                     }
-                    Ok(Some(Event::UseCommittee(r))) => {
+                    Ok(Some(CoordinatorEvent::UseCommittee(r))) => {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c);
@@ -442,7 +452,7 @@ impl Task {
                             warn!(node = %self.label, id = %r.committee(), "committee not found");
                         }
                     }
-                    Ok(Some(Event::Deliver(_)) | None) => {}
+                    Ok(Some(CoordinatorEvent::Deliver(_)) | None) => {}
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
                         return Err(err.into());

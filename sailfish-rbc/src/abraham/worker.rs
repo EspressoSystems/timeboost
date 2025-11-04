@@ -12,7 +12,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Evidence, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -25,7 +25,7 @@ use super::{Command, Nonce, Protocol, RbcConfig, serialize};
 
 type RbcResult<T> = std::result::Result<T, RbcError>;
 type SendResult<T> = std::result::Result<T, NetworkDown>;
-type Sender<T> = mpsc::Sender<Message<T, Validated>>;
+type Sender<T> = mpsc::Sender<Event<T, Validated>>;
 type Receiver<T> = mpsc::Receiver<Command<T>>;
 
 /// A worker is run by `Rbc` to perform the actual work of sending and
@@ -75,14 +75,8 @@ enum WorkerState {
 
 /// Messages of a single round.
 struct Messages<T: Committable> {
-    /// Did we deliver the messages early?
-    ///
-    /// Early delivery means that as soon as we receive 2f + 1 messages in a
-    /// round, we deliver the messages. Afterwards this flag is set to true
-    /// to avoid repeated calculations. The rationale behind this is that with
-    /// 2f + 1 messages we know that at least f + 1 messages will eventually
-    /// be delivered.
-    early: bool,
+    /// Did we receive > 2t messages pointing to the leader of the previous round?
+    leader_threshold: bool,
     /// Tracking info per message proposal.
     map: BTreeMap<Digest, Tracker<Envelope<Vertex<T>, Validated>>>,
 }
@@ -102,7 +96,7 @@ impl<T: Committable> Messages<T> {
 impl<T: Committable> Default for Messages<T> {
     fn default() -> Self {
         Self {
-            early: false,
+            leader_threshold: false,
             map: Default::default(),
         }
     }
@@ -140,11 +134,6 @@ struct Item<T> {
     item: Option<T>,
     /// The deferred proposals, votes or certificates (if any).
     defer: Deferred,
-    /// If `true`, this item was delivered early.
-    ///
-    /// The flag is used for performance reasons to avoid duplicate delivery
-    /// of a message to the application layer.
-    early: bool,
 }
 
 impl<T> Item<T> {
@@ -152,7 +141,6 @@ impl<T> Item<T> {
         Self {
             item: None,
             defer: Deferred::default(),
-            early: false,
         }
     }
 
@@ -160,7 +148,6 @@ impl<T> Item<T> {
         Self {
             item: Some(item),
             defer: Deferred::default(),
-            early: false,
         }
     }
 }
@@ -483,9 +470,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
 
-        #[cfg(feature = "times")]
-        times::record("rbc-proposed", *digest.round().num());
-
         Ok(())
     }
 
@@ -615,7 +599,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let Some(msg) = msg.validated(&self.config.committees) else {
             return Err(RbcError::InvalidMessage);
         };
-        self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
+        self.tx.send(Event::Message(msg)).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
@@ -625,16 +609,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         let round = *vertex.data().round().data();
 
-        #[cfg(feature = "times")]
-        times::record("validate-msg-start", *round.num());
-
         let Some(Message::Vertex(vertex)) =
             Message::Vertex(vertex).validated(&self.config.committees) else {
                 return Err(RbcError::InvalidMessage);
             };
-
-        #[cfg(feature = "times")]
-        times::record("validate-msg-end", *round.num());
 
         if *vertex.signing_key() != src {
             warn!(node = %self.key, %src, "message sender != message signer");
@@ -752,15 +730,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 }
 
                 self.tx
-                    .send(Message::Vertex(vertex.clone()))
+                    .send(Event::Message(Message::Vertex(vertex.clone())))
                     .await
                     .map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered;
                 self.config
                     .metrics
                     .add_delivery_duration(tracker.start.elapsed());
-                #[cfg(feature = "times")]
-                times::record_once("rbc-delivered", *vertex.data().round().data().num());
                 debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
             }
             // Nothing to do here:
@@ -770,33 +746,22 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             }
         }
 
-        if self.config.early_delivery && !messages.early {
-            let available = messages
-                .map
+        if !messages.leader_threshold {
+            let prev_round = round.num().saturating_sub(1);
+            let prev_round_leader = committee.leader(prev_round as usize);
+            if messages.map
                 .values()
-                .filter(|t| t.message.item.is_some())
-                .count();
-
-            if available >= committee.quorum_size().get() {
-                for tracker in messages.map.values_mut() {
-                    if tracker.status == Status::Delivered {
-                        continue;
-                    }
-                    if let Some(vertex) = &tracker.message.item {
-                        self.tx
-                            .send(Message::Vertex(vertex.clone()))
-                            .await
-                            .map_err(|_| RbcError::Shutdown)?;
-                        tracker.message.early = true;
-                        self.config
-                            .metrics
-                            .add_delivery_duration(tracker.start.elapsed());
-                        debug!(node = %self.key, vertex = %vertex.data(), "delivered");
-                        #[cfg(feature = "times")]
-                        times::record_once("rbc-delivered", *vertex.data().round().data().num());
-                    }
-                }
-                messages.early = true
+                .filter_map(|t| t.message.item.as_ref())
+                .filter(|e| e.data().has_edge(&prev_round_leader))
+                .count() >= committee.quorum_size().get()
+            {
+                self.tx
+                    .send(Event::Info(Info::LeaderThresholdReached(prev_round.into())))
+                    .await
+                    .map_err(|_| RbcError::Shutdown)?;
+                #[cfg(feature = "times")]
+                times::record_once("rbc-leader-info", prev_round);
+                messages.leader_threshold = true
             }
         }
 
@@ -871,18 +836,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             tracker.message.defer.cert = Some(b);
                             debug!(node = %self.key, %digest, "suppressing cert");
                         }
-                        if !tracker.message.early {
-                            self.tx
-                                .send(Message::Vertex(vertex.clone()))
-                                .await
-                                .map_err(|_| RbcError::Shutdown)?;
-                            self.config
-                                .metrics
-                                .add_delivery_duration(tracker.start.elapsed());
-                            debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-                            #[cfg(feature = "times")]
-                            times::record_once("rbc-delivered", *vertex.data().round().data().num());
-                        }
+                        self.tx
+                            .send(Event::Message(Message::Vertex(vertex.clone())))
+                            .await
+                            .map_err(|_| RbcError::Shutdown)?;
+                        self.config
+                            .metrics
+                            .add_delivery_duration(tracker.start.elapsed());
+                        debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
                         tracker.status = Status::Delivered
                     } else {
                         let m = Protocol::<'_, T, Validated>::GetRequest(digest);
@@ -966,18 +927,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         tracker.message.defer.cert = Some(b);
                         debug!(node = %self.key, %digest, "suppressing cert");
                     }
-                    if !tracker.message.early {
-                        self.tx
-                            .send(Message::Vertex(vertex.clone()))
-                            .await
-                            .map_err(|_| RbcError::Shutdown)?;
-                        self.config
-                            .metrics
-                            .add_delivery_duration(tracker.start.elapsed());
-                        debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-                        #[cfg(feature = "times")]
-                        times::record_once("rbc-delivered", *vertex.data().round().data().num());
-                    }
+                    self.tx
+                        .send(Event::Message(Message::Vertex(vertex.clone())))
+                        .await
+                        .map_err(|_| RbcError::Shutdown)?;
+                    self.config
+                        .metrics
+                        .add_delivery_duration(tracker.start.elapsed());
+                    debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
                     tracker.status = Status::Delivered
                 } else {
                     let m = Protocol::<'_, T, Validated>::GetRequest(digest);
@@ -1054,14 +1011,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         self.tx
-            .send(Message::Vertex(vertex.clone()))
+            .send(Event::Message(Message::Vertex(vertex.clone())))
             .await
             .map_err(|_| RbcError::Shutdown)?;
 
         debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
-
-        #[cfg(feature = "times")]
-        times::record_once("rbc-delivered", *vertex.data().round().data().num());
 
         tracker.message = Item::some(vertex);
         tracker.status = Status::Delivered;

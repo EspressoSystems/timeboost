@@ -110,11 +110,8 @@ struct Args {
     espresso_base_url: Url,
 
     /// Builder base URL of Espresso's REST API.
-    #[clap(
-        long,
-        default_value = "https://builder.decaf.testnet.espresso.network/v0/"
-    )]
-    espresso_builder_base_url: Url,
+    #[clap(long)]
+    espresso_builder_base_url: Option<Url>,
 
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]

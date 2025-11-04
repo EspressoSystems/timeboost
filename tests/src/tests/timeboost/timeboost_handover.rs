@@ -1,6 +1,6 @@
 use std::cmp::min;
 use std::collections::HashMap;
-use std::iter::{once, repeat_with};
+use std::iter::repeat_with;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -85,7 +85,7 @@ async fn run_handover(
                             c.set_next_committee(a.clone()).await.unwrap();
                         }
                         Ok(Cmd::Bundle(bundle)) => {
-                            s.add_bundles(once(bundle));
+                            s.add_bundle(bundle).await.unwrap();
                         }
                         Err(RecvError::Lagged(e)) => {
                            warn!("lagging behind: {e}");
@@ -197,7 +197,7 @@ async fn run_handover(
                             c.set_next_committee(a.clone()).await.unwrap();
                         }
                         Ok(Cmd::Bundle(bundle)) => {
-                            s.add_bundles(once(bundle));
+                            s.add_bundle(bundle).await.unwrap();
                         }
                         Err(RecvError::Lagged(e)) => {
                            warn!("lagging behind: {e}");

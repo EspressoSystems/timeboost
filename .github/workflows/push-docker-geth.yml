@@ -42,18 +42,18 @@ jobs:
         name: Generate Docker Metadata
         id: meta
         with:
-          images: ghcr.io/espressosystems/timeboost/rollup-creator
+          images: ghcr.io/espressosystems/timeboost/geth-l1
           flavor: |
             latest=true
             suffix=-amd64,onlatest=true
 
-      - name: Build and push Rollup Creator Docker image
+      - name: Build and push Geth L1 Docker image
         uses: docker/build-push-action@v6
         id: docker
         with:
           context: .
           build-args: NITRO_CONTRACTS_BRANCH=v3.1.0
-          file: ./docker/rollupcreator.Dockerfile
+          file: ./docker/geth-l1.Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -84,18 +84,18 @@ jobs:
         name: Generate Docker Metadata
         id: meta
         with:
-          images: ghcr.io/espressosystems/timeboost/rollup-creator
+          images: ghcr.io/espressosystems/timeboost/geth-l1
           flavor: |
             latest=true
             suffix=-arm64,onlatest=true
 
-      - name: Build and push Rollup Creator Docker image
+      - name: Build and push Geth L1 Docker image
         uses: docker/build-push-action@v6
         id: docker
         with:
           context: .
           build-args: NITRO_CONTRACTS_BRANCH=v3.1.0
-          file: ./docker/rollupcreator.Dockerfile
+          file: ./docker/geth-l1.Dockerfile
           platforms: linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -118,24 +118,24 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Rollup Creator Docker image
+      - name: Build and push Geth L1 Docker image
         uses: docker/metadata-action@v5
         id: metadata
         with:
-          images: ghcr.io/espressosystems/timeboost/rollup-creator
+          images: ghcr.io/espressosystems/timeboost/geth-l1
           flavor: |
             latest=true
 
       - name: Create and push manifest images
         uses: Noelware/docker-manifest-action@master
         with:
-            tags: ghcr.io/espressosystems/timeboost/rollup-creator:${{steps.metadata.outputs.version}}
-            inputs: ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build-arm.outputs.digest}}
+            tags: ghcr.io/espressosystems/timeboost/geth-l1:${{steps.metadata.outputs.version}}
+            inputs: ghcr.io/espressosystems/timeboost/geth-l1@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/geth-l1@${{needs.build-arm.outputs.digest}}
             push: ${{ github.event_name != 'pull_request' }}
 
       - name: Create and push manifest images to latest
         uses: Noelware/docker-manifest-action@master
         with:
-            tags: ghcr.io/espressosystems/timeboost/rollup-creator:latest
-            inputs: ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build-arm.outputs.digest}}
+            tags: ghcr.io/espressosystems/timeboost/geth-l1:latest
+            inputs: ghcr.io/espressosystems/timeboost/geth-l1@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/geth-l1@${{needs.build-arm.outputs.digest}}
             push: ${{ github.event_name != 'pull_request' }}

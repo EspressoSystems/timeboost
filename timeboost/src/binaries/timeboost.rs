@@ -141,7 +141,7 @@ async fn main() -> Result<()> {
         .robusta((
             robusta::Config::builder()
                 .base_url(node_config.espresso.base_url)
-                .builder_base_url(node_config.espresso.builder_base_url)
+                .maybe_builder_base_url(node_config.espresso.builder_base_url)
                 .wss_base_url(node_config.espresso.websockets_base_url)
                 .label(pubkey.to_string())
                 .https_only(cli.https_only)

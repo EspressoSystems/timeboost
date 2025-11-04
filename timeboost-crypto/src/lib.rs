@@ -8,7 +8,7 @@ mod traits;
 mod vess;
 
 #[cfg(feature = "bench")]
-pub use mre::LabeledDecryptionKey;
+pub use mre::{DecryptionKey, EncryptionKey, LabeledDecryptionKey};
 #[cfg(feature = "bench")]
 pub use sg_encryption::ShoupGennaro;
 #[cfg(feature = "bench")]

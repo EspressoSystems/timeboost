@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     let conf = Config::builder()
         .https_only(args.https_only)
         .base_url(node.espresso.base_url)
-        .builder_base_url(node.espresso.builder_base_url)
+        .maybe_builder_base_url(node.espresso.builder_base_url)
         .wss_base_url(node.espresso.websockets_base_url)
         .label("block-checker")
         .build();
@@ -77,8 +77,7 @@ async fn main() -> Result<()> {
             .zip(start.skip(1))
             .take_while(|(a, b)| **a + 1 == **b)
             .count();
-        let b = set.iter().nth(offset).expect("valid offset");
-        info!(%offset, total = %set.len(), last = %b, "validated")
+        info!(%offset, total = %set.len(), "validated")
     }
 
     Ok(())
