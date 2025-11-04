@@ -57,7 +57,7 @@ impl State {
 
 pub struct Consensus<T> {
     /// The key index of the node.
-    key_idx: KeyId,
+    key_id: KeyId,
 
     /// The public and private key of this node.
     keypair: Keypair,
@@ -156,11 +156,11 @@ where
     where
         D: DataSource<Data = T> + Send + 'static,
     {
-        let key_idx = committee
+        let key_id = committee
             .get_index(&keypair.public_key())
             .expect("keypair in committee");
         Self {
-            key_idx,
+            key_id,
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
@@ -203,7 +203,7 @@ where
                 Round::new(r, self.committee.id()),
                 Evidence::Genesis,
                 self.datasource.next(r),
-                self.key_idx,
+                self.key_id,
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
@@ -789,7 +789,7 @@ where
             Round::new(r, self.committee.id()),
             e,
             payload,
-            self.key_idx,
+            self.key_id,
             &self.keypair,
         );
         new.add_edges(self.dag.vertices(r - 1).map(|v| v.source()))
@@ -1202,7 +1202,7 @@ where
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
-            self.key_idx,
+            self.key_id,
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
