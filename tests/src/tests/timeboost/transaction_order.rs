@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::once;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
@@ -56,7 +55,7 @@ async fn transaction_order() {
             loop {
                 select! {
                     trx = brx.recv() => match trx {
-                        Ok(trx) => s.add_bundles(once(trx)),
+                        Ok(trx) => s.add_bundle(trx).await.unwrap(),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
