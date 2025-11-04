@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
             }
             tasks.spawn(async move {
                 if args.verbose {
-                    eprintln!("spawing timeboost: \"{cmd}\"");
+                    eprintln!("spawning timeboost: \"{cmd}\"");
                 }
                 let mut cmd = Command::from(cmd);
                 cmd.kill_on_drop(true);
