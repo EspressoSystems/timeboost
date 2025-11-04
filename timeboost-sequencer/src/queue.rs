@@ -1,5 +1,5 @@
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -32,6 +32,7 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
+    cache: HashSet<[u8; 32]>
 }
 
 impl Inner {
@@ -58,6 +59,7 @@ impl BundleQueue {
             metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
+            cache: HashSet::new()
         })))
     }
 
@@ -84,7 +86,11 @@ impl BundleQueue {
 
         match b {
             BundleVariant::Dkg(b) => inner.dkg = Some(b),
-            BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
+            BundleVariant::Regular(b) => {
+                if inner.cache.insert(*b.digest()) {
+                    inner.regular.push_back((now, b))
+                }
+            }
             BundleVariant::Priority(b) => match b.validate(epoch_now, Some(inner.priority_addr)) {
                 Ok(_) => {
                     let epoch = b.bundle().epoch();
@@ -126,6 +132,11 @@ impl BundleQueue {
             !(incl.regular_bundles().contains(t) || retry.regular_bundles().contains(t))
         });
 
+        // Remove included bundles from cache.
+        for b in incl.regular_bundles() {
+            inner.cache.remove(b.digest());
+        }
+
         // Process bundles that should be retried:
         let (priority, regular) = retry.into_parts();
 
@@ -141,6 +152,7 @@ impl BundleQueue {
             if b.epoch() + 1 < current_epoch {
                 // Transactions that have not progressed in the protocol for
                 // over a minute can be discarded.
+                inner.cache.remove(b.digest());
                 continue;
             }
             inner.regular.push_front((earliest, b));
