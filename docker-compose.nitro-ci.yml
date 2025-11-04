@@ -72,6 +72,18 @@ services:
     depends_on:
       demo-l1-network:
         condition: service_healthy
+  account-generator:
+    image: ghcr.io/espressosystems/account-generator:latest
+    volumes:
+      - l1keystore:/l1keystore
+    environment:
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      - L1_PASSPHRASE=passphrase
+    networks:
+      - timeboost
+    depends_on:
+      demo-l1-network:
+        condition: service_healthy
   nitro0:
     pid: host # allow debugging
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
