@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
                         bail!("node {node} of scenario {path:?} not found");
                     }
                 }
-                Action::Remove { .. } | Action::Exit => {}
+                Action::Remove { .. } => {}
             }
         }
         let mut nodes = BTreeMap::new();
