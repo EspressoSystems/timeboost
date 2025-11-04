@@ -54,6 +54,10 @@ struct Args {
     #[clap(long, short)]
     public_addr: Address,
 
+    /// Optional address to bind, use this if public address is some external ip or dns name
+    #[clap(long, short)]
+    bind_addr: Option<IpAddr>,
+
     /// HTTP API of a timeboost node.
     #[clap(long)]
     http_api: Address,
@@ -152,11 +156,31 @@ enum Mode {
 }
 
 impl Mode {
-    fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
+    fn adjust_addr(
+        &self,
+        i: u8,
+        base: &Address,
+        bind_addr: &Option<IpAddr>,
+    ) -> Result<(Address, Address)> {
+        let bind = if let Some(ip) = bind_addr {
+            &Address::Inet(*ip, base.port())
+        } else {
+            base
+        };
         match self {
-            Mode::Unchanged => Ok(base.clone()),
-            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + 10 * u16::from(i))),
+            Mode::Unchanged => Ok((base.clone(), bind.clone())),
+            Mode::IncrementPort => Ok((
+                base.clone().with_port(base.port() + 10 * u16::from(i)),
+                bind.clone().with_port(bind.port() + 10 * u16::from(i)),
+            )),
             Mode::IncrementAddress => {
+                let Address::Inet(bind_ip, bind_port) = bind else {
+                    bail!("increment-address requires IP addresses")
+                };
+                let bind_ip = match bind_ip {
+                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip)).into()),
+                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip)).into()),
+                };
                 let Address::Inet(ip, port) = base else {
                     bail!("increment-address requires IP addresses")
                 };
@@ -164,17 +188,34 @@ impl Mode {
                     IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip) + u32::from(i)).into()),
                     IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
                 };
-                Ok(Address::Inet(ip, *port))
+                if bind_addr.is_some() {
+                    Ok((Address::Inet(ip, *port), Address::Inet(bind_ip, *bind_port)))
+                } else {
+                    Ok((Address::Inet(ip, *port), Address::Inet(ip, *port)))
+                }
             }
             Mode::DockerDns => {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
+                let Address::Inet(bind_ip, bind_port) = bind else {
+                    bail!("increment-address requires IP addresses")
+                };
+                let bind_ip = match bind_ip {
+                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip)).into()),
+                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip)).into()),
+                };
                 if let Some(index) = name.find('.') {
                     let (first, rest) = name.split_at(index);
-                    return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
+                    return Ok((
+                        Address::Name(format!("{}{}{}", first, i, rest), *port),
+                        Address::Inet(bind_ip, *bind_port),
+                    ));
                 }
-                Ok(Address::Name(format!("{}{}", name, i), *port))
+                Ok((
+                    Address::Name(format!("{}{}", name, i), *port),
+                    Address::Inet(bind_ip, *bind_port),
+                ))
             }
         }
     }
@@ -212,11 +253,15 @@ impl Args {
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
             let public_mode = self.public_mode;
             let nitro_mode = self.nitro_mode;
-            let public_addr = public_mode.adjust_addr(i, &self.public_addr)?;
-            let http_addr = public_mode.adjust_addr(i, &self.http_api)?;
-            let internal_addr = public_mode.adjust_addr(i, &self.internal_addr)?;
+            let (pub_addr, pub_bind_addr) =
+                public_mode.adjust_addr(i, &self.public_addr, &self.bind_addr)?;
+            let (http_addr, http_bind_addr) =
+                public_mode.adjust_addr(i, &self.http_api, &self.bind_addr)?;
+            let (internal_addr, internal_bind_addr) =
+                public_mode.adjust_addr(i, &self.internal_addr, &self.bind_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
-                Some(nitro_mode.adjust_addr(i, addr)?)
+                let nitro = nitro_mode.adjust_addr(i, addr, &self.bind_addr)?;
+                Some(nitro.0)
             } else {
                 None
             };
@@ -226,11 +271,11 @@ impl Args {
                 stamp: self.stamp_dir.join(format!("timeboost.{i}.stamp")),
                 net: NodeNet {
                     public: PublicNet {
-                        address: public_addr,
-                        http_api: http_addr,
+                        address: pub_bind_addr,
+                        http_api: http_bind_addr,
                     },
                     internal: InternalNet {
-                        address: internal_addr,
+                        address: internal_bind_addr,
                         nitro: nitro_addr,
                     },
                 },
@@ -272,9 +317,9 @@ impl Args {
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
-                public_address: config.net.public.address.clone(),
-                http_api: config.net.public.http_api.clone(),
-                internal_api: config.net.internal.address.clone(),
+                public_address: pub_addr,
+                http_api: http_addr,
+                internal_api: internal_addr,
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;

@@ -11,9 +11,13 @@ use timeboost_proto::inclusion::InclusionList;
 use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
+use tokio::time::{Duration, sleep};
 use tonic::transport::Endpoint;
 use tracing::error;
 use worker::Worker;
+
+const MAX_RETRIES: usize = 10;
+const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 pub struct NitroForwarder {
     incls_tx: Sender<InclusionList>,
@@ -30,10 +34,22 @@ impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.connect().await.map_err(|err| {
-            error!(%err, %addr, "failed to connect to nitro node");
-            err
-        })?;
+        let chan = 'retry_loop: {
+            for i in 1..=MAX_RETRIES {
+                match endpoint.connect().await {
+                    Ok(chan) => break 'retry_loop chan,
+                    Err(err) => {
+                        if i == MAX_RETRIES {
+                            error!(%err, %addr, "failed to connect to nitro node after {} attempts", MAX_RETRIES);
+                            return Err(Error::TransportError(err));
+                        }
+                        error!(%err, %addr, retry = i, "failed to connect to nitro node, retrying...");
+                        sleep(RETRY_DELAY).await;
+                    }
+                }
+            }
+            unreachable!("loop should always break early with success or return error");
+        };
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
