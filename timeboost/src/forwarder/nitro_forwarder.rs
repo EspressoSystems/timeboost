@@ -41,7 +41,7 @@ impl NitroForwarder {
                     Err(err) => {
                         if i == MAX_RETRIES {
                             error!(%err, %addr, "failed to connect to nitro node after {} attempts", MAX_RETRIES);
-                            return Err(Error::TransportError(err));
+                            return Err(err.into());
                         }
                         error!(%err, %addr, retry = i, "failed to connect to nitro node, retrying...");
                         sleep(RETRY_DELAY).await;
