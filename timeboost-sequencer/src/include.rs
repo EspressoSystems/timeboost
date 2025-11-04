@@ -148,7 +148,7 @@ impl Includer {
         let mut iregular = Vec::new();
 
         for (rb, n) in regular {
-            if n > self.committee.one_honest_threshold().get() {
+            if n >= self.committee.one_honest_threshold().get() {
                 if self.is_unknown(&rb) {
                     self.cache
                         .entry(self.round)
