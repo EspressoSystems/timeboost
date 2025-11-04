@@ -22,7 +22,7 @@ pub struct Step {
 pub enum Action {
     Remove { files: Vec<PathBuf> },
     StartNode { node: String, label: Option<String> },
-    StopNode { node: String, label: Option<String> }
+    StopNode { node: String, label: Option<String> },
 }
 
 impl fmt::Display for Action {

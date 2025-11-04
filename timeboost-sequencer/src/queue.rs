@@ -32,7 +32,7 @@ struct Inner {
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
-    cache: HashSet<[u8; 32]>
+    cache: HashSet<[u8; 32]>,
 }
 
 impl Inner {
@@ -59,7 +59,7 @@ impl BundleQueue {
             metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
-            cache: HashSet::new()
+            cache: HashSet::new(),
         })))
     }
 
