@@ -22,8 +22,7 @@ pub struct Step {
 pub enum Action {
     Remove { files: Vec<PathBuf> },
     StartNode { node: String, label: Option<String> },
-    StopNode { node: String, label: Option<String> },
-    Exit,
+    StopNode { node: String, label: Option<String> }
 }
 
 impl fmt::Display for Action {
@@ -40,7 +39,6 @@ impl fmt::Display for Action {
                 label: Some(l),
             } => write!(f, "stop node {node:?} ({l:?})"),
             Self::StopNode { node, label: None } => write!(f, "stop node {node:?}"),
-            Self::Exit => f.write_str("exit"),
         }
     }
 }

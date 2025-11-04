@@ -203,7 +203,6 @@ async fn main() -> Result<()> {
                         .ok_or_else(|| anyhow!("{node:?} not running"))?;
                     handle.abort();
                 }
-                Action::Exit => return Ok(()),
             }
         }
     } else {
