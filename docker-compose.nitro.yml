@@ -459,8 +459,6 @@ services:
       - --nitro-url
       - http://nitro0:8547
       - --max-nodes
-      - "4"
-      - --max-nodes
       - '4'
     volumes:
       - "config:/config"
