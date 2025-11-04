@@ -9,12 +9,12 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use minicbor::{CborLen, Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use super::{KeyIdx, PublicKey};
+use super::{KeyId, PublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Committee {
     id: CommitteeId,
-    parties: Arc<BiBTreeMap<KeyIdx, PublicKey>>,
+    parties: Arc<BiBTreeMap<KeyId, PublicKey>>,
 }
 
 impl Committee {
@@ -22,7 +22,7 @@ impl Committee {
     where
         C: Into<CommitteeId>,
         I: IntoIterator<Item = (T, PublicKey)>,
-        T: Into<KeyIdx>,
+        T: Into<KeyId>,
     {
         let map = BiBTreeMap::from_iter(it.into_iter().map(|(i, k)| (i.into(), k)));
         assert!(!map.is_empty());
@@ -54,13 +54,13 @@ impl Committee {
         NonZeroUsize::new(q).expect("n + 1 > 0")
     }
 
-    /// Retrieves the public key associated with the given key idx.
-    pub fn get_key<T: Into<KeyIdx>>(&self, ix: T) -> Option<&PublicKey> {
+    /// Retrieves the public key associated with the given key ID.
+    pub fn get_key<T: Into<KeyId>>(&self, ix: T) -> Option<&PublicKey> {
         self.parties.get_by_left(&ix.into())
     }
 
-    /// Finds the key idx for a given public key.
-    pub fn get_index(&self, k: &PublicKey) -> Option<KeyIdx> {
+    /// Finds the key ID for a given public key.
+    pub fn get_index(&self, k: &PublicKey) -> Option<KeyId> {
         self.parties.get_by_right(k).copied()
     }
 
@@ -70,17 +70,17 @@ impl Committee {
     }
 
     /// Checks if a key ID is part of the committee.
-    pub fn contains_index(&self, idx: &KeyIdx) -> bool {
+    pub fn contains_index(&self, idx: &KeyId) -> bool {
         self.parties.contains_left(idx)
     }
 
     /// Returns an iterator over all entries in the committee.
-    pub fn entries(&self) -> impl Iterator<Item = (KeyIdx, &PublicKey)> {
+    pub fn entries(&self) -> impl Iterator<Item = (KeyId, &PublicKey)> {
         self.parties.iter().map(|e| (*e.0, e.1))
     }
 
-    /// Returns an iterator over all key idxs in the committee.
-    pub fn idxs(&self) -> impl Iterator<Item = KeyIdx> {
+    /// Returns an iterator over all key IDs in the committee.
+    pub fn idxs(&self) -> impl Iterator<Item = KeyId> {
         self.parties.left_values().copied()
     }
 
@@ -95,8 +95,8 @@ impl Committee {
         self.parties().nth(i).copied().expect("round % len < len")
     }
 
-    /// Returns the key idx of the leader for a given round number.
-    pub fn leader_index(&self, round: usize) -> KeyIdx {
+    /// Returns the key ID of the leader for a given round number.
+    pub fn leader_index(&self, round: usize) -> KeyId {
         self.get_index(&self.leader(round))
             .expect("round % len < len")
     }

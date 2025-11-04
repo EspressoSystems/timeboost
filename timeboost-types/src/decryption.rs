@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use ark_ec::AffineRepr;
 use arrayvec::ArrayVec;
-use multisig::{Committee, CommitteeId, KeyIdx};
+use multisig::{Committee, CommitteeId, KeyId};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use sailfish_types::{Evidence, RoundNumber};
@@ -290,14 +290,14 @@ pub struct KeyStore(Arc<KeyStoreInner>);
 #[derive(Debug)]
 struct KeyStoreInner {
     committee: Committee,
-    keys: BTreeMap<KeyIdx, DkgEncKey>,
+    keys: BTreeMap<KeyId, DkgEncKey>,
 }
 
 impl KeyStore {
     pub fn new<I, T>(c: Committee, keys: I) -> Self
     where
         I: IntoIterator<Item = (T, DkgEncKey)>,
-        T: Into<KeyIdx>,
+        T: Into<KeyId>,
     {
         let this = Self(Arc::new(KeyStoreInner {
             committee: c,
@@ -305,14 +305,14 @@ impl KeyStore {
         }));
 
         // basic sanity check
-        // Current secret sharing impl assumes node_idx/key_idx to range from 0..n
-        for (node_idx, (key_idx, p)) in this.0.committee.entries().enumerate() {
+        // Current secret sharing impl assumes node_idx/key_id to range from 0..n
+        for (node_idx, (key_id, p)) in this.0.committee.entries().enumerate() {
             assert_eq!(
-                KeyIdx::from(node_idx as u8),
-                key_idx,
-                "{p}'s key idx is not {node_idx}"
+                KeyId::from(node_idx as u8),
+                key_id,
+                "{p}'s key ID is not {node_idx}"
             );
-            assert!(this.0.keys.contains_key(&key_idx), "{p} has no DkgEncKey");
+            assert!(this.0.keys.contains_key(&key_id), "{p} has no DkgEncKey");
         }
         for id in this.0.keys.keys() {
             assert!(
@@ -329,7 +329,7 @@ impl KeyStore {
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
-    pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyIdx, DkgEncKey> {
+    pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyId, DkgEncKey> {
         self.0.keys.values()
     }
 }

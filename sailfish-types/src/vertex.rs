@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, KeyIdx, Keypair, Signed};
+use multisig::{Certificate, KeyId, Keypair, Signed};
 use serde::{Deserialize, Serialize};
 
 use crate::{Evidence, NoVote, Round, RoundNumber};
@@ -9,8 +9,8 @@ use crate::{Evidence, NoVote, Round, RoundNumber};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
     round: Signed<Round>,
-    source: KeyIdx,
-    edges: BTreeSet<KeyIdx>,
+    source: KeyId,
+    edges: BTreeSet<KeyId>,
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
@@ -20,7 +20,7 @@ pub struct Vertex<T> {
 impl<T> Vertex<T> {
     pub fn new<K, E>(round: Round, evidence: E, payload: T, source: K, keypair: &Keypair) -> Self
     where
-        K: Into<KeyIdx>,
+        K: Into<KeyId>,
         E: Into<Evidence>,
     {
         let evidence = evidence.into();
@@ -58,7 +58,7 @@ impl<T> Vertex<T> {
             && self.no_vote.is_none()
     }
 
-    pub fn source(&self) -> KeyIdx {
+    pub fn source(&self) -> KeyId {
         self.source
     }
 
@@ -78,11 +78,11 @@ impl<T> Vertex<T> {
         self.edges.len()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = KeyIdx> {
+    pub fn edges(&self) -> impl Iterator<Item = KeyId> {
         self.edges.iter().copied()
     }
 
-    pub fn has_edge(&self, id: KeyIdx) -> bool {
+    pub fn has_edge(&self, id: KeyId) -> bool {
         self.edges.contains(&id)
     }
 
@@ -99,14 +99,14 @@ impl<T> Vertex<T> {
         self
     }
 
-    pub fn add_edge(&mut self, id: KeyIdx) -> &mut Self {
+    pub fn add_edge(&mut self, id: KeyId) -> &mut Self {
         self.edges.insert(id);
         self
     }
 
     pub fn add_edges<I>(&mut self, edges: I) -> &mut Self
     where
-        I: IntoIterator<Item = KeyIdx>,
+        I: IntoIterator<Item = KeyId>,
     {
         self.edges.extend(edges);
         self

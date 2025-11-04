@@ -10,7 +10,7 @@ use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Rol
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use minicbor::{Decode, Encode};
 use multisig::{
-    Certificate, CommitteeId, Envelope, KeyIdx, Keypair, PublicKey, Unchecked, Validated,
+    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked, Validated,
     VoteAccumulator,
 };
 use smallvec::SmallVec;
@@ -273,7 +273,7 @@ struct Tracking {
     /// to voting.
     trackers: HashMap<BlockInfo, Tracker>,
     /// We remember the voters and only allow one vote per party and block hash.
-    voters: SmallVec<[KeyIdx; 16]>,
+    voters: SmallVec<[KeyId; 16]>,
 }
 
 struct Tracker {

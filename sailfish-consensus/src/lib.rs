@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use multisig::{CommitteeId, KeyIdx};
+use multisig::{CommitteeId, KeyId};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
@@ -57,7 +57,7 @@ impl State {
 
 pub struct Consensus<T> {
     /// The key index of the node.
-    key_idx: KeyIdx,
+    key_idx: KeyId,
 
     /// The public and private key of this node.
     keypair: Keypair,
@@ -93,7 +93,7 @@ pub struct Consensus<T> {
     buffer: Dag<T>,
 
     /// The set of values we have delivered so far.
-    delivered: HashSet<(RoundNumber, KeyIdx)>,
+    delivered: HashSet<(RoundNumber, KeyId)>,
 
     /// The set of round number confirmations that we've received so far per round.
     rounds: BTreeMap<RoundNumber, VoteAccumulator<Round>>,
@@ -1250,7 +1250,7 @@ impl<T: Committable + Eq> Consensus<T> {
         self.buffer.depth()
     }
 
-    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, KeyIdx)> + '_ {
+    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, KeyId)> + '_ {
         self.delivered.iter().copied()
     }
 
@@ -1304,7 +1304,7 @@ where
 #[cfg(test)]
 mod tests {
     use arbtest::{arbitrary::Arbitrary, arbtest};
-    use multisig::KeyIdx;
+    use multisig::KeyId;
     use sailfish_types::{Evidence, Round, Timestamp, math};
 
     use super::{Action, ConsensusTime, Payload, tick};
@@ -1315,7 +1315,7 @@ mod tests {
         arbtest(|u| {
             // Some fake values of no concern to this test:
             let r = Round::new(u64::arbitrary(u)?, u64::arbitrary(u)?);
-            let k = KeyIdx::from(u8::arbitrary(u)?);
+            let k = KeyId::from(u8::arbitrary(u)?);
             let e = Evidence::Genesis;
 
             // Some random timestamps:

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use committable::Committable;
 use multisig::{
-    Certificate, Committee, Envelope, KeyIdx, Keypair, Signed, Validated, VoteAccumulator,
+    Certificate, Committee, Envelope, KeyId, Keypair, Signed, Validated, VoteAccumulator,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -59,7 +59,7 @@ impl KeyManager {
     }
 
     /// For a given round create vertex message for each node in committee.
-    pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<KeyIdx>) -> Vec<Message> {
+    pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<KeyId>) -> Vec<Message> {
         self.keys
             .keys()
             .map(|id| self.create_vertex_msg_for_node_id(*id, round, edges.clone()))
@@ -72,7 +72,7 @@ impl KeyManager {
         &self,
         id: u8,
         round: u64,
-        edges: Vec<KeyIdx>,
+        edges: Vec<KeyId>,
     ) -> Message {
         let kpair = &self.keys[&id];
         let mut v = Vertex::new(
@@ -113,7 +113,7 @@ impl KeyManager {
         round: RoundNumber,
         committee: &Committee,
         ignore_leader: bool,
-    ) -> Vec<KeyIdx> {
+    ) -> Vec<KeyId> {
         // 2f + 1 edges
         let threshold = committee.quorum_size().get();
         let leader = committee.leader(*round as usize);
@@ -148,7 +148,7 @@ impl KeyManager {
         &self,
         round: u64,
         committee: &Committee,
-    ) -> (Dag, Evidence, Vec<KeyIdx>) {
+    ) -> (Dag, Evidence, Vec<KeyId>) {
         let mut dag = Dag::new(committee.size());
         let edges = self
             .keys
@@ -180,7 +180,7 @@ impl KeyManager {
             Round::new(round, UNKNOWN_COMMITTEE_ID),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round),
-            KeyIdx::from(0),
+            KeyId::from(0),
             kpair,
         );
         let e = Envelope::signed(d, kpair);

@@ -2,7 +2,7 @@ use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{
-    Certificate, CommitteeId, Envelope, KeyIdx, Keypair, PublicKey, Signed, Unchecked, Validated,
+    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Signed, Unchecked, Validated,
 };
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -122,7 +122,7 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 let signer = env.signing_key();
 
-                // The signer's position should match the key idx of the vertex:
+                // The signer's position should match the key ID of the vertex:
                 if c.get_index(signer) != Some(env.data().source()) {
                     warn!(%signer, source = %env.data().source(), "signer pos != vertex source");
                     return None;
@@ -344,13 +344,13 @@ impl<T: Committable> Message<T, Unchecked> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Payload<T: Committable> {
     round: Round,
-    source: KeyIdx,
+    source: KeyId,
     data: T,
     evidence: Evidence,
 }
 
 impl<T: Committable> Payload<T> {
-    pub fn new(round: Round, source: KeyIdx, data: T, evidence: Evidence) -> Self {
+    pub fn new(round: Round, source: KeyId, data: T, evidence: Evidence) -> Self {
         Self {
             round,
             source,
@@ -363,7 +363,7 @@ impl<T: Committable> Payload<T> {
         self.round
     }
 
-    pub fn source(&self) -> KeyIdx {
+    pub fn source(&self) -> KeyId {
         self.source
     }
 
@@ -383,7 +383,7 @@ impl<T: Committable> Payload<T> {
         self.evidence
     }
 
-    pub fn into_parts(self) -> (Round, KeyIdx, T, Evidence) {
+    pub fn into_parts(self) -> (Round, KeyId, T, Evidence) {
         (self.round, self.source, self.data, self.evidence)
     }
 }
