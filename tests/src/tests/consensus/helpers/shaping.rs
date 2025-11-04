@@ -328,7 +328,7 @@ impl Simulator {
             .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, committee.clone(), EmptyBlocks).unwrap(),
+                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -338,7 +338,7 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
-        let dag = Dag::new(committee.clone());
+        let dag = Dag::new(committee.size());
 
         let mut actions = Vec::new();
 
@@ -535,7 +535,11 @@ impl Simulator {
                     }
                 }
                 Action::Deliver(data) => {
-                    let k = self.resolve.get(&data.source()).expect("known public key");
+                    let src = self
+                        .committee()
+                        .get_key(data.source())
+                        .expect("committee contains index");
+                    let k = self.resolve.get(src).expect("known public key");
                     self.events
                         .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }

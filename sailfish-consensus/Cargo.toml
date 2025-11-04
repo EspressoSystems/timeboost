@@ -13,7 +13,6 @@ committable = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 # optional:
 times = { path = "../times", optional = true }

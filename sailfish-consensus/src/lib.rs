@@ -56,8 +56,8 @@ impl State {
 }
 
 pub struct Consensus<T> {
-    /// The key ID of the node.
-    key_id: KeyId,
+    /// The key index of the node.
+    key_idx: KeyId,
 
     /// The public and private key of this node.
     keypair: Keypair,
@@ -93,7 +93,7 @@ pub struct Consensus<T> {
     buffer: Dag<T>,
 
     /// The set of values we have delivered so far.
-    delivered: HashSet<(RoundNumber, PublicKey)>,
+    delivered: HashSet<(RoundNumber, KeyId)>,
 
     /// The set of round number confirmations that we've received so far per round.
     rounds: BTreeMap<RoundNumber, VoteAccumulator<Round>>,
@@ -152,27 +152,23 @@ impl<T> Consensus<T>
 where
     T: Committable + HasTime + Clone + PartialEq,
 {
-    pub fn new<D>(
-        keypair: Keypair,
-        committee: Committee,
-        datasource: D,
-    ) -> Result<Self, ConsensusError>
+    pub fn new<D>(keypair: Keypair, committee: Committee, datasource: D) -> Self
     where
         D: DataSource<Data = T> + Send + 'static,
     {
-        let key_id = committee
+        let key_idx = committee
             .get_index(&keypair.public_key())
-            .ok_or(ConsensusError::UnknownKey(keypair.public_key()))?;
-        Ok(Self {
-            key_id,
+            .expect("keypair in committee");
+        Self {
+            key_idx,
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
             nodes: NodeInfo::new(&committee, committee.quorum_size()),
-            dag: Dag::new(committee.clone()),
+            dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committee.clone()),
+            buffer: Dag::new(committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -184,7 +180,7 @@ where
             datasource: Box::new(datasource),
             metrics: Default::default(),
             metrics_timer: Instant::now(),
-        })
+        }
     }
 
     /// (Re-)start consensus.
@@ -207,7 +203,7 @@ where
                 Round::new(r, self.committee.id()),
                 Evidence::Genesis,
                 self.datasource.next(r),
-                self.key_id,
+                self.key_idx,
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
@@ -388,8 +384,11 @@ where
             }
             return actions;
         }
-
-        self.nodes.record(&v.source().1, v.committed_round());
+        let src = self
+            .committee()
+            .get_key(v.source())
+            .expect("validated vertex source");
+        self.nodes.record(*src, v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
             actions.extend(self.cleanup());
@@ -790,10 +789,10 @@ where
             Round::new(r, self.committee.id()),
             e,
             payload,
-            self.key_id,
+            self.key_idx,
             &self.keypair,
         );
-        new.add_edges(self.dag.vertices(r - 1).map(|v| &v.source().0).cloned())
+        new.add_edges(self.dag.vertices(r - 1).map(|v| v.source()))
             .set_committed_round(self.committed_round);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
@@ -815,7 +814,7 @@ where
 
         if v.edges().any(|w| self.dag.vertex(r - 1, w).is_none()) {
             if enabled!(Level::DEBUG) {
-                let missing = v.edges().filter(|w| self.dag.vertex(r - 1, w).is_none());
+                let missing = v.edges().filter(|w| self.dag.vertex(r - 1, *w).is_none());
                 debug!(
                     node    = %self.public_key(),
                     vertex  = %v,
@@ -861,7 +860,7 @@ where
             if self
                 .dag
                 .vertices(r)
-                .filter(|v| v.has_edge(&l.source().0))
+                .filter(|v| v.has_edge(l.source()))
                 .count()
                 >= self.committee.quorum_size().get()
             {
@@ -957,8 +956,8 @@ where
                 .filter(|w| self.dag.is_connected(&v, w))
             {
                 let r = to_deliver.round().data();
-                let s = *to_deliver.source();
-                if self.delivered.contains(&(r.num(), s.1)) {
+                let s = to_deliver.source();
+                if self.delivered.contains(&(r.num(), s)) {
                     continue;
                 }
                 let b = to_deliver.payload().clone();
@@ -966,8 +965,8 @@ where
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
                 #[cfg(feature = "times")]
                 times::record_once("sf-delivered", *r.num());
-                actions.push(Action::Deliver(Payload::new(*r, s.1, b, e)));
-                self.delivered.insert((r.num(), s.1));
+                actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
+                self.delivered.insert((r.num(), s));
             }
         }
         // If there is an upcoming committee change, start the clock and
@@ -1096,14 +1095,17 @@ where
         }
 
         if v.has_edge(
-            &self
-                .committee
+            self.committee
                 .leader_index(*v.round().data().num() as usize - 1),
         ) {
             return true;
         }
 
-        if v.source().1 != self.committee.leader(*v.round().data().num() as usize) {
+        if v.source()
+            != self
+                .committee
+                .leader_index(*v.round().data().num() as usize)
+        {
             return true;
         }
 
@@ -1121,8 +1123,7 @@ where
 
     /// Retrieve leader vertex for a given round.
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex<T>> {
-        self.dag
-            .vertex(r, &self.committee.leader_index(*r as usize))
+        self.dag.vertex(r, self.committee.leader_index(*r as usize))
     }
 
     /// Do we have `Evidence` that a message is valid for a given round?
@@ -1201,7 +1202,7 @@ where
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
-            self.key_id,
+            self.key_idx,
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
@@ -1217,12 +1218,6 @@ where
 
         actions
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ConsensusError {
-    #[error("Unknown public key: {0}")]
-    UnknownKey(PublicKey),
 }
 
 /// Trace log helper.
@@ -1255,7 +1250,7 @@ impl<T: Committable + Eq> Consensus<T> {
         self.buffer.depth()
     }
 
-    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, PublicKey)> + '_ {
+    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, KeyId)> + '_ {
         self.delivered.iter().copied()
     }
 
@@ -1309,7 +1304,7 @@ where
 #[cfg(test)]
 mod tests {
     use arbtest::{arbitrary::Arbitrary, arbtest};
-    use multisig::Keypair;
+    use multisig::KeyId;
     use sailfish_types::{Evidence, Round, Timestamp, math};
 
     use super::{Action, ConsensusTime, Payload, tick};
@@ -1320,7 +1315,7 @@ mod tests {
         arbtest(|u| {
             // Some fake values of no concern to this test:
             let r = Round::new(u64::arbitrary(u)?, u64::arbitrary(u)?);
-            let k = Keypair::generate().public_key();
+            let k = KeyId::from(u8::arbitrary(u)?);
             let e = Evidence::Genesis;
 
             // Some random timestamps:

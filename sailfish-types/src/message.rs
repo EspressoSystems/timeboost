@@ -1,8 +1,9 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::CommitteeId;
-use multisig::{Certificate, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated};
+use multisig::{
+    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Signed, Unchecked, Validated,
+};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -121,15 +122,9 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 let signer = env.signing_key();
 
-                // The signer should be the producer of the vertex:
-                if *signer != env.data().source().1 {
-                    warn!(%signer, source = %env.data().source().1, "envelope signer != vertex source");
-                    return None;
-                }
-
                 // The signer's position should match the key ID of the vertex:
-                if c.get_index(signer) != Some(env.data().source().0) {
-                    warn!(%signer, source = %env.data().source().0, "signer pos != vertex source");
+                if c.get_index(signer) != Some(env.data().source()) {
+                    warn!(%signer, source = %env.data().source(), "signer pos != vertex source");
                     return None;
                 };
 
@@ -349,13 +344,13 @@ impl<T: Committable> Message<T, Unchecked> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Payload<T: Committable> {
     round: Round,
-    source: PublicKey,
+    source: KeyId,
     data: T,
     evidence: Evidence,
 }
 
 impl<T: Committable> Payload<T> {
-    pub fn new(round: Round, source: PublicKey, data: T, evidence: Evidence) -> Self {
+    pub fn new(round: Round, source: KeyId, data: T, evidence: Evidence) -> Self {
         Self {
             round,
             source,
@@ -368,7 +363,7 @@ impl<T: Committable> Payload<T> {
         self.round
     }
 
-    pub fn source(&self) -> PublicKey {
+    pub fn source(&self) -> KeyId {
         self.source
     }
 
@@ -388,7 +383,7 @@ impl<T: Committable> Payload<T> {
         self.evidence
     }
 
-    pub fn into_parts(self) -> (Round, PublicKey, T, Evidence) {
+    pub fn into_parts(self) -> (Round, KeyId, T, Evidence) {
         (self.round, self.source, self.data, self.evidence)
     }
 }
@@ -698,7 +693,7 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
         match self {
             Self::Vertex(e) => {
                 let r = e.data().round().data();
-                let s = e.data().source().1;
+                let s = e.data().source();
                 write!(f, "Vertex({r},{s})")
             }
             Self::Timeout(e) => {

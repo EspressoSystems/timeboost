@@ -29,10 +29,11 @@ where
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
+                    let node_key_idx = group.committee.get_index(&node_public_key).unwrap();
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if v.data().round().data().num() == RoundNumber::genesis() + 1
-                                && node_public_key == v.data().source().1
+                                && node_key_idx == v.data().source()
                             {
                                 return TestOutcome::Passed;
                             }
@@ -74,10 +75,11 @@ where
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
+                    let node_key_idx = group.committee.get_index(&node_public_key).unwrap();
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round().data().num() == rounds
-                                && node_public_key == v.data().source().1
+                                && node_key_idx == v.data().source()
                             {
                                 return TestOutcome::Passed;
                             }
@@ -154,12 +156,13 @@ where
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.sign_keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
+                let node_key_idx = group.committee.get_index(&node_public_key).unwrap();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices
                         // from round
                         if *v.data().round().data().num() == timeout_round + 20
-                            && node_public_key == v.data().source().1
+                            && node_key_idx == v.data().source()
                         {
                             return TestOutcome::Passed;
                         }
@@ -235,12 +238,13 @@ where
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.sign_keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
+                let node_key_idx = group.committee.get_index(&node_public_key).unwrap();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices
                         // from round
                         if *v.data().round().data().num() == timeout_round + 20
-                            && node_public_key == v.data().source().1
+                            && node_key_idx == v.data().source()
                         {
                             return TestOutcome::Passed;
                         }

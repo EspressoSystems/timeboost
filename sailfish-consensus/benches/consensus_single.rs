@@ -1,4 +1,5 @@
 use std::iter::repeat;
+use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt};
 
 use committable::Committable;
@@ -56,12 +57,12 @@ impl Net {
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, com.clone(), repeat(now)).unwrap(),
+                    Consensus::new(kp, com.clone(), repeat(now)),
                 )
             })
             .collect::<HashMap<_, _>>();
 
-        let dag = Dag::new(com);
+        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
 
         let mut messages = Vec::new();
 

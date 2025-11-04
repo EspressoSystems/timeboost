@@ -5,12 +5,11 @@ use std::fmt;
 
 use bytes::Bytes;
 use cliquenet::{
-    AddressableCommittee, Overlay, Role,
-    MAX_MESSAGE_SIZE,
+    AddressableCommittee, MAX_MESSAGE_SIZE, Overlay, Role,
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
-use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
+use multisig::{Certificate, Envelope, KeyId, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
@@ -83,12 +82,12 @@ struct Messages<T: Committable> {
 
 impl<T: Committable> Messages<T> {
     /// Get message digests of this source.
-    fn digests(&self, s: &PublicKey) -> impl Iterator<Item = &Digest> {
+    fn digests(&self, s: &KeyId) -> impl Iterator<Item = &Digest> {
         self.map.iter().filter_map(move |(d, t)| {
             let Some(vertex) = &t.message.item else {
                 return None
             };
-            (vertex.data().source().1 == *s).then_some(d)
+            (vertex.data().source() == *s).then_some(d)
         })
     }
 }
@@ -619,13 +618,17 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
-        let current_committee_pos =
-            self.config.committees.position(self.config.committee_id)
-                .expect("current committee is member of committee vec");
+        let current_committee_pos = self
+            .config
+            .committees
+            .position(self.config.committee_id)
+            .expect("current committee is member of committee vec");
 
-        let proposal_committee_pos =
-            self.config.committees.position(round.committee())
-                .expect("validated vertex committee is member of committee vec");
+        let proposal_committee_pos = self
+            .config
+            .committees
+            .position(round.committee())
+            .expect("validated vertex committee is member of committee vec");
 
         if proposal_committee_pos > current_committee_pos {
             debug!(
@@ -637,10 +640,18 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
+        let committee = self
+            .config
+            .committees
+            .get(round.committee())
+            .expect("validated vertex committee");
+
+        let src_idx = committee.get_index(&src).expect("validated vertex source");
+
         let digest = Digest::of_vertex(&vertex);
 
         if let Some(messages) = self.buffer.get(&digest.round().num()) {
-            for d in messages.digests(&src).filter(|d| **d != digest) {
+            for d in messages.digests(&src_idx).filter(|d| **d != digest) {
                 let digest_committee_pos = self.config.committees.position(d.round().committee());
                 if Some(proposal_committee_pos) >= digest_committee_pos {
                     warn!(node = %self.key, %src, old = %d, new = %digest, "multiple proposals received");
@@ -752,7 +763,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             if messages.map
                 .values()
                 .filter_map(|t| t.message.item.as_ref())
-                .filter(|e| e.data().has_edge(&prev_round_leader))
+                .filter(|e| e.data().has_edge(prev_round_leader))
                 .count() >= committee.quorum_size().get()
             {
                 self.tx

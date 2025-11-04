@@ -166,7 +166,7 @@ impl TestNodeInstrument {
 }
 
 fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &CommitteeVec<N>) {
-    let parties: BTreeSet<KeyId> = c.idxs().copied().collect();
+    let parties: BTreeSet<KeyId> = c.idxs().collect();
     match (a, b) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
             assert_eq!(x, y)
@@ -184,8 +184,8 @@ fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &Comm
             let ye = yv.evidence().is_valid(yv.round().data().num(), cc);
             let xn = xv.no_vote_cert().map(|crt| crt.is_valid(c));
             let yn = yv.no_vote_cert().map(|crt| crt.is_valid(c));
-            let xve = xv.edges().copied().collect::<BTreeSet<_>>();
-            let yve = yv.edges().copied().collect::<BTreeSet<_>>();
+            let xve = xv.edges().collect::<BTreeSet<_>>();
+            let yve = yv.edges().collect::<BTreeSet<_>>();
             assert_eq!(xv.round(), yv.round());
             assert_eq!(xv.source(), yv.source());
             assert_eq!(xe, ye);

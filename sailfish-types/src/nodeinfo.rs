@@ -17,8 +17,8 @@ impl<T: Default + PartialOrd> NodeInfo<T> {
     }
 
     /// Store a value of a party.
-    pub fn record(&mut self, k: &PublicKey, new: T) -> bool {
-        let Some(i) = self.nodes.iter().position(|(p, _)| p == k) else {
+    pub fn record(&mut self, k: PublicKey, new: T) -> bool {
+        let Some(i) = self.nodes.iter().position(|(p, _)| *p == k) else {
             return false;
         };
 
@@ -34,7 +34,7 @@ impl<T: Default + PartialOrd> NodeInfo<T> {
             .position(|(_, r)| new >= *r)
             .unwrap_or(self.nodes.len());
 
-        self.nodes.insert(i, (*k, new));
+        self.nodes.insert(i, (k, new));
 
         debug_assert!({
             let it = self.nodes.iter().map(|(_, r)| r);

@@ -9517,7 +9517,6 @@ dependencies = [
  "multisig",
  "rayon",
  "sailfish-types",
- "thiserror 2.0.17",
  "times",
  "tracing",
 ]

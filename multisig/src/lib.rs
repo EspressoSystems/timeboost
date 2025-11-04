@@ -65,12 +65,6 @@ impl From<KeyId> for u64 {
     }
 }
 
-impl fmt::Display for KeyId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "KeyId({})", self.0)
-    }
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct Keypair {
     sk: SecretKey,
@@ -290,6 +284,12 @@ impl fmt::Debug for PublicKey {
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", bs58::encode(&self.to_bytes()).into_string())
+    }
+}
+
+impl fmt::Display for KeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 

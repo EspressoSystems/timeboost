@@ -218,8 +218,7 @@ async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>
         cfg.sign_keypair().clone(),
         cfg.sailfish_committee().committee().clone(),
         repeat_with(Timestamp::now),
-    )
-    .unwrap();
+    );
 
     if let Some(prev) = &cfg.previous_sailfish_committee() {
         cons.set_handover_committee(prev.committee().clone())
@@ -273,7 +272,7 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
                             if a.committee().contains_key(&n.public_key()) {
                                 let d = repeat_with(Timestamp::now);
                                 let k = cfg.sign_keypair().clone();
-                                let c = Consensus::new(k, a.committee().clone(), d).unwrap();
+                                let c = Consensus::new(k, a.committee().clone(), d);
                                 assert!(n.set_next_consensus(c).is_empty())
                             }
                         }

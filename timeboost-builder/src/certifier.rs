@@ -487,7 +487,7 @@ impl Worker {
             "message received"
         );
 
-        self.info.record(&src, msg.next);
+        self.info.record(src, msg.next);
 
         let tracking = self.tracking.entry(info.data().num()).or_default();
 

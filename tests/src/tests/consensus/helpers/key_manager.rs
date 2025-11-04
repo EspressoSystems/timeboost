@@ -52,7 +52,6 @@ impl KeyManager {
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
                 let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
-                    .unwrap()
                     .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
@@ -80,7 +79,7 @@ impl KeyManager {
             Round::new(round, UNKNOWN_COMMITTEE_ID),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round.into()),
-            id.into(),
+            id,
             kpair,
         );
         v.add_edges(edges);
@@ -150,7 +149,7 @@ impl KeyManager {
         round: u64,
         committee: &Committee,
     ) -> (Dag, Evidence, Vec<KeyId>) {
-        let mut dag = Dag::new(committee.clone());
+        let mut dag = Dag::new(committee.size());
         let edges = self
             .keys
             .iter()
@@ -160,11 +159,11 @@ impl KeyManager {
                     Round::new(round, UNKNOWN_COMMITTEE_ID),
                     self.gen_round_cert(round - 1),
                     EmptyBlocks.next(r),
-                    (*ix).into(),
+                    *ix,
                     kpair,
                 );
                 dag.add(v.clone());
-                v.source().0
+                v.source()
             })
             .collect();
         let evidence = Evidence::Regular(self.gen_round_cert(round));

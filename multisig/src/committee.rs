@@ -80,8 +80,8 @@ impl Committee {
     }
 
     /// Returns an iterator over all key IDs in the committee.
-    pub fn idxs(&self) -> impl Iterator<Item = &KeyId> {
-        self.parties.left_values()
+    pub fn idxs(&self) -> impl Iterator<Item = KeyId> {
+        self.parties.left_values().copied()
     }
 
     /// Provides an iterator over all public keys in the committee.

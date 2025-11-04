@@ -208,7 +208,7 @@ where
             return Vec::new();
         }
         self.state = State::Running;
-        let d = Dag::new(self.current_consensus().committee().clone());
+        let d = Dag::new(self.current_consensus().committee().size());
         self.current_consensus_mut().go(d, Evidence::Genesis)
     }
 

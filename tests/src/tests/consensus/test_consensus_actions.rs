@@ -156,7 +156,7 @@ async fn test_single_node_timeout_cert() {
             if let Message::Vertex(v) = m {
                 let d = v.data();
                 // Process non leader vertices
-                d.source().1 != committee.leader(*d.round().data().num() as usize)
+                d.source() != committee.leader_index(*d.round().data().num() as usize)
             } else {
                 panic!("Expected vertex message in test");
             }

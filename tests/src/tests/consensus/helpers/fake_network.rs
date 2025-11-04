@@ -1,6 +1,9 @@
 use multisig::PublicKey;
 use sailfish::types::{Evidence, RoundNumber};
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
+};
 
 use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
 use crate::prelude::*;
@@ -23,16 +26,11 @@ impl FakeNetwork {
     }
 
     pub(crate) fn start(&mut self) {
-        let com = self
-            .nodes
-            .values()
-            .next()
-            .expect("at least one node exists")
-            .committee();
         let mut next = Vec::new();
+        let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node_instrument in self.nodes.values_mut() {
             let node = node_instrument.node_mut();
-            for a in node.go(Dag::new(com.clone()), Evidence::Genesis) {
+            for a in node.go(Dag::new(committee_size), Evidence::Genesis) {
                 Self::handle_action(a, &mut next)
             }
         }

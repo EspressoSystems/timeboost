@@ -14,7 +14,7 @@ use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
-use sailfish::consensus::{Consensus, ConsensusError, ConsensusMetrics};
+use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, CoordinatorEvent};
@@ -155,7 +155,7 @@ impl Sequencer {
                 cfg.sign_keypair.clone(),
                 cfg.sailfish_committee.committee().clone(),
                 queue.clone(),
-            )?
+            )
             .with_metrics(cons_metrics);
 
             if let Some(prev) = &cfg.previous_sailfish_committee {
@@ -339,7 +339,7 @@ impl Task {
                     Some(Command::NextCommittee(t, a, k, b)) => {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
-                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b)?;
+                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
@@ -480,9 +480,6 @@ impl Task {
 pub enum TimeboostError {
     #[error("network error: {0}")]
     Net(#[from] NetworkError),
-
-    #[error("consensus error: {0}")]
-    Consensus(#[from] ConsensusError),
 
     #[error("rbc error: {0}")]
     Rbc(#[from] RbcError),
