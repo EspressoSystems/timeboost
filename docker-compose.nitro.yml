@@ -140,7 +140,7 @@ services:
         condition: service_completed_successfully
   nitro0:
     pid: host # allow debugging
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:decentralized-batch-posting
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8547:8547"
@@ -177,7 +177,7 @@ services:
       retries: 12        
   nitro1:
     pid: host # allow debugging
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:decentralized-batch-posting
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8557:8547"
@@ -209,7 +209,7 @@ services:
       retries: 12
   nitro2:
     pid: host # allow debugging
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:decentralized-batch-posting
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8567:8547"
@@ -241,7 +241,7 @@ services:
       retries: 12        
   nitro3:
     pid: host # allow debugging
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:decentralized-batch-posting
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8577:8547"

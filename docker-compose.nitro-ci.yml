@@ -103,12 +103,13 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.feed.output.enable
       - --node.feed.output.port=9642
-      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --graphql.enable
       - --graphql.vhosts=*
       - --graphql.corsdomain=*
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=host.docker.internal:8003
+      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp
     networks:
        - timeboost
     depends_on:
@@ -124,7 +125,7 @@ services:
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
-      - "127.0.0.1:8647:8547"
+      - "127.0.0.1:8557:8547"
       - "127.0.0.1:8648:8548"
       - "127.0.0.1:9742:9642"
       - "127.0.0.1:55010:55000"
@@ -136,9 +137,10 @@ services:
       - "tokenbridge-data:/tokenbridge-data"
     command:
       - --conf.file=/nitro-config/sequencer_config.json
-      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s    
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=host.docker.internal:8013
+      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs
     networks:
        - timeboost
     depends_on:
