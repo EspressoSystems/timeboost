@@ -5,7 +5,7 @@ use constant_time_eq::constant_time_eq;
 use minicbor::{CborLen, Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, KeyId, PublicKey, Signature};
+use crate::{Committee, KeyIdx, PublicKey, Signature};
 
 #[derive(
     Debug,
@@ -30,11 +30,11 @@ pub struct Certificate<D: Committable> {
     commitment: Commitment<D>,
 
     #[cbor(n(2))]
-    signatures: BTreeMap<KeyId, Signature>,
+    signatures: BTreeMap<KeyIdx, Signature>,
 }
 
 impl<D: Committable> Certificate<D> {
-    pub(crate) fn new(data: D, commit: Commitment<D>, sigs: BTreeMap<KeyId, Signature>) -> Self {
+    pub(crate) fn new(data: D, commit: Commitment<D>, sigs: BTreeMap<KeyIdx, Signature>) -> Self {
         Self {
             data,
             commitment: commit,
@@ -81,7 +81,7 @@ impl<D: Committable> Certificate<D> {
         d && n >= t.get()
     }
 
-    pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
+    pub(crate) fn signatures(&self) -> &BTreeMap<KeyIdx, Signature> {
         &self.signatures
     }
 }

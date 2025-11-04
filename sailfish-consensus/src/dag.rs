@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, fmt, num::NonZeroUsize, ops::RangeBounds};
 
-use multisig::KeyId;
+use multisig::KeyIdx;
 use sailfish_types::{RoundNumber, Vertex};
 
 #[derive(Debug, Clone)]
 pub struct Dag<T> {
-    elements: BTreeMap<RoundNumber, BTreeMap<KeyId, Vertex<T>>>,
+    elements: BTreeMap<RoundNumber, BTreeMap<KeyIdx, Vertex<T>>>,
     max_keys: NonZeroUsize,
 }
 
@@ -72,12 +72,12 @@ impl<T: PartialEq> Dag<T> {
     }
 
     /// Retrieves a specific vertex by its round number and source public key
-    pub fn vertex(&self, r: RoundNumber, s: KeyId) -> Option<&Vertex<T>> {
+    pub fn vertex(&self, r: RoundNumber, s: KeyIdx) -> Option<&Vertex<T>> {
         self.elements.get(&r)?.get(&s)
     }
 
     /// Consume the DAG as an iterator over its elements.
-    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, KeyId, Vertex<T>)> + use<T> {
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, KeyIdx, Vertex<T>)> + use<T> {
         std::mem::take(&mut self.elements)
             .into_iter()
             .flat_map(move |(r, map)| map.into_iter().map(move |(ix, v)| (r, ix, v)))
@@ -142,7 +142,7 @@ impl<T: PartialEq> Dag<T> {
     }
 
     /// Iterate over the DAG elements.
-    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, KeyId, &Vertex<T>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, KeyIdx, &Vertex<T>)> {
         self.elements
             .iter()
             .flat_map(move |(r, map)| map.iter().map(move |(ix, v)| (r, *ix, v)))

@@ -1554,7 +1554,7 @@ mod tests {
     use timeboost_utils::types::logging;
 
     use cliquenet::AddressableCommittee;
-    use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use multisig::{Committee, KeyIdx, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Evidence, Round, RoundNumber};
     use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, Vess};
     use timeboost_crypto::prelude::{Plaintext, ThresholdEncScheme, ThresholdScheme, VssSecret};
@@ -2277,7 +2277,7 @@ mod tests {
             signature_keys
                 .iter()
                 .enumerate()
-                .map(|(index, secret_key)| (KeyId::from(index as u8), secret_key.public_key()))
+                .map(|(index, secret_key)| (KeyIdx::from(index as u8), secret_key.public_key()))
                 .collect::<Vec<_>>(),
         );
 
@@ -2287,7 +2287,7 @@ mod tests {
             dkg_keys
                 .iter()
                 .enumerate()
-                .map(|(index, dkg_key)| (KeyId::from(index as u8), DkgEncKey::from(dkg_key))),
+                .map(|(index, dkg_key)| (KeyIdx::from(index as u8), DkgEncKey::from(dkg_key))),
         );
 
         // Set up network peers with available ports

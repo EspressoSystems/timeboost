@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
-use multisig::{Certificate, Committee, KeyId};
+use multisig::{Certificate, Committee, KeyIdx};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
 use sailfish::types::CommitteeVec;
 use sailfish::types::{
@@ -77,7 +77,7 @@ impl TestNodeInstrument {
     pub(crate) fn expected_vertex_proposal(
         &self,
         round: RoundNumber,
-        edges: Vec<KeyId>,
+        edges: Vec<KeyIdx>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let idx = self
@@ -166,7 +166,7 @@ impl TestNodeInstrument {
 }
 
 fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &CommitteeVec<N>) {
-    let parties: BTreeSet<KeyId> = c.idxs().collect();
+    let parties: BTreeSet<KeyIdx> = c.idxs().collect();
     match (a, b) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
             assert_eq!(x, y)

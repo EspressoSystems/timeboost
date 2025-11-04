@@ -433,7 +433,7 @@ mod test {
     use ark_ff::field_hashers::DefaultFieldHasher;
     use ark_std::rand::seq::SliceRandom;
     use ark_std::test_rng;
-    use multisig::{Committee, KeyId, Keypair};
+    use multisig::{Committee, KeyIdx, Keypair};
     use sha2::Sha256;
     use spongefish::DigestBridge;
 
@@ -611,7 +611,7 @@ mod test {
         let public_keys = (0..nodes)
             .map(|i| {
                 let kp = Keypair::generate();
-                (KeyId::from(i as u8), kp.public_key())
+                (KeyIdx::from(i as u8), kp.public_key())
             })
             .collect::<Vec<_>>();
         Committee::new(0, public_keys)

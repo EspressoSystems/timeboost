@@ -9,7 +9,7 @@ use cliquenet::{
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
-use multisig::{Certificate, Envelope, KeyId, PublicKey, VoteAccumulator};
+use multisig::{Certificate, Envelope, KeyIdx, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
@@ -82,7 +82,7 @@ struct Messages<T: Committable> {
 
 impl<T: Committable> Messages<T> {
     /// Get message digests of this source.
-    fn digests(&self, s: &KeyId) -> impl Iterator<Item = &Digest> {
+    fn digests(&self, s: &KeyIdx) -> impl Iterator<Item = &Digest> {
         self.map.iter().filter_map(move |(d, t)| {
             let Some(vertex) = &t.message.item else {
                 return None

@@ -39,28 +39,28 @@ pub use votes::VoteAccumulator;
 )]
 #[cbor(transparent)]
 #[serde(transparent)]
-pub struct KeyId(u8);
+pub struct KeyIdx(u8);
 
-impl KeyId {
+impl KeyIdx {
     pub fn to_bytes(self) -> [u8; 1] {
         [self.0]
     }
 }
 
-impl From<u8> for KeyId {
+impl From<u8> for KeyIdx {
     fn from(val: u8) -> Self {
         Self(val)
     }
 }
 
-impl From<KeyId> for usize {
-    fn from(val: KeyId) -> Self {
+impl From<KeyIdx> for usize {
+    fn from(val: KeyIdx) -> Self {
         val.0.into()
     }
 }
 
-impl From<KeyId> for u64 {
-    fn from(val: KeyId) -> Self {
+impl From<KeyIdx> for u64 {
+    fn from(val: KeyIdx) -> Self {
         val.0.into()
     }
 }
@@ -287,7 +287,7 @@ impl fmt::Debug for Signature {
     }
 }
 
-impl fmt::Display for KeyId {
+impl fmt::Display for KeyIdx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }

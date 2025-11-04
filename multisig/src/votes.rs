@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, Committee, KeyId, PublicKey, Signature, Signed};
+use crate::{Certificate, Committee, KeyIdx, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
 pub struct VoteAccumulator<D: Committable> {
@@ -18,7 +18,7 @@ pub struct VoteAccumulator<D: Committable> {
 #[derive(Debug, Clone)]
 struct Entry<D> {
     data: D,
-    sigs: BTreeMap<KeyId, Signature>,
+    sigs: BTreeMap<KeyIdx, Signature>,
 }
 
 impl<D> Entry<D> {

@@ -8,7 +8,7 @@ use ark_ff::{PrimeField, field_hashers::DefaultFieldHasher};
 use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use multisig::{Committee, KeyId, Keypair};
+use multisig::{Committee, KeyIdx, Keypair};
 use sha2::{Digest, Sha256};
 use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
@@ -35,7 +35,7 @@ where
         let public_keys = (0..size.into())
             .map(|i| {
                 let kp = Keypair::generate();
-                (KeyId::from(i as u8), kp.public_key())
+                (KeyIdx::from(i as u8), kp.public_key())
             })
             .collect::<Vec<_>>();
         Committee::new(u64::MAX, public_keys)
