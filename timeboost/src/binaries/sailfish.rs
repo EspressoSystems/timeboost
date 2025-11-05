@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        config.net.public.address.clone(),
+        config.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         comm_info.address_info(),

@@ -331,13 +331,13 @@ async fn mk_configs(
     let de_addrs = sf_addrs
         .iter()
         .cloned()
-        .map(|addr| addr.with_offset(DECRYPTER_PORT_OFFSET))
+        .map(|addr| addr.with_offset(DECRYPTER_PORT_OFFSET * 100))
         .collect::<Vec<_>>();
 
     let cert_addrs = sf_addrs
         .iter()
         .cloned()
-        .map(|addr| addr.with_offset(CERTIFIER_PORT_OFFSET))
+        .map(|addr| addr.with_offset(CERTIFIER_PORT_OFFSET * 100))
         .collect::<Vec<_>>();
 
     let committee = Committee::new(

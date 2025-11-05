@@ -6,6 +6,7 @@ use multisig::{Keypair, x25519};
 use timeboost::committee::CommitteeInfo;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
+use timeboost_config::{GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
 use timeboost_types::ThresholdKeyCell;
 use tokio::select;
 use tokio::signal;
@@ -118,24 +119,22 @@ async fn main() -> Result<()> {
         .dh_keypair(dh_keypair)
         .dkg_key(node_config.keys.dkg.secret)
         .key_store(key_store)
-        .sailfish_addr(node_config.net.public.address.clone())
+        .sailfish_addr(node_config.net.bind.clone())
         .decrypt_addr(
             node_config
                 .net
-                .public
-                .address
+                .bind
                 .clone()
                 .with_offset(DECRYPTER_PORT_OFFSET),
         )
         .certifier_addr(
             node_config
                 .net
-                .public
-                .address
+                .bind
                 .clone()
                 .with_offset(CERTIFIER_PORT_OFFSET),
         )
-        .maybe_nitro_addr(node_config.net.internal.nitro.clone())
+        .maybe_nitro_addr(node_config.net.nitro.clone())
         .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
@@ -159,14 +158,24 @@ async fn main() -> Result<()> {
     let timeboost = Timeboost::new(config).await?;
 
     let mut grpc = {
-        let addr = node_config.net.internal.address.to_string();
+        let addr = node_config
+            .net
+            .bind
+            .clone()
+            .with_offset(GRPC_API_PORT_OFFSET)
+            .to_string();
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 
     let mut api = spawn(
-        timeboost
-            .api()
-            .serve(node_config.net.public.http_api.to_string()),
+        timeboost.api().serve(
+            node_config
+                .net
+                .bind
+                .clone()
+                .with_offset(HTTP_API_PORT_OFFSET)
+                .to_string(),
+        ),
     );
 
     #[cfg(feature = "until")]

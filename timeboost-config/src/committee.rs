@@ -22,9 +22,9 @@ pub struct CommitteeMember {
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
     pub dkg_enc_key: DkgEncKey,
-    pub public_address: Address,
+    pub address: Address,
     pub http_api: Address,
-    pub internal_api: Address,
+    pub grpc_api: Address,
     pub batch_poster_api: Address,
 }
 

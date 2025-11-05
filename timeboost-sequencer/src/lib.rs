@@ -6,6 +6,7 @@ mod metrics;
 mod queue;
 mod sort;
 
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -176,7 +177,7 @@ impl Sequencer {
             label: public_key,
             bundles: queue,
             sailfish,
-            includer: Includer::new(cfg.sailfish_committee.committee().clone()),
+            includer: Includer::new(public_key, cfg.sailfish_committee.committee().clone()),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,
@@ -376,91 +377,101 @@ impl Task {
         dkg_bundles: &mut VecDeque<DkgBundle>,
     ) -> Result<Candidates> {
         let mut actions = VecDeque::from(actions);
-        let mut candidates = Vec::new();
-        while !actions.is_empty() {
-            let mut round = RoundNumber::genesis();
-            let mut evidence = Evidence::Genesis;
-            let mut lists = Vec::new();
-            while let Some(action) = actions.pop_front() {
-                if let Action::Deliver(payload) = action {
-                    match payload.data().decode::<MAX_MESSAGE_SIZE>() {
-                        Ok(data) => {
-                            if let Some(dkg) = data.dkg_bundle() {
-                                dkg_bundles.push_back(dkg.clone());
-                            }
-                            if self.round < payload.round().num() {
-                                round = payload.round().num();
-                                evidence = payload.into_evidence();
-                                lists.push(data)
-                            } else {
-                                debug!(
-                                    node   = %self.label,
-                                    ours   = ?*self.round,
-                                    theirs = %payload.round().num(),
-                                    src    = %payload.source(),
-                                    "dropping delayed payload"
-                                );
-                            }
+        let mut payloads = Vec::new();
+
+        // Process actions and collect deliveries.
+        while let Some(action) = actions.pop_front() {
+            if let Action::Deliver(payload) = action {
+                match payload.data().decode::<MAX_MESSAGE_SIZE>() {
+                    Ok(data) => {
+                        if let Some(dkg) = data.dkg_bundle() {
+                            dkg_bundles.push_back(dkg.clone());
                         }
-                        Err(err) => {
-                            warn!(
-                                node = %self.label,
-                                err  = %err,
-                                src  = %payload.source(),
-                                "failed to deserialize candidate list"
-                            );
-                        }
+                        payloads.push((payload, data));
                     }
-                } else {
-                    actions.push_front(action);
-                    break;
-                }
-            }
-            if !lists.is_empty() {
-                debug_assert!(self.round < round);
-                self.round = round;
-                candidates.push((round, evidence, lists));
-            }
-            while let Some(action) = actions.pop_front() {
-                if action.is_deliver() {
-                    actions.push_front(action);
-                    break;
-                }
-                match self.sailfish.execute(action).await {
-                    Ok(Some(CoordinatorEvent::Gc(r))) => {
-                        if let Err(err) = self.decrypter.gc(r.num()).await {
-                            warn!(node = %self.label, %err, "decrypt gc error");
-                        }
-                    }
-                    Ok(Some(CoordinatorEvent::Catchup(_))) => {
-                        self.includer.clear_cache();
-                    }
-                    Ok(Some(CoordinatorEvent::UseCommittee(r))) => {
-                        if let Some(cons) = self.sailfish.consensus(r.committee()) {
-                            let c = cons.committee().clone();
-                            self.includer.set_next_committee(r.num(), c);
-                            if let Err(err) = self.decrypter.use_committee(r).await {
-                                error!(node = %self.label, %err, "decrypt use committee error");
-                            }
-                            let committee_id: u64 = r.committee().into();
-                            self.metrics.committee.set(committee_id as usize);
-                            self.output
-                                .send(Output::UseCommittee(r))
-                                .await
-                                .map_err(|_| TimeboostError::ChannelClosed)?;
-                        } else {
-                            warn!(node = %self.label, id = %r.committee(), "committee not found");
-                        }
-                    }
-                    Ok(Some(CoordinatorEvent::Deliver(_)) | None) => {}
                     Err(err) => {
-                        error!(node = %self.label, %err, "coordinator error");
-                        return Err(err.into());
+                        warn!(
+                            node = %self.label,
+                            err  = %err,
+                            src  = %payload.source(),
+                            "failed to deserialize candidate list"
+                        );
                     }
+                }
+                continue;
+            }
+            match self.sailfish.execute(action).await {
+                Ok(Some(CoordinatorEvent::Gc(r))) => {
+                    if let Err(err) = self.decrypter.gc(r.num()).await {
+                        warn!(node = %self.label, %err, "decrypt gc error");
+                    }
+                }
+                Ok(Some(CoordinatorEvent::Catchup(_))) => {
+                    self.includer.clear_cache();
+                }
+                Ok(Some(CoordinatorEvent::UseCommittee(r))) => {
+                    if let Some(cons) = self.sailfish.consensus(r.committee()) {
+                        let c = cons.committee().clone();
+                        self.includer.set_next_committee(r.num(), c);
+                        if let Err(err) = self.decrypter.use_committee(r).await {
+                            error!(node = %self.label, %err, "decrypt use committee error");
+                        }
+                        let committee_id: u64 = r.committee().into();
+                        self.metrics.committee.set(committee_id as usize);
+                        self.output
+                            .send(Output::UseCommittee(r))
+                            .await
+                            .map_err(|_| TimeboostError::ChannelClosed)?;
+                    } else {
+                        warn!(node = %self.label, id = %r.committee(), "committee not found");
+                    }
+                }
+                Ok(Some(CoordinatorEvent::Deliver(_)) | None) => {}
+                Err(err) => {
+                    error!(node = %self.label, %err, "coordinator error");
+                    return Err(err.into());
                 }
             }
         }
-        Ok(candidates.into())
+
+        let mut candidates = Candidates::new();
+
+        // Put candidate lists of the same round together and drop delayed ones.
+        for (payload, list) in payloads {
+            match self.round.cmp(&payload.round().num()) {
+                Ordering::Equal => {
+                    let Some((r, _, vec)) = candidates.back_mut() else {
+                        debug!(
+                            node   = %self.label,
+                            ours   = ?*self.round,
+                            theirs = %payload.round().num(),
+                            src    = %payload.source(),
+                            "dropping delayed payload"
+                        );
+                        continue;
+                    };
+                    debug_assert_eq!(*r, payload.round().num());
+                    vec.push(list)
+                }
+                Ordering::Less => {
+                    let r = payload.round().num();
+                    let e = payload.into_evidence();
+                    candidates.push_back((r, e, vec![list]));
+                    self.round = r
+                }
+                Ordering::Greater => {
+                    debug!(
+                        node   = %self.label,
+                        ours   = ?*self.round,
+                        theirs = %payload.round().num(),
+                        src    = %payload.source(),
+                        "dropping delayed payload"
+                    );
+                }
+            }
+        }
+
+        Ok(candidates)
     }
 
     /// Handle candidate lists and return the next inclusion list.

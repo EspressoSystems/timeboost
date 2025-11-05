@@ -101,15 +101,14 @@ bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
 mkconfig NUM_NODES DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
+  cargo run --release --bin mkconfig -- \
+    -n {{NUM_NODES}} \
     --committee-id 0 \
-    --public-addr "127.0.0.1:8000" \
-    --internal-addr "127.0.0.1:8003" \
-    --http-api "127.0.0.1:8004" \
+    --bind "127.0.0.1:8000" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8545" \
-    --batch-poster-api "http://127.0.0.1:8547" \
+    --batch-poster-api "127.0.0.1:8547" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -118,13 +117,13 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --output "test-configs/c0" {{ARGS}}
 
 mkconfig-docker DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n 5 \
+  cargo run --release --bin mkconfig -- \
+    -n 5 \
     --committee-id 0 \
-    --public-addr "node:8000" \
-    --public-mode "docker-dns" \
-    --internal-addr "node:8003" \
-    --http-api "node:8004" \
-    --nitro-addr "nitro:55000" \
+    --bind "0.0.0.0:8000" \
+    --external-base "node:8000" \
+    --external-mode "docker-dns" \
+    --nitro "nitro:55000" \
     --nitro-mode "docker-dns" \
     --parent-rpc-url "http://demo-l1-network:8545" \
     --parent-ws-url "ws://demo-l1-network:8546" \
@@ -139,13 +138,13 @@ mkconfig-docker DATETIME *ARGS:
     --output "test-configs/docker" {{ARGS}}
 
 mkconfig-nitro-ci DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n 2 \
+  cargo run --release --bin mkconfig -- \
+    -n 2 \
     --committee-id 0 \
-    --public-addr "127.0.0.1:8000" \
-    --internal-addr "0.0.0.0:8003" \
-    --http-api "127.0.0.1:8004" \
-    --nitro-addr "localhost:55000" \
-    --batch-poster-api "http://host.docker.internal:8547" \
+    --bind "0.0.0.0:8000" \
+    --batch-poster-api "127.0.0.1:8547" \
+    --external-base "127.0.0.1:8000" \
+    --nitro "localhost:55000" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8546" \
@@ -159,13 +158,12 @@ mkconfig-nitro-ci DATETIME *ARGS:
     --output "test-configs/nitro-ci" {{ARGS}}
 
 mkconfig-local DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n 5 \
+  cargo run --release --bin mkconfig -- \
+    -n 5 \
     --committee-id 0 \
-    --public-addr "127.0.0.1:8000" \
-    --internal-addr "127.0.0.1:8003" \
-    --http-api "127.0.0.1:8004" \
-    --nitro-addr "127.0.0.1:55000" \
-    --batch-poster-api "http://127.0.0.1:8547" \
+    --bind "127.0.0.1:8000" \
+    --nitro "127.0.0.1:55000" \
+    --batch-poster-api "127.0.0.1:8547" \
     --nitro-mode "unchanged" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
@@ -178,14 +176,13 @@ mkconfig-local DATETIME *ARGS:
     --output "test-configs/local" {{ARGS}}
 
 mkconfig-linux NUM_NODES DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
+  cargo run --release --bin mkconfig -- \
+    -n {{NUM_NODES}} \
     --committee-id 0 \
-    --public-addr "11.0.0.1:8000" \
-    --public-mode "increment-address" \
-    --internal-addr "11.0.0.1:8003" \
-    --http-api "11.0.0.1:8004" \
-    --nitro-addr "11.0.1.0:55000" \
-    --batch-poster-api "11.0.0.1:8547" \
+    --bind "11.0.0.1:8000" \
+    --batch-poster-api "127.0.0.1:8547" \
+    --bind-mode "increment-address" \
+    --nitro "11.0.1.0:55000" \
     --nitro-mode "unchanged" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://11.0.1.0:8545" \
@@ -255,10 +252,8 @@ test-dyn-comm: build-release-until build-test-utils
         --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
-                 --public-addr 127.0.0.1:9000 \
-                 --internal-addr 127.0.0.1:9003 \
-                 --http-api 127.0.0.1:9004 \
-                 --batch-poster-api 127.0.0.1:9004 \
+                 --bind 127.0.0.1:9000 \
+                 --batch-poster-api "127.0.0.1:8547" \
                  --chain-namespace 10101 \
                  --parent-rpc-url http://127.0.0.1:8545 \
                  --parent-ws-url ws://127.0.0.1:8545 \

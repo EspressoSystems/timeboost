@@ -13,10 +13,9 @@ use cliquenet::Address;
 use jiff::{SignedDuration, Timestamp};
 use multisig::{CommitteeId, x25519};
 use secp256k1::rand::SeedableRng as _;
-use timeboost_config::{ChainConfig, ParentChain};
+use timeboost_config::{ChainConfig, GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET, Net, ParentChain};
 use timeboost_config::{
-    CommitteeConfig, CommitteeMember, Espresso, InternalNet, NodeConfig, NodeKeypair, NodeKeys,
-    NodeNet, PublicNet,
+    CommitteeConfig, CommitteeMember, Espresso, NodeConfig, NodeKeypair, NodeKeys,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -27,9 +26,13 @@ struct Args {
     #[clap(long, short)]
     num: NonZeroU8,
 
+    /// Address modification mode for listen addresses.
+    #[clap(long, default_value = "increment-port")]
+    bind_mode: Mode,
+
     /// Address modification mode for public addresses.
     #[clap(long, default_value = "increment-port")]
-    public_mode: Mode,
+    external_mode: Mode,
 
     /// Address modification mode for Nitro addresses.
     #[clap(long, default_value = "increment-port")]
@@ -49,30 +52,32 @@ struct Args {
     #[clap(long)]
     timestamp: TimestampOrOffset,
 
-    /// The sailfish network address. Decrypter, certifier, and internal address are derived:
-    /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
+    /// The base network address to bind to.
+    ///
+    /// Sailfish listens on this address. Other networks are relative to this address,
+    /// listening at different ports.
     #[clap(long, short)]
-    public_addr: Address,
+    bind: Address,
+
+    /// The public base network address.
+    #[clap(long, short)]
+    external_base: Option<Address>,
 
     /// HTTP API of a timeboost node.
     #[clap(long)]
-    http_api: Address,
+    http_api: Option<Address>,
+
+    /// Internal GRPC API of a timeboost node.
+    #[clap(long)]
+    grpc_api: Option<Address>,
 
     /// HTTP API of a batch poster node.
     #[clap(long)]
     batch_poster_api: Address,
 
-    /// Directory to store timeboost stamp file in.
-    #[clap(long, short)]
-    stamp_dir: PathBuf,
-
-    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3
-    #[clap(long)]
-    internal_addr: Address,
-
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
-    nitro_addr: Option<Address>,
+    nitro: Option<Address>,
 
     #[clap(long)]
     chain_namespace: u64,
@@ -119,6 +124,10 @@ struct Args {
 
     #[clap(long, default_value_t = 1024 * 1024)]
     max_transaction_size: usize,
+
+    /// Directory to store timeboost stamp file in.
+    #[clap(long, short)]
+    stamp_dir: PathBuf,
 
     /// The directory to stored all generated `NodeConfig` files for all committee members
     #[clap(long, short)]
@@ -216,31 +225,35 @@ impl Args {
             let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
             let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
-            let public_mode = self.public_mode;
-            let nitro_mode = self.nitro_mode;
-            let public_addr = public_mode.adjust_addr(i, &self.public_addr)?;
-            let http_addr = public_mode.adjust_addr(i, &self.http_api)?;
-            let batch_poster_api = public_mode.adjust_addr(i, &self.batch_poster_api)?;
-            let internal_addr = public_mode.adjust_addr(i, &self.internal_addr)?;
-            let nitro_addr = if let Some(addr) = &self.nitro_addr {
-                Some(nitro_mode.adjust_addr(i, addr)?)
-            } else {
-                None
-            };
-
+            let bind_addr = self.bind_mode.adjust_addr(i, &self.bind)?;
+            let batch_poster_api = self.bind_mode.adjust_addr(i, &self.batch_poster_api)?;
+            let pub_addr = self
+                .external_base
+                .as_ref()
+                .map(|a| self.external_mode.adjust_addr(i, a))
+                .transpose()?;
+            let http_addr = self
+                .http_api
+                .as_ref()
+                .map(|a| self.external_mode.adjust_addr(i, a))
+                .transpose()?;
+            let inter_addr = self
+                .grpc_api
+                .as_ref()
+                .map(|a| self.external_mode.adjust_addr(i, a))
+                .transpose()?;
+            let nitro_addr = self
+                .nitro
+                .as_ref()
+                .map(|a| self.nitro_mode.adjust_addr(i, a))
+                .transpose()?;
             let config = NodeConfig {
                 committee: self.committee_id,
                 stamp: self.stamp_dir.join(format!("timeboost.{i}.stamp")),
-                net: NodeNet {
-                    public: PublicNet {
-                        address: public_addr,
-                        http_api: http_addr,
-                        batch_poster_api,
-                    },
-                    internal: InternalNet {
-                        address: internal_addr,
-                        nitro: nitro_addr,
-                    },
+                net: Net {
+                    bind: bind_addr.clone(),
+                    batch_poster_api: batch_poster_api.clone(),
+                    nitro: nitro_addr,
                 },
                 keys: NodeKeys {
                     signing: NodeKeypair {
@@ -280,10 +293,22 @@ impl Args {
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
-                public_address: config.net.public.address.clone(),
-                http_api: config.net.public.http_api.clone(),
-                batch_poster_api: config.net.public.batch_poster_api.clone(),
-                internal_api: config.net.internal.address.clone(),
+                batch_poster_api: batch_poster_api.clone(),
+                address: pub_addr.clone().unwrap_or_else(|| bind_addr.clone()),
+                http_api: http_addr
+                    .or_else(|| {
+                        pub_addr
+                            .clone()
+                            .map(|a| a.with_offset(HTTP_API_PORT_OFFSET))
+                    })
+                    .unwrap_or_else(|| bind_addr.clone().with_offset(HTTP_API_PORT_OFFSET)),
+                grpc_api: inter_addr
+                    .or_else(|| {
+                        pub_addr
+                            .clone()
+                            .map(|a| a.with_offset(GRPC_API_PORT_OFFSET))
+                    })
+                    .unwrap_or_else(|| bind_addr.clone().with_offset(GRPC_API_PORT_OFFSET)),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;

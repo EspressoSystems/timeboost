@@ -1,13 +1,9 @@
 committee = 0
 stamp = "/tmp/timeboost.4.stamp"
 
-[net.public]
-address = "127.0.0.1:8040"
-http-api = "127.0.0.1:8044"
-batch-poster-api = "http://127.0.0.1:8587"
-
-[net.internal]
-address = "127.0.0.1:8043"
+[net]
+bind = "127.0.0.1:8040"
+batch_poster_api = "127.0.0.1:8587"
 nitro = "127.0.0.1:55000"
 
 [keys.signing]
