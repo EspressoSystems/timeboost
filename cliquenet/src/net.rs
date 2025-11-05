@@ -270,10 +270,9 @@ impl Network {
         T::Stream: Unpin + Send,
     {
         let bind_addr = bind_to.into();
-        let listener = T::bind(&bind_addr).await.map_err(|e| NetworkError::Bind {
-            err: e,
-            addr: bind_addr,
-        })?;
+        let listener = T::bind(&bind_addr)
+            .await
+            .map_err(|e| NetworkError::Bind(bind_addr, e))?;
 
         debug!(%name, node = %label, addr = %listener.local_addr()?, "listening");
 
