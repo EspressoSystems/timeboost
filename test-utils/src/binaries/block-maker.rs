@@ -138,7 +138,7 @@ async fn main() -> Result<()> {
     committee.members.truncate(args.max_nodes);
     let mut srv = Service::new();
     for member in committee.members {
-        let uri: Uri = format!("http://{}", member.internal_api).parse()?;
+        let uri: Uri = format!("http://{}", member.grpc_api).parse()?;
         srv.register(member.signing_key, uri)
     }
     srv.serve(args.bind).await

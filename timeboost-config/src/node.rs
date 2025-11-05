@@ -12,35 +12,24 @@ use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
 
-pub const DECRYPTER_PORT_OFFSET: u16 = 100;
-pub const CERTIFIER_PORT_OFFSET: u16 = 200;
+pub const DECRYPTER_PORT_OFFSET: u16 = 1;
+pub const CERTIFIER_PORT_OFFSET: u16 = 2;
+pub const GRPC_API_PORT_OFFSET: u16 = 3;
+pub const HTTP_API_PORT_OFFSET: u16 = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub committee: CommitteeId,
     pub stamp: PathBuf,
-    pub net: NodeNet,
+    pub net: Net,
     pub keys: NodeKeys,
     pub chain: ChainConfig,
     pub espresso: Espresso,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeNet {
-    pub public: PublicNet,
-    pub internal: InternalNet,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct PublicNet {
-    pub address: Address,
-    pub http_api: Address,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InternalNet {
-    pub address: Address,
+pub struct Net {
+    pub bind: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro: Option<Address>,
 }
