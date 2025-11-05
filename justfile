@@ -142,7 +142,7 @@ mkconfig-nitro-ci DATETIME *ARGS:
     -n 2 \
     --committee-id 0 \
     --bind "0.0.0.0:8000" \
-    --batch-poster-api "127.0.0.1:8547" \
+    --batch-poster-api "host.docker.internal:8547" \
     --external-base "127.0.0.1:8000" \
     --nitro "localhost:55000" \
     --chain-namespace 412346 \

@@ -105,7 +105,7 @@ services:
           --public-mode "docker-dns" \
           --nitro-addr "nitro:55000" \
           --nitro-mode "docker-dns" \
-          --batch-poster-api "http://host.docker.internal:8547" \
+          --batch-poster-api "host.docker.internal:8547" \
           --chain-namespace 412346 \
           --parent-rpc-url "http://demo-l1-network:8545" \
           --parent-ws-url "ws://demo-l1-network:8546" \

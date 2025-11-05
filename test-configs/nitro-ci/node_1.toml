@@ -3,7 +3,7 @@ stamp = "/tmp/timeboost.1.stamp"
 
 [net]
 bind = "0.0.0.0:8010"
-batch_poster_api = "127.0.0.1:8557"
+batch_poster_api = "host.docker.internal:8557"
 nitro = "localhost:55010"
 
 [keys.signing]
