@@ -70,10 +70,6 @@ impl Includer {
         // Ensure cache has an entry for this round.
         self.cache.entry(self.round).or_default();
 
-        while self.cache.len() > CACHE_SIZE {
-            self.cache.pop_first();
-        }
-
         self.time = {
             let mut times = lists
                 .iter()
@@ -152,7 +148,7 @@ impl Includer {
         let mut iregular = Vec::new();
 
         for (rb, n) in regular {
-            if n > self.committee.one_honest_threshold().get() {
+            if n >= self.committee.one_honest_threshold().get() {
                 if self.is_unknown(&rb) {
                     self.cache
                         .entry(self.round)
@@ -170,10 +166,14 @@ impl Includer {
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);
 
+        while self.cache.len() > CACHE_SIZE {
+            self.cache.pop_first();
+        }
+
         Outcome {
             ilist,
             retry,
-            is_valid: self.is_valid_cache(),
+            is_valid: self.cache.len() >= CACHE_SIZE,
         }
     }
 
@@ -185,7 +185,7 @@ impl Includer {
         self.cache.clear();
     }
 
-    fn is_unknown(&self, t: &Bundle) -> bool {
+    pub fn is_unknown(&self, t: &Bundle) -> bool {
         for hashes in self.cache.values().rev() {
             if hashes.contains(t.digest()) {
                 return false;
@@ -225,11 +225,5 @@ impl Includer {
             .last_key_value()
             .expect("non-empty bundle sequence => last entry")
             .0)
-    }
-
-    /// Check if the cache is valid, i.e. contains at least 8 recent rounds (not necessarily
-    /// consecutive).
-    fn is_valid_cache(&self) -> bool {
-        self.cache.len() >= CACHE_SIZE
     }
 }

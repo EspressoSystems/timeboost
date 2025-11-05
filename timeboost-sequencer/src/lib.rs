@@ -7,7 +7,6 @@ mod queue;
 mod sort;
 
 use std::collections::VecDeque;
-use std::iter::once;
 use std::sync::Arc;
 
 use cliquenet::MAX_MESSAGE_SIZE;
@@ -55,7 +54,6 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     ibox_task: JoinHandle<()>,
-    bundles: BundleQueue,
     commands: Sender<Command>,
     output: Receiver<Output>,
 }
@@ -83,7 +81,8 @@ struct Task {
 }
 
 enum Command {
-    NextCommittee(ConsensusTime, AddressableCommittee, KeyStore, BundleQueue),
+    AddBundle(BundleVariant),
+    NextCommittee(ConsensusTime, AddressableCommittee, KeyStore),
 }
 
 /// Mode of operation.
@@ -175,7 +174,7 @@ impl Sequencer {
         let task = Task {
             kpair: cfg.sign_keypair,
             label: public_key,
-            bundles: queue.clone(),
+            bundles: queue,
             sailfish,
             includer: Includer::new(cfg.sailfish_committee.committee().clone()),
             decrypter,
@@ -191,7 +190,6 @@ impl Sequencer {
             label: public_key,
             task: spawn(task.go()),
             ibox_task: spawn(ibox.go()),
-            bundles: queue,
             output: rx,
             commands: cx,
         })
@@ -201,11 +199,11 @@ impl Sequencer {
         self.label
     }
 
-    pub fn add_bundles<I>(&mut self, it: I)
-    where
-        I: IntoIterator<Item = BundleVariant>,
-    {
-        self.bundles.add_bundles(it)
+    pub async fn add_bundle(&mut self, b: BundleVariant) -> Result<()> {
+        self.commands
+            .send(Command::AddBundle(b))
+            .await
+            .map_err(|_| TimeboostError::ChannelClosed)
     }
 
     pub async fn next(&mut self) -> Result<Output> {
@@ -235,7 +233,7 @@ impl Sequencer {
         k: KeyStore,
     ) -> Result<()> {
         self.commands
-            .send(Command::NextCommittee(t, a, k, self.bundles.clone()))
+            .send(Command::NextCommittee(t, a, k))
             .await
             .map_err(|_| TimeboostError::ChannelClosed)
     }
@@ -272,7 +270,7 @@ impl Task {
         // DKG bundle generation
         if !self.sailfish.awaits_handover() {
             if let Some(bundle) = self.decrypter.gen_dkg_bundle().await {
-                self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+                self.bundles.add_bundle(BundleVariant::Dkg(bundle));
             }
         }
 
@@ -336,10 +334,22 @@ impl Task {
                     }
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
-                    Some(Command::NextCommittee(t, a, k, b)) => {
+                    Some(Command::AddBundle(b)) => {
+                        if let BundleVariant::Regular(r) = &b {
+                            if self.includer.is_unknown(r) {
+                                self.bundles.add_bundle(b);
+                            } else {
+                                debug!(node = %self.label, "ignoring duplicated bundle");
+                            }
+                        } else {
+                            self.bundles.add_bundle(b);
+                        }
+                    }
+                    Some(Command::NextCommittee(t, a, k)) => {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
-                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
+                            let queue = self.bundles.clone();
+                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
@@ -348,7 +358,7 @@ impl Task {
                         }
                         // Resharing bundle generation
                         if let Some(bundle) = self.decrypter.gen_resharing_bundle(k).await {
-                            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+                            self.bundles.add_bundle(BundleVariant::Dkg(bundle));
                         }
                     }
                     None => {

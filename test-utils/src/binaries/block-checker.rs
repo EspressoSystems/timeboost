@@ -77,8 +77,7 @@ async fn main() -> Result<()> {
             .zip(start.skip(1))
             .take_while(|(a, b)| **a + 1 == **b)
             .count();
-        let b = set.iter().nth(offset).expect("valid offset");
-        info!(%offset, total = %set.len(), last = %b, "validated")
+        info!(%offset, total = %set.len(), "validated")
     }
 
     Ok(())

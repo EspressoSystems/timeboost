@@ -22,7 +22,7 @@ use tokio::sync::Mutex;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tonic::{Request, Response, Status};
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -87,6 +87,14 @@ impl ForwardApi for Service {
         let (prev, bnum) = self
             .cache
             .get_or_insert_with(&round, || -> Result<_, Infallible> {
+                debug!(
+                    round   = %round,
+                    sender  = ?sender,
+                    trxs    = %r.get_ref().encoded_txns.len(),
+                    time    = %r.get_ref().consensus_timestamp,
+                    delayed = %r.get_ref().delayed_messages_read,
+                    "first inclusion list"
+                );
                 Ok((
                     bytes.clone(),
                     self.next_block.fetch_add(1, Ordering::Relaxed),
@@ -94,7 +102,14 @@ impl ForwardApi for Service {
             })
             .expect("infallible insert");
         if bytes != prev {
-            error!(%round, "inclusion list mismatch");
+            error!(
+                round   = %round,
+                sender  = ?sender,
+                trxs    = %r.get_ref().encoded_txns.len(),
+                time    = %r.get_ref().consensus_timestamp,
+                delayed = %r.get_ref().delayed_messages_read,
+                "inclusion list mismatch"
+            );
             exit(1)
         }
         let block = Block {
