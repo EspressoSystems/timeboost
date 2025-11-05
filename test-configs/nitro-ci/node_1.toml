@@ -4,7 +4,7 @@ stamp = "/tmp/timeboost.1.stamp"
 [net.public]
 address = "127.0.0.1:8010"
 http-api = "127.0.0.1:8014"
-batch-poster-api = "http://127.0.0.1:8557"
+batch-poster-api = "http://node1:8557"
 
 [net.internal]
 address = "0.0.0.0:8013"
@@ -29,7 +29,7 @@ namespace = 412346
 id = 1337
 rpc-url = "http://127.0.0.1:8545/"
 ws-url = "ws://127.0.0.1:8546/"
-ibox-contract = "0x1F5Aeb9665838a116Ac5BE48C36AA7C87eeFB386"
+ibox-contract = "0x1f5aeb9665838a116ac5be48c36aa7c87eefb386"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
