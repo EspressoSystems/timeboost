@@ -2,13 +2,14 @@ use std::cmp::max;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 
-use multisig::Committee;
+use multisig::{Committee, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
     Timestamp,
 };
 use timeboost_types::{RetryList, math};
+use tracing::debug;
 
 const CACHE_SIZE: usize = 8;
 
@@ -21,6 +22,7 @@ pub struct Outcome {
 
 #[derive(Debug)]
 pub struct Includer {
+    label: PublicKey,
     committee: Committee,
     next_committee: Option<(RoundNumber, Committee)>,
     /// Consensus round.
@@ -38,9 +40,10 @@ pub struct Includer {
 }
 
 impl Includer {
-    pub fn new(c: Committee) -> Self {
+    pub fn new(label: PublicKey, c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
+            label,
             committee: c,
             next_committee: None,
             round: RoundNumber::genesis(),
@@ -58,6 +61,8 @@ impl Includer {
         evidence: Evidence,
         lists: Vec<CandidateList>,
     ) -> Outcome {
+        debug!(node = %self.label, %round, lists = %lists.len(), "processing candidate lists");
+
         if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r <= round) {
             self.committee = c;
             self.clear_cache()
