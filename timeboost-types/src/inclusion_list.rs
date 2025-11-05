@@ -4,8 +4,6 @@ use sailfish_types::{Evidence, RoundNumber};
 /// List of bundles to be included, selected from `CandidateList`.
 #[derive(Debug, Clone)]
 pub struct InclusionList {
-    // NOTE: different from sailfish's round number, monotonically increasing at timeboost
-    // sequencer side, derived from the max sailfish round among all the `Candidates` included.
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
