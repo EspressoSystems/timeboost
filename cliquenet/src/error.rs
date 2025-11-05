@@ -1,7 +1,7 @@
 use std::io;
 use thiserror::Error;
 
-use crate::frame::InvalidHeader;
+use crate::{Address, frame::InvalidHeader};
 
 /// The empty type has no values.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -13,6 +13,10 @@ pub enum NetworkError {
     /// Generic I/O error.
     #[error("i/o error: {0}")]
     Io(#[from] io::Error),
+
+    /// Bind error.
+    #[error("error binding to address {0}: {1}")]
+    Bind(Address, #[source] io::Error),
 
     /// The received frame header is not valid.
     #[error("invalid frame header: {0}")]

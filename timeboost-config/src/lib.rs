@@ -6,8 +6,10 @@ use std::path::PathBuf;
 
 pub use chain::{ChainConfig, ChainConfigBuilder, ParentChain, ParentChainBuilder};
 pub use committee::{CommitteeConfig, CommitteeMember};
-pub use node::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET};
-pub use node::{Espresso, InternalNet, NodeConfig, NodeKeypair, NodeKeys, NodeNet, PublicNet};
+pub use node::{
+    CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET,
+};
+pub use node::{Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
 
 #[derive(Debug, thiserror::Error)]
 #[error("config error {0}: {1}")]

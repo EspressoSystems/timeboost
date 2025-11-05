@@ -1,12 +1,8 @@
 committee = 0
 stamp = "/tmp/timeboost.1.stamp"
 
-[net.public]
-address = "127.0.0.1:8010"
-http-api = "127.0.0.1:8014"
-
-[net.internal]
-address = "0.0.0.0:8013"
+[net]
+bind = "0.0.0.0:8010"
 nitro = "localhost:55010"
 
 [keys.signing]

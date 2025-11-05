@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
                         sigKey: m.signing_key.to_bytes().into(),
                         dhKey: m.dh_key.as_bytes().into(),
                         dkgKey: m.dkg_enc_key.to_bytes()?.into(),
-                        networkAddress: m.public_address.to_string(),
+                        networkAddress: m.address.to_string(),
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;

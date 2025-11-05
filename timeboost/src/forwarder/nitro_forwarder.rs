@@ -27,13 +27,10 @@ impl Drop for NitroForwarder {
 }
 
 impl NitroForwarder {
-    pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
+    pub fn new(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.connect().await.map_err(|err| {
-            error!(%err, %addr, "failed to connect to nitro node");
-            err
-        })?;
+        let chan = endpoint.connect_lazy();
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
