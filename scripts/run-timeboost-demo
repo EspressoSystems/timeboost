@@ -107,7 +107,7 @@ if [ ! $config_dir ]; then
     exit 1
 fi
 
-just build-release --features="until"
+just build-release --features="until" || exit 1
 
 if [ $nitro_url ]; then
     timeout 90 bash -c "until curl -sSf $nitro_url -o /dev/null; do sleep 1; done" || exit 1

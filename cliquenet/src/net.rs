@@ -269,7 +269,11 @@ impl Network {
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
-        let listener = T::bind(&bind_to.into()).await?;
+        let bind_addr = bind_to.into();
+        let listener = T::bind(&bind_addr).await.map_err(|e| NetworkError::Bind {
+            error: e,
+            addr: bind_addr,
+        })?;
 
         debug!(%name, node = %label, addr = %listener.local_addr()?, "listening");
 
