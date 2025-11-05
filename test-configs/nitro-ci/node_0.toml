@@ -1,18 +1,9 @@
 committee = 0
 stamp = "/tmp/timeboost.0.stamp"
 
-<<<<<<< HEAD
-[net.public]
-address = "127.0.0.1:8000"
-http-api = "127.0.0.1:8004"
-batch-poster-api = "http://host.docker.internal:8547"
-
-[net.internal]
-address = "0.0.0.0:8003"
-=======
 [net]
 bind = "0.0.0.0:8000"
->>>>>>> origin/main
+batch_poster_api = "127.0.0.1:8547"
 nitro = "localhost:55000"
 
 [keys.signing]

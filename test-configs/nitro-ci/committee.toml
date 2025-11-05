@@ -8,12 +8,8 @@ dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
 dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 address = "127.0.0.1:8000"
 http_api = "127.0.0.1:8004"
-<<<<<<< HEAD
-internal_api = "0.0.0.0:8003"
-batch_poster_api = "http://host.docker.internal:8547"
-=======
 grpc_api = "127.0.0.1:8003"
->>>>>>> origin/main
+batch_poster_api = "127.0.0.1:8547"
 
 [[members]]
 node = "node_1"
@@ -22,9 +18,5 @@ dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
 address = "127.0.0.1:8010"
 http_api = "127.0.0.1:8014"
-<<<<<<< HEAD
-internal_api = "0.0.0.0:8013"
-batch_poster_api = "http://host.docker.internal:8557"
-=======
 grpc_api = "127.0.0.1:8013"
->>>>>>> origin/main
+batch_poster_api = "127.0.0.1:8557"
