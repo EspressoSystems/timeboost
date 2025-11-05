@@ -76,7 +76,8 @@
                 "http://espresso-dev-node:41000"
             ],
             "poll-interval": "60s",
-            "is-decentralized-timeboost": true
+            "is-decentralized-timeboost": true,
+            "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
         },
         "block-validator": {
             "validation-server": {

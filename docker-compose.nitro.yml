@@ -55,7 +55,7 @@ services:
     image: ghcr.io/espressosystems/timeboost/rollup-creator:main
     volumes:
       - "config:/config"
-      # - "./nitro-config:/nitro-config"
+      - "./nitro-config:/nitro-config"
     environment:
       PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
       DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
@@ -408,7 +408,6 @@ services:
       - sh
       - -c
       - "sleep 30s && /app/register --max-members 4 -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
-      - "sleep 30s && /app/register -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml --max-members 4"
     depends_on:
       nitro0:
         condition: service_healthy
