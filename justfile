@@ -145,7 +145,7 @@ mkconfig-nitro-ci DATETIME *ARGS:
     --internal-addr "0.0.0.0:8003" \
     --http-api "127.0.0.1:8004" \
     --nitro-addr "localhost:55000" \
-    --batch-poster-api "http://node:8547" \
+    --batch-poster-api "http://host.docker.internal:8547" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8546" \

@@ -4,7 +4,7 @@ stamp = "/tmp/timeboost.1.stamp"
 [net.public]
 address = "127.0.0.1:8010"
 http-api = "127.0.0.1:8014"
-batch-poster-api = "http://node1:8557"
+batch-poster-api = "http://host.docker.internal:8557"
 
 [net.internal]
 address = "0.0.0.0:8013"
