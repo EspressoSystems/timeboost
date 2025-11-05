@@ -271,7 +271,7 @@ impl Network {
     {
         let bind_addr = bind_to.into();
         let listener = T::bind(&bind_addr).await.map_err(|e| NetworkError::Bind {
-            error: e,
+            err: e,
             addr: bind_addr,
         })?;
 

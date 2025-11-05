@@ -15,8 +15,12 @@ pub enum NetworkError {
     Io(#[from] io::Error),
 
     /// Bind error.
-    #[error("i/o error: {error}. bind to addr: {addr}")]
-    Bind { error: io::Error, addr: Address },
+    #[error("error binding to address {addr}: {err}")]
+    Bind {
+        #[source]
+        err: io::Error,
+        addr: Address,
+    },
 
     /// The received frame header is not valid.
     #[error("invalid frame header: {0}")]
