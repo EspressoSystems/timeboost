@@ -287,6 +287,12 @@ impl fmt::Debug for Signature {
     }
 }
 
+impl fmt::Display for KeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <Self as fmt::Debug>::fmt(self, f)

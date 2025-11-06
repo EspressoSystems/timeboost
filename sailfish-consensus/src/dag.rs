@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, fmt, num::NonZeroUsize, ops::RangeBounds};
 
-use multisig::PublicKey;
+use multisig::KeyId;
 use sailfish_types::{RoundNumber, Vertex};
 
 #[derive(Debug, Clone)]
 pub struct Dag<T> {
-    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex<T>>>,
+    elements: BTreeMap<RoundNumber, BTreeMap<KeyId, Vertex<T>>>,
     max_keys: NonZeroUsize,
 }
 
@@ -37,7 +37,7 @@ impl<T: PartialEq> Dag<T> {
         let s = v.source();
         let m = self.elements.entry(r).or_default();
         debug_assert!(m.len() < self.max_keys.get());
-        m.insert(*s, v);
+        m.insert(s, v);
     }
 
     /// Removes all rounds up to the specified round number from the DAG
@@ -74,7 +74,7 @@ impl<T: PartialEq> Dag<T> {
     pub fn contains(&self, v: &Vertex<T>) -> bool {
         self.elements
             .get(&v.round().data().num())
-            .map(|m| m.contains_key(v.source()))
+            .map(|m| m.contains_key(&v.source()))
             .unwrap_or(false)
     }
 
@@ -84,15 +84,15 @@ impl<T: PartialEq> Dag<T> {
     }
 
     /// Retrieves a specific vertex by its round number and source public key
-    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex<T>> {
-        self.elements.get(&r)?.get(s)
+    pub fn vertex(&self, r: RoundNumber, s: KeyId) -> Option<&Vertex<T>> {
+        self.elements.get(&r)?.get(&s)
     }
 
     /// Consume the DAG as an iterator over its elements.
-    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<T>)> + use<T> {
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, KeyId, Vertex<T>)> + use<T> {
         std::mem::take(&mut self.elements)
             .into_iter()
-            .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))
+            .flat_map(|(r, map)| map.into_iter().map(move |(ix, v)| (r, ix, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
@@ -154,10 +154,10 @@ impl<T: PartialEq> Dag<T> {
     }
 
     /// Iterate over the DAG elements.
-    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex<T>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, KeyId, &Vertex<T>)> {
         self.elements
             .iter()
-            .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))
+            .flat_map(|(r, map)| map.iter().map(move |(ix, v)| (r, *ix, v)))
     }
 }
 
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_is_connected() {
-        let mut dag = Dag::<Unit>::new(NonZeroUsize::new(10).unwrap());
+        let mut dag: Dag<Unit> = Dag::new(NonZeroUsize::new(10).unwrap());
 
         let kp1 = Keypair::generate();
         let kp2 = Keypair::generate();
@@ -217,34 +217,34 @@ mod tests {
         };
 
         // Layer 1
-        let v11 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, &kp1);
-        let v12 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, &kp2);
-        let v13 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, &kp3);
-        let v14 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, &kp4);
-        let v15 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, &kp5);
+        let v11 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, 1, &kp1);
+        let v12 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, 2, &kp2);
+        let v13 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, 3, &kp3);
+        let v14 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, 4, &kp4);
+        let v15 = Vertex::new(Round::new(1, 0), gen_evidence(0), Unit, 5, &kp5);
 
         // Layer 2
-        let mut v21 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, &kp1);
-        let mut v22 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, &kp2);
-        let mut v23 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, &kp3);
+        let mut v21 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, 1, &kp1);
+        let mut v22 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, 2, &kp2);
+        let mut v23 = Vertex::new(Round::new(2, 0), gen_evidence(1), Unit, 3, &kp3);
 
         // Layer 3
-        let mut v31 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, &kp1);
-        let mut v32 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, &kp2);
-        let mut v33 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, &kp3);
+        let mut v31 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, 1, &kp1);
+        let mut v32 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, 2, &kp2);
+        let mut v33 = Vertex::new(Round::new(3, 0), gen_evidence(2), Unit, 3, &kp3);
 
         // Layer 4
-        let mut v41 = Vertex::new(Round::new(4, 0), gen_evidence(3), Unit, &kp1);
+        let mut v41 = Vertex::new(Round::new(4, 0), gen_evidence(3), Unit, 1, &kp1);
 
-        v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
+        v41.add_edges([v31.source(), v32.source(), v33.source()]);
 
-        v31.add_edges([*v21.source(), *v22.source(), *v23.source()]);
-        v32.add_edges([*v21.source(), *v22.source(), *v23.source()]);
-        v33.add_edges([*v21.source(), *v22.source(), *v23.source()]);
+        v31.add_edges([v21.source(), v22.source(), v23.source()]);
+        v32.add_edges([v21.source(), v22.source(), v23.source()]);
+        v33.add_edges([v21.source(), v22.source(), v23.source()]);
 
-        v21.add_edges([*v11.source(), *v12.source(), *v13.source()]);
-        v22.add_edges([*v11.source(), *v12.source(), *v13.source()]);
-        v23.add_edges([*v12.source(), *v13.source(), *v14.source()]);
+        v21.add_edges([v11.source(), v12.source(), v13.source()]);
+        v22.add_edges([v11.source(), v12.source(), v13.source()]);
+        v23.add_edges([v12.source(), v13.source(), v14.source()]);
 
         [
             v11.clone(),

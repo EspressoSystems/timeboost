@@ -203,8 +203,8 @@ async fn test_invalid_vertex_signatures() {
 fn basic_liveness() {
     logging::init_logging();
 
-    let (mut nodes, _manager) = make_consensus_nodes(5);
-
+    let (mut nodes, manager) = make_consensus_nodes(5);
+    let committee = manager.committee();
     let mut actions: Vec<(PublicKey, Vec<Action>)> = nodes
         .iter_mut()
         .map(|(id, node_handle)| {
@@ -229,10 +229,12 @@ fn basic_liveness() {
                     let na = match a {
                         Action::Deliver(data) => {
                             if n.public_key() == *id {
+                                let src =
+                                    committee.get_key(data.source()).expect("src in committee");
                                 delivered
                                     .entry(*id)
                                     .or_default()
-                                    .push((data.round().num(), data.source()));
+                                    .push((data.round().num(), *src));
                             }
                             continue;
                         }
