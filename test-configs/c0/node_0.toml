@@ -3,6 +3,7 @@ stamp = "/tmp/timeboost.0.stamp"
 
 [net]
 bind = "127.0.0.1:8000"
+nitro = "127.0.0.1:55000"
 
 [keys.signing]
 secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
@@ -29,6 +30,5 @@ key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
 base-url = "https://query.decaf.testnet.espresso.network/v1/"
-builder-base-url = "https://builder.decaf.testnet.espresso.network/v0/"
 websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
 max-transaction-size = 1048576
