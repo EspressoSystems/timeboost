@@ -6,8 +6,8 @@ use std::fmt;
 use std::time::Instant;
 
 use committable::Committable;
-use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use multisig::{CommitteeId, KeyId};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
@@ -56,6 +56,9 @@ impl State {
 }
 
 pub struct Consensus<T> {
+    /// The key index of the node.
+    key_id: KeyId,
+
     /// The public and private key of this node.
     keypair: Keypair,
 
@@ -90,7 +93,7 @@ pub struct Consensus<T> {
     buffer: Dag<T>,
 
     /// The set of values we have delivered so far.
-    delivered: HashSet<(RoundNumber, PublicKey)>,
+    delivered: HashSet<(RoundNumber, KeyId)>,
 
     /// The set of round number confirmations that we've received so far per round.
     rounds: BTreeMap<RoundNumber, VoteAccumulator<Round>>,
@@ -153,7 +156,11 @@ where
     where
         D: DataSource<Data = T> + Send + 'static,
     {
+        let key_id = committee
+            .get_index(&keypair.public_key())
+            .expect("keypair in committee");
         Self {
+            key_id,
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
@@ -196,6 +203,7 @@ where
                 Round::new(r, self.committee.id()),
                 Evidence::Genesis,
                 self.datasource.next(r),
+                self.key_id,
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
@@ -778,9 +786,10 @@ where
             Round::new(r, self.committee.id()),
             e,
             payload,
+            self.key_id,
             &self.keypair,
         );
-        new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
+        new.add_edges(self.dag.vertices(r - 1).map(Vertex::source))
             .set_committed_round(self.committed_round);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
@@ -802,7 +811,7 @@ where
 
         if v.edges().any(|w| self.dag.vertex(r - 1, w).is_none()) {
             if enabled!(Level::DEBUG) {
-                let missing = v.edges().filter(|w| self.dag.vertex(r - 1, w).is_none());
+                let missing = v.edges().filter(|w| self.dag.vertex(r - 1, *w).is_none());
                 debug!(
                     node    = %self.public_key(),
                     vertex  = %v,
@@ -868,7 +877,7 @@ where
 
         let quorum = self.committee.quorum_size().get();
 
-        for v in self.buffer.drain().map(|(.., v)| v) {
+        for (.., v) in self.buffer.drain() {
             let r = v.round().data().num();
             match self.try_to_add_to_dag(v) {
                 Ok(a) => {
@@ -944,7 +953,7 @@ where
                 .filter(|w| self.dag.is_connected(&v, w))
             {
                 let r = to_deliver.round().data();
-                let s = *to_deliver.source();
+                let s = to_deliver.source();
                 if self.delivered.contains(&(r.num(), s)) {
                     continue;
                 }
@@ -1082,11 +1091,19 @@ where
             return true;
         }
 
-        if v.has_edge(&self.committee.leader(*v.round().data().num() as usize - 1)) {
+        let prev_leader = self
+            .committee
+            .leader_index(*v.round().data().num() as usize - 1);
+
+        if v.has_edge(prev_leader) {
             return true;
         }
 
-        if v.source() != &self.committee.leader(*v.round().data().num() as usize) {
+        let leader = self
+            .committee
+            .leader_index(*v.round().data().num() as usize);
+
+        if v.source() != leader {
             return true;
         }
 
@@ -1104,7 +1121,7 @@ where
 
     /// Retrieve leader vertex for a given round.
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex<T>> {
-        self.dag.vertex(r, &self.committee.leader(*r as usize))
+        self.dag.vertex(r, self.committee.leader_index(*r as usize))
     }
 
     /// Do we have `Evidence` that a message is valid for a given round?
@@ -1183,6 +1200,7 @@ where
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
+            self.key_id,
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
@@ -1230,7 +1248,7 @@ impl<T: Committable + Eq> Consensus<T> {
         self.buffer.depth()
     }
 
-    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, PublicKey)> + '_ {
+    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, KeyId)> + '_ {
         self.delivered.iter().copied()
     }
 
@@ -1284,7 +1302,7 @@ where
 #[cfg(test)]
 mod tests {
     use arbtest::{arbitrary::Arbitrary, arbtest};
-    use multisig::Keypair;
+    use multisig::KeyId;
     use sailfish_types::{Evidence, Round, Timestamp, math};
 
     use super::{Action, ConsensusTime, Payload, tick};
@@ -1295,7 +1313,7 @@ mod tests {
         arbtest(|u| {
             // Some fake values of no concern to this test:
             let r = Round::new(u64::arbitrary(u)?, u64::arbitrary(u)?);
-            let k = Keypair::generate().public_key();
+            let k = KeyId::from(u8::arbitrary(u)?);
             let e = Evidence::Genesis;
 
             // Some random timestamps:

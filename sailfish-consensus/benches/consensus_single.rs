@@ -1,5 +1,6 @@
 use std::iter::repeat;
-use std::{collections::HashMap, fmt, num::NonZeroUsize};
+use std::num::NonZeroUsize;
+use std::{collections::HashMap, fmt};
 
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
