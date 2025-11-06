@@ -1,23 +1,23 @@
 use std::num::NonZeroUsize;
 
-use multisig::{Committee, PublicKey};
+use multisig::{Committee, KeyId};
 
 #[derive(Debug)]
 pub struct NodeInfo<T> {
-    nodes: Vec<(PublicKey, T)>,
+    nodes: Vec<(KeyId, T)>,
     quorum: usize,
 }
 
 impl<T: Default + PartialOrd> NodeInfo<T> {
     pub fn new(c: &Committee, q: NonZeroUsize) -> Self {
         Self {
-            nodes: c.parties().map(|k| (*k, T::default())).collect(),
+            nodes: c.idxs().map(|k| (k, T::default())).collect(),
             quorum: q.get(),
         }
     }
 
     /// Store a value of a party.
-    pub fn record(&mut self, k: PublicKey, new: T) -> bool {
+    pub fn record(&mut self, k: KeyId, new: T) -> bool {
         let Some(i) = self.nodes.iter().position(|(p, _)| *p == k) else {
             return false;
         };

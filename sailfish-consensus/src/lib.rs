@@ -384,11 +384,8 @@ where
             }
             return actions;
         }
-        let src = self
-            .committee()
-            .get_key(v.source())
-            .expect("validated vertex source");
-        self.nodes.record(*src, v.committed_round());
+
+        self.nodes.record(v.source(), v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
             actions.extend(self.cleanup());
@@ -792,7 +789,7 @@ where
             self.key_id,
             &self.keypair,
         );
-        new.add_edges(self.dag.vertices(r - 1).map(|v| v.source()))
+        new.add_edges(self.dag.vertices(r - 1).map(Vertex::source))
             .set_committed_round(self.committed_round);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
@@ -1094,18 +1091,19 @@ where
             return true;
         }
 
-        if v.has_edge(
-            self.committee
-                .leader_index(*v.round().data().num() as usize - 1),
-        ) {
+        let prev_leader = self
+            .committee
+            .leader_index(*v.round().data().num() as usize - 1);
+
+        if v.has_edge(prev_leader) {
             return true;
         }
 
-        if v.source()
-            != self
-                .committee
-                .leader_index(*v.round().data().num() as usize)
-        {
+        let leader = self
+            .committee
+            .leader_index(*v.round().data().num() as usize);
+
+        if v.source() != leader {
             return true;
         }
 

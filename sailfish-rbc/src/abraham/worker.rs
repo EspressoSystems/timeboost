@@ -82,12 +82,12 @@ struct Messages<T: Committable> {
 
 impl<T: Committable> Messages<T> {
     /// Get message digests of this source.
-    fn digests(&self, s: &KeyId) -> impl Iterator<Item = &Digest> {
+    fn digests(&self, s: KeyId) -> impl Iterator<Item = &Digest> {
         self.map.iter().filter_map(move |(d, t)| {
             let Some(vertex) = &t.message.item else {
                 return None
             };
-            (vertex.data().source() == *s).then_some(d)
+            (vertex.data().source() == s).then_some(d)
         })
     }
 }
@@ -651,7 +651,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let digest = Digest::of_vertex(&vertex);
 
         if let Some(messages) = self.buffer.get(&digest.round().num()) {
-            for d in messages.digests(&src_idx).filter(|d| **d != digest) {
+            for d in messages.digests(src_idx).filter(|d| **d != digest) {
                 let digest_committee_pos = self.config.committees.position(d.round().committee());
                 if Some(proposal_committee_pos) >= digest_committee_pos {
                     warn!(node = %self.key, %src, old = %d, new = %digest, "multiple proposals received");

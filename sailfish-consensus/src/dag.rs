@@ -18,6 +18,18 @@ impl<T: PartialEq> Dag<T> {
         }
     }
 
+    /// Create a new DAG from a sequence of `Vertex` values.
+    pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
+    where
+        I: IntoIterator<Item = Vertex<T>>,
+    {
+        let mut dag = Self::new(max_keys);
+        for v in entries {
+            dag.add(v);
+        }
+        dag
+    }
+
     /// Adds a new vertex to the DAG in its corresponding round and source position
     pub fn add(&mut self, v: Vertex<T>) {
         debug_assert!(!self.contains(&v));
@@ -80,7 +92,7 @@ impl<T: PartialEq> Dag<T> {
     pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, KeyId, Vertex<T>)> + use<T> {
         std::mem::take(&mut self.elements)
             .into_iter()
-            .flat_map(move |(r, map)| map.into_iter().map(move |(ix, v)| (r, ix, v)))
+            .flat_map(|(r, map)| map.into_iter().map(move |(ix, v)| (r, ix, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
@@ -145,7 +157,7 @@ impl<T: PartialEq> Dag<T> {
     pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, KeyId, &Vertex<T>)> {
         self.elements
             .iter()
-            .flat_map(move |(r, map)| map.iter().map(move |(ix, v)| (r, *ix, v)))
+            .flat_map(|(r, map)| map.iter().map(move |(ix, v)| (r, *ix, v)))
     }
 }
 
@@ -169,14 +181,13 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use multisig::{Committee, Keypair, Signed, VoteAccumulator};
-
     use sailfish_types::{Round, Unit, Vertex};
 
     use super::Dag;
 
     #[test]
     fn test_is_connected() {
-        let mut dag: Dag<Unit> = Dag::<Unit>::new(NonZeroUsize::new(10).unwrap());
+        let mut dag: Dag<Unit> = Dag::new(NonZeroUsize::new(10).unwrap());
 
         let kp1 = Keypair::generate();
         let kp2 = Keypair::generate();

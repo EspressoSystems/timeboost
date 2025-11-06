@@ -486,14 +486,13 @@ impl Worker {
             hash  = %info.data().hash(),
             "message received"
         );
-
-        self.info.record(src, msg.next);
-
-        let tracking = self.tracking.entry(info.data().num()).or_default();
-
         let kid = committee
             .get_index(&src)
             .expect("valid signing key => member of committee");
+
+        self.info.record(kid, msg.next);
+
+        let tracking = self.tracking.entry(info.data().num()).or_default();
 
         if tracking.voters.contains(&kid) {
             debug!(node = %self.label, %src, num = %info.data().num(), "vote already counted");
