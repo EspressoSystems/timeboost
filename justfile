@@ -107,6 +107,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
+    --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
     --output "test-configs/c0" {{ARGS}}
 
 mkconfig-docker DATETIME *ARGS:

@@ -200,9 +200,10 @@ jobs:
       run: |
         just run-integration
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-checker)
-    - name: Docker Logs nitro0
+    - name: Docker logs
       if: failure()
-      run: docker logs timeboost-nitro0-1
-    - name: Docker Logs block-checker
-      if: failure()
-      run: docker logs timeboost-block-checker-1
+      run: |
+        for s in {node0,node1,node2,node3,node4,nitro0,nitro1,nitro2,nitro3,nitro4,block-checker}; do
+          echo "==== Logs for $s ===="
+          docker logs timeboost-$s-1 || true
+        done
