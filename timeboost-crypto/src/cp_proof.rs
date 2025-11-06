@@ -181,7 +181,7 @@ mod tests {
         let tuple = DleqTuple::new(g, g_hat, h, h * y);
 
         // Verify proof
-        let proof = ChaumPedersen::<G, D>::prove(tuple.clone(), &x);
+        let proof = ChaumPedersen::<G, D>::prove(tuple, &x);
         assert!(
             proof.is_err(),
             "Proof generation should fail with invalid tuple"
@@ -196,7 +196,7 @@ mod tests {
         let DleqTuple(g, g_hat, h, _) = tuple;
 
         // Create proof
-        let proof = ChaumPedersen::<G, D>::prove(tuple.clone(), &x).unwrap();
+        let proof = ChaumPedersen::<G, D>::prove(tuple, &x).unwrap();
 
         let y = S::rand(&mut rng);
         let tuple_invalid = DleqTuple::new(g, g_hat, h, h * y);
