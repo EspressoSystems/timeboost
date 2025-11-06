@@ -63,24 +63,19 @@ fix:
   cargo fix --allow-dirty --allow-staged
 
 ci-local:
-  just build && just lint && just test-ci --release && \
-  just run-demo --ignore-stamp --yapper -c test-configs/c0 && \
-  just run-sailfish-demo && just build-docker
+  just build
+  just lint
+  just test-ci --release
+  just run-sailfish-demo
+  just test-all
+  just test-dyn-comm
+  just test-contracts
+  just run-integration
+  docker wait $(docker compose -f docker-compose.yml ps -q block-checker)
 
-run-integration: build-docker-amd
-    -docker network create timeboost
-    docker compose -f docker-compose.block-maker.yml -f docker-compose.metrics.yml up -d
-
-run-integration-nitro: build-docker-amd
+run-integration: build-docker
   -docker network create timeboost
-  docker compose -f docker-compose.nitro.yml -f docker-compose.metrics.yml up -d
-
-run-integration-nitro-ci:
-  -docker network create timeboost
-  docker compose -f docker-compose.nitro-ci.yml up -d
-
-run-demo *ARGS:
-  scripts/run-timeboost-demo {{ARGS}}
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \
@@ -213,9 +208,6 @@ test-individually: build-port-alloc
         --spawn target/release/port-alloc \
         cargo nextest run -- --no-tests=pass -p $pkg) || exit 1; \
   done
-
-test-contract-deploy *ARGS:
-  scripts/test-contract-deploy {{ARGS}}
 
 test-all nodes="5": build-release build-test-utils
   env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error \

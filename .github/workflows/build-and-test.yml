@@ -136,10 +136,6 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Run tests
-      run: just run-demo --ignore-stamp --yapper -c test-configs/c0
-    - name: Run tests with late-start node
-      run: just run-demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
       run: just run-sailfish-demo
     - name: Test with block-maker
@@ -191,7 +187,7 @@ jobs:
     - name: Run contract tests
       run: forge test -vvv
 
-  nitro-timeboost-integration:
+  nitro-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -199,33 +195,14 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
-    - uses: Swatinem/rust-cache@v2
-      name: Enable Rust Caching
-      with:
-        shared-key: "nitro"
-        cache-on-failure: "true"
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-        prefix-key: nitro
     - uses: taiki-e/install-action@just
-    - name: Install rustfmt for nightly
-      run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
-    - name: Run Test Node with Timeboost
+    - name: Run Timeboost integration
       run: |
-        just run-integration-nitro-ci
-    - name: Run test timeboost with nitro sequencer
-      run: just run-demo --ignore-stamp -c test-configs/nitro-ci --rounds 10000 --nitro-senders 2 --yapper --nitro http://localhost:8547
-    - name: Verify sequencer blocks
-      run: |
-        RUST_LOG=info just verify-blocks
-    - name: Docker Logs Sequencer 1
+        just run-integration
+        timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-checker)
+    - name: Docker Logs nitro0
       if: failure()
       run: docker logs timeboost-nitro0-1
-    - name: Docker Logs Sequencer 2
+    - name: Docker Logs block-checker
       if: failure()
-      run: docker logs timeboost-nitro0-1
+      run: docker logs timeboost-block-checker-1

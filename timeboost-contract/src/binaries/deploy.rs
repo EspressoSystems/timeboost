@@ -9,9 +9,6 @@
 //! # Write config to a file
 //! cargo run --bin deploy -- -m "your mnemonic here" -i 0 -u http://localhost:8545 -o output.toml
 //! ```
-//!
-//! # Local test
-//! Run `just test-contract-deploy`
 use alloy::{primitives::Address, providers::WalletProvider};
 use anyhow::{Context, Result};
 use clap::Parser;
