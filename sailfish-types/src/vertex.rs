@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Keypair, PublicKey, Signed};
+use multisig::{Certificate, KeyId, Keypair, Signed};
 use serde::{Deserialize, Serialize};
 
 use crate::{Evidence, NoVote, Round, RoundNumber};
@@ -9,8 +9,8 @@ use crate::{Evidence, NoVote, Round, RoundNumber};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
     round: Signed<Round>,
-    source: PublicKey,
-    edges: BTreeSet<PublicKey>,
+    source: KeyId,
+    edges: BTreeSet<KeyId>,
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
@@ -18,8 +18,9 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<E>(round: Round, evidence: E, payload: T, keypair: &Keypair) -> Self
+    pub fn new<K, E>(round: Round, evidence: E, payload: T, source: K, keypair: &Keypair) -> Self
     where
+        K: Into<KeyId>,
         E: Into<Evidence>,
     {
         let evidence = evidence.into();
@@ -27,7 +28,7 @@ impl<T> Vertex<T> {
         debug_assert!(evidence.round() + 1 == round.num() || round.num() == RoundNumber::genesis());
 
         Self {
-            source: keypair.public_key(),
+            source: source.into(),
             round: Signed::new(round, keypair),
             edges: BTreeSet::new(),
             evidence,
@@ -57,8 +58,8 @@ impl<T> Vertex<T> {
             && self.no_vote.is_none()
     }
 
-    pub fn source(&self) -> &PublicKey {
-        &self.source
+    pub fn source(&self) -> KeyId {
+        self.source
     }
 
     pub fn round(&self) -> &Signed<Round> {
@@ -77,12 +78,12 @@ impl<T> Vertex<T> {
         self.edges.len()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &PublicKey> {
-        self.edges.iter()
+    pub fn edges(&self) -> impl Iterator<Item = KeyId> {
+        self.edges.iter().copied()
     }
 
-    pub fn has_edge(&self, id: &PublicKey) -> bool {
-        self.edges.contains(id)
+    pub fn has_edge(&self, id: KeyId) -> bool {
+        self.edges.contains(&id)
     }
 
     pub fn no_vote_cert(&self) -> Option<&Certificate<NoVote>> {
@@ -98,14 +99,14 @@ impl<T> Vertex<T> {
         self
     }
 
-    pub fn add_edge(&mut self, id: PublicKey) -> &mut Self {
+    pub fn add_edge(&mut self, id: KeyId) -> &mut Self {
         self.edges.insert(id);
         self
     }
 
     pub fn add_edges<I>(&mut self, edges: I) -> &mut Self
     where
-        I: IntoIterator<Item = PublicKey>,
+        I: IntoIterator<Item = KeyId>,
     {
         self.edges.extend(edges);
         self

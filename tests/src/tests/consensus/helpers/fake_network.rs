@@ -1,7 +1,9 @@
 use multisig::PublicKey;
 use sailfish::types::{Evidence, RoundNumber};
-use std::collections::{HashMap, VecDeque};
-use std::num::NonZeroUsize;
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
+};
 
 use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
 use crate::prelude::*;
