@@ -499,7 +499,7 @@ mod test {
         let (pk, comb_key, key_shares) =
             ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
-        let plaintext = Plaintext(message.clone());
+        let plaintext = Plaintext(message);
         let aad = b"cred~abcdef".to_vec();
         let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad).unwrap();
 

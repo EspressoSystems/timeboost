@@ -261,7 +261,7 @@ mod tests {
             v41.clone(),
         ]
         .into_iter()
-        .for_each(|v| dag.add(v.clone()));
+        .for_each(|v| dag.add(v));
 
         // v41 has a path to v11
         assert!(dag.is_connected(&v41, &v11));
