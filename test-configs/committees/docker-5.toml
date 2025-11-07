@@ -1,0 +1,23 @@
+[[committee]]
+id    = 0
+start = "2025-10-01T00:00:00Z"
+
+[[committee.member]]
+config  = "test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+address = "node2:8000"
+
+[[committee.member]]
+config  = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+address = "node0:8000"
+
+[[committee.member]]
+config  = "test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
+address = "node4:8000"
+
+[[committee.member]]
+config  = "test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
+address = "node3:8000"
+
+[[committee.member]]
+config  = "test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
+address = "node1:8000"

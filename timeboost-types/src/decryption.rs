@@ -156,10 +156,6 @@ impl ThresholdKeyCell {
         (*self.inner.key.read()).clone()
     }
 
-    pub fn enc_key(&self) -> Option<ThresholdEncKey> {
-        self.get().map(|sk| sk.pubkey)
-    }
-
     pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdKey>> {
         self.inner.key.read()
     }

@@ -8,6 +8,7 @@ pub struct CertifierConfig {
     pub(crate) sign_keypair: Keypair,
     pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) committee: AddressableCommittee,
+    pub(crate) previous_committee: Option<AddressableCommittee>,
     pub(crate) address: Address,
     #[builder(default = true)]
     pub(crate) recover: bool,

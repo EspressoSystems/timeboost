@@ -1,0 +1,18 @@
+[[committee]]
+id    = 0
+start = "2025-10-01T00:00:00Z"
+
+[[committee.member]]
+config = "test-configs/linux/24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU.toml"
+
+[[committee.member]]
+config = "test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+
+[[committee.member]]
+config = "test-configs/linux/26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy.toml"
+
+[[committee.member]]
+config = "test-configs/linux/28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3.toml"
+
+[[committee.member]]
+config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"

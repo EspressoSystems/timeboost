@@ -87,21 +87,18 @@ services:
       - sh
       - -c
       - >
-        /app/mkconfig -n 4 --committee-id 0 \
+        /app/mkconfig -n 4 \
+          --committee-id 0 \
           --bind "node:8000" \
           --bind-mode "docker-dns" \
           --seed 42 \
           --nitro "nitro:55000" \
           --nitro-mode "docker-dns" \
-          --batch-poster-api "http://host.docker.internal:8547" \
-          --chain-namespace 412346 \
-          --parent-rpc-url "http://demo-l1-network:8545" \
-          --parent-ws-url "ws://demo-l1-network:8546" \
-          --parent-chain-id 1337 \
-          --parent-ibox-contract "$(jq -r '.inbox' /config/deployment.json)" \
-          --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-          --timestamp $(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+          --chain-rpc-url "http://demo-l1-network:8545" \
+          --chain-id 1337 \
+          --inbox-contract "$(jq -r '.inbox' /config/deployment.json)" \
           --stamp-dir "/tmp" \
+          --espresso-namespace 412346 \
           --espresso-base-url "http://espresso-dev-node:41000/v1/" \
           --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
           --output "/config"

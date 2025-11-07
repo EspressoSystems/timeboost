@@ -19,7 +19,6 @@ futures = { workspace = true }
 multisig = { path = "../multisig" }
 reqwest = { workspace = true }
 timeboost = { path = "../timeboost" }
-timeboost-contract = { path = "../timeboost-contract" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

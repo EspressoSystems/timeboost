@@ -4,20 +4,21 @@ use std::env;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
-use anyhow::{Result, anyhow};
-use committee::NewCommitteeStream;
+use anyhow::{Result, bail};
 use futures::StreamExt;
-use metrics::TimeboostMetrics;
+use futures::stream::BoxStream;
 use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, SenderTaskDown, Submitter};
-use timeboost_contract::provider::PubSubProvider;
+use timeboost_config::CommitteeConfig;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{BundleVariant, ConsensusTime};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
+pub use cliquenet as net;
+pub use conf::{TimeboostConfig, TimeboostConfigBuilder, config_service};
+pub use multisig;
 pub use timeboost_builder as builder;
 pub use timeboost_config as config;
 pub use timeboost_crypto as crypto;
@@ -27,11 +28,9 @@ pub use timeboost_types as types;
 
 use crate::api::ApiServer;
 use crate::api::internal::GrpcServer;
-use crate::committee::CommitteeInfo;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
-pub mod committee;
 pub mod forwarder;
 pub mod metrics;
 
@@ -47,25 +46,22 @@ pub struct Timeboost {
     receiver: Receiver<BundleVariant>,
     sequencer: Sequencer,
     certifier: Certifier,
-    _metrics: Arc<TimeboostMetrics>,
     prometheus: Arc<PrometheusMetrics>,
     nitro_forwarder: Option<NitroForwarder>,
     submitter: Submitter,
-    // pubsub service (+backend) handle, disconnect on drop
-    _pubsub_provider: PubSubProvider,
-    events: NewCommitteeStream,
+    committees: BoxStream<'static, CommitteeConfig>,
 }
 
 impl Timeboost {
-    pub async fn new(cfg: TimeboostConfig) -> Result<Self> {
+    pub async fn new(
+        cfg: TimeboostConfig,
+        stream: BoxStream<'static, CommitteeConfig>,
+    ) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
-        let met = Arc::new(TimeboostMetrics::new(&*pro));
-
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
 
-        // TODO: Once we have e2e listener this check wont be needed
         let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
             Some(NitroForwarder::new(
                 cfg.sign_keypair.public_key(),
@@ -74,14 +70,6 @@ impl Timeboost {
         } else {
             None
         };
-
-        let provider = PubSubProvider::new(cfg.chain_config.parent.ws_url.clone()).await?;
-        let events = CommitteeInfo::new_committee_stream(
-            &provider,
-            cfg.registered_blk.into(),
-            &cfg.chain_config.parent,
-        )
-        .await?;
 
         let (tx, rx) = mpsc::channel(100);
 
@@ -93,11 +81,9 @@ impl Timeboost {
             sequencer: seq,
             certifier: blk,
             prometheus: pro,
-            _metrics: met,
             nitro_forwarder,
             submitter: sub,
-            _pubsub_provider: provider,
-            events,
+            committees: stream,
         })
     }
 
@@ -178,30 +164,18 @@ impl Timeboost {
                         return Err(e.into())
                     }
                 },
-                res = self.events.next() => match res {
-                    Some(comm_info) => {
-                        let cur = self.config.key_store.committee().id();
-                        let new_id = comm_info.id();
-
-                        // contract ensures consecutive CommitteeId assignment
-                        if new_id == cur + 1 {
-                            info!(node = %self.label, committee_id = %new_id, current = %cur, "setting next committee");
-                            self.sequencer.set_next_committee(
-                                ConsensusTime(comm_info.effective_timestamp()),
-                                comm_info.sailfish_committee(),
-                                comm_info.dkg_key_store()
-                            ).await?;
-                            self.certifier
-                                .set_next_committee(comm_info.certifier_committee())
-                                .await?;
-                        } else {
-                            warn!(node = %self.label, committee_id = %new_id, current = %cur, "ignored new CommitteeCreated event");
-                            continue;
-                        }
-                    },
+                res = self.committees.next() => match res {
+                    Some(committee) => {
+                        info!(node = %self.label, committee = %committee.id, "new committee config");
+                        let time = ConsensusTime(committee.effective);
+                        let comm = committee.sailfish();
+                        let store = committee.dkg_key_store();
+                        self.sequencer.set_next_committee(time, comm.clone(), store).await?;
+                        self.certifier.set_next_committee(comm).await?
+                    }
                     None => {
-                        warn!(node = %self.label, "event subscription stream ended");
-                        return Err(anyhow!("contract event pubsub service prematurely shutdown"));
+                        error!(node = %self.label, "committee config stream ended");
+                        bail!("end of committee config stream")
                     }
                 }
             }

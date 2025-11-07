@@ -1,10 +1,10 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc};
 
 use ::metrics::prometheus::PrometheusMetrics;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Keypair, x25519};
+use multisig::{CommitteeId, Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
@@ -12,7 +12,8 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::{committee::CommitteeInfo, config::NodeConfig};
+use timeboost::{config::NodeConfig, config_service};
+use timeboost_config::ConfigService;
 use timeboost_utils::types::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
@@ -23,11 +24,13 @@ use clap::Parser;
 struct Cli {
     /// Path to node configuration.
     #[clap(long, short)]
-    config: PathBuf,
+    node: PathBuf,
 
-    /// Path to a file that this process creates or reads as execution proof.
     #[clap(long)]
-    stamp: PathBuf,
+    committee: CommitteeId,
+
+    #[clap(long)]
+    config_service: String,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -72,33 +75,25 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.config)
+    let config = NodeConfig::read(&cli.node)
         .await
         .context("Failed to read node config")?;
 
+    let mut config_service = config_service(&cli.config_service).await?;
+
+    let Some(committee) = config_service.get(cli.committee).await? else {
+        bail!("no config for committee id {}", cli.committee)
+    };
+
     let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
-
-    // syncing with contract to get peers keys and network addresses
-    let comm_info = CommitteeInfo::fetch(
-        config.chain.parent.rpc_url,
-        config.chain.parent.key_manager_contract,
-        config.committee,
-    )
-    .await?;
-
-    info!(
-        label        = %config.keys.signing.public,
-        committee_id = %config.committee,
-        "committee info synced"
-    );
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
     let net_metrics = NetworkMetrics::new(
         "sailfish",
         prom.as_ref(),
-        comm_info.signing_keys().iter().cloned(),
+        committee.members.iter().map(|m| m.signing_key),
     );
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
@@ -106,19 +101,19 @@ async fn main() -> Result<()> {
         config.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
-        comm_info.address_info(),
+        committee.sailfish().entries(),
         net_metrics,
     )
     .await?;
-
-    let committee = comm_info.committee();
 
     // If the stamp file exists we need to recover from a previous run.
     let recover = if cli.ignore_stamp {
         false
     } else {
-        tokio::fs::try_exists(&cli.stamp).await?
+        tokio::fs::try_exists(&config.stamp).await?
     };
+
+    let committee = committee.committee();
 
     let cfg =
         RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone()).recover(recover);
@@ -137,7 +132,10 @@ async fn main() -> Result<()> {
     let mut writer = timeboost::times::TimesWriter::new(config.keys.signing.public);
 
     // Create proof of execution.
-    tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
+    tokio::fs::File::create(config.stamp)
+        .await?
+        .sync_all()
+        .await?;
 
     for a in coordinator.init() {
         if let Err(err) = coordinator.execute(a).await {

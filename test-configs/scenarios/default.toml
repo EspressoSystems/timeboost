@@ -4,41 +4,36 @@
 [step.action]
 kind  = "remove"
 files = [
-    "/tmp/timeboost.0.stamp",
-    "/tmp/timeboost.1.stamp",
-    "/tmp/timeboost.2.stamp",
-    "/tmp/timeboost.3.stamp",
-    "/tmp/timeboost.4.stamp"
+    "/tmp/timeboost.24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU.stamp",
+    "/tmp/timeboost.264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.stamp",
+    "/tmp/timeboost.26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy.stamp",
+    "/tmp/timeboost.28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3.stamp",
+    "/tmp/timeboost.eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.stamp"
 ]
 
 # Start whole committee one by one:
 
 [[step]]
 [step.action]
-kind  = "start-node"
-node  = "node_0"
-label = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_1"
-label = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_2"
-label = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_3"
-label = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+kind = "start-node"
+node = "24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU"
 
 [[step]]
 [step.action]
 kind = "start-node"
-node = "node_4"
-label = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+node = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"

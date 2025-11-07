@@ -14,7 +14,6 @@ members = [
     "timeboost",
     "timeboost-builder",
     "timeboost-config",
-    "timeboost-contract",
     "timeboost-crypto",
     "timeboost-proto",
     "timeboost-sequencer",
@@ -63,13 +62,12 @@ data-encoding = "2.6.0"
 derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
 ed25519-compact = "2.1.1"
-either = "1.13.0"
+either = { version = "1.13.0", features = ["serde"] }
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
 http = "1.3.1"
 ipnet = { version = "2.11.0", features = ["serde"] }
-itertools = "0.14.0"
 jiff = { version = "0.2", default-features = false, features = ["serde", "std"] }
 minicbor = { version = "2.1.1", features = ["full"] }
 nohash-hasher = "0.2"
@@ -94,7 +92,7 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
     "arkworks-algebra",
 ] }
 thiserror = "2.0"
-tokio = { version = "1", default-features = false, features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = { version = "0.7.17", features = ["compat", "rt"] }

@@ -108,7 +108,7 @@ impl Yapper {
             enc_ratio: cfg.enc_ratio,
             prio_ratio: cfg.prio_ratio,
             nitro,
-            enc_key: cfg.threshold_enc_key,
+            enc_key: None,
         })
     }
 

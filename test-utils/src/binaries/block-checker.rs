@@ -1,22 +1,25 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
 use either::Either;
-use multisig::Committee;
+use multisig::CommitteeId;
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
-use timeboost::config::{CommitteeConfig, NodeConfig};
+use timeboost::{config::NodeConfig, config_service};
 use timeboost_utils::types::logging::init_logging;
 use tracing::info;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    configs: PathBuf,
+    node: PathBuf,
 
     #[clap(long)]
-    max_nodes: usize,
+    committee: CommitteeId,
+
+    #[clap(long)]
+    config_service: String,
 
     #[clap(long, short)]
     blocks: usize,
@@ -30,19 +33,15 @@ async fn main() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
+    let node = NodeConfig::read(&args.node).await?;
 
+    let mut service = config_service(&args.config_service).await?;
     let committees = {
-        let conf = CommitteeConfig::read(args.configs.join("committee.toml")).await?;
-        let mems = conf
-            .members
-            .into_iter()
-            .take(args.max_nodes)
-            .enumerate()
-            .map(|(i, m)| (i as u8, m.signing_key));
-        CommitteeVec::<1>::new(Committee::new(conf.id, mems))
+        let Some(conf) = service.get(args.committee).await? else {
+            bail!("no committee found for id {}", args.committee)
+        };
+        CommitteeVec::<1>::new(conf.sailfish().committee().clone())
     };
-
-    let node = NodeConfig::read(args.configs.join("node_0.toml")).await?;
 
     let conf = Config::builder()
         .https_only(args.https_only)
@@ -54,7 +53,7 @@ async fn main() -> Result<()> {
 
     let client = Client::new(conf.clone());
     let height = client.height().await?;
-    let nspace = NamespaceId::from(node.chain.namespace);
+    let nspace = NamespaceId::from(node.espresso.namespace);
 
     let mut watcher = Watcher::new(conf, height, nspace);
     let mut set = BTreeSet::new();

@@ -13,14 +13,41 @@ sailfish-times: (build "until" "times")
         --env RUST_LOG \
         --env TOKIO_WORKER_THREADS \
         --env RAYON_NUM_THREADS \
-        --spawn "1:anvil --port 8545" \
-        --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml --max-nodes 5 -u http://localhost:8545" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_0.toml --stamp /tmp/stamp-0.sf --ignore-stamp --times-until 10000 --until 20000" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp --times-until 10000 --until 20000" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp --times-until 10000 --until 20000" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp --times-until 10000 --until 20000" \
-        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --times-until 10000 --until 11000
+        --spawn "target/release/sailfish \
+          --committee 0 \
+          --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+          --config-service file:test-configs/committees/static-5.toml \
+          --times-until 10000 \
+          --until 20000 \
+          --ignore-stamp" \
+        --spawn "target/release/sailfish \
+          --committee 0 \
+          --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
+          --config-service file:test-configs/committees/static-5.toml \
+          --times-until 10000 \
+          --until 20000 \
+          --ignore-stamp" \
+        --spawn "target/release/sailfish \
+          --committee 0 \
+          --node test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml \
+          --config-service file:test-configs/committees/static-5.toml \
+          --times-until 10000 \
+          --until 20000 \
+          --ignore-stamp" \
+        --spawn "target/release/sailfish \
+          --committee 0 \
+          --node test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml \
+          --config-service file:test-configs/committees/static-5.toml \
+          --times-until 10000 \
+          --until 20000 \
+          --ignore-stamp" \
+        target/release/sailfish -- \
+          --committee 0 \
+          --node test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml \
+          --config-service file:test-configs/committees/static-5.toml \
+          --times-until 10000 \
+          --until 10000 \
+          --ignore-stamp
 
 [working-directory: ".."]
 timeboost-times nodes: (build "times")
@@ -51,19 +78,31 @@ timeboost-times nodes: (build "times")
         --env TIMEBOOST_NO_SUBMIT \
         --uid $(id -u) \
         --gid $(id -g) \
-        --spawn "1:anvil --host 11.0.1.0 --port 8545" \
-        --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
-        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
-        --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
-        --spawn-as-root "5:target/release/run-committee \
+        --spawn "1|anvil --host 11.0.1.0 --port 8545" \
+        --run   "2|sleep 3" \
+        --spawn "3|target/release/block-maker \
+            --bind 11.0.1.0:55000 \
+            --committee 0 \
+            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+        --spawn-as-root "4|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
-            -c test-configs/linux/ \
+            --committee 0 \
+            --nodes test-configs/linux/ \
+            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --net test-configs/net.toml \
+            --scenario test-configs/scenarios/default.toml \
             --verbose \
-            --times-until 3000 \
-            --max-nodes {{nodes}}" \
-        target/release/block-checker -- -c test-configs/linux -b 3000 --max-nodes {{nodes}}
+            --times-until 3000" \
+        --spawn "5|target/release/yapper \
+            --committee 0 \
+            --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+        target/release/block-checker -- \
+            --committee 0 \
+            --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --blocks 3000
 
 plot-node gnuplot output csv:
     #!/usr/bin/env bash

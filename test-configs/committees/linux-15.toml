@@ -1,0 +1,48 @@
+[[committee]]
+id    = 0
+start = "2025-10-01T00:00:00Z"
+
+[[committee.member]]
+config = "test-configs/linux/24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU.toml"
+
+[[committee.member]]
+config = "test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+
+[[committee.member]]
+config = "test-configs/linux/26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy.toml"
+
+[[committee.member]]
+config = "test-configs/linux/28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3.toml"
+
+[[committee.member]]
+config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+
+[[committee.member]]
+config = "test-configs/linux/fkTFXcMaEEzutGCreYpDb1B2h8hNMf6UMNRbt8dnhi2v.toml"
+
+[[committee.member]]
+config = "test-configs/linux/hcUWjmK8pTz5AY39CDh1gVnVbaF4nNuEf2dQ5SWXZQyh.toml"
+
+[[committee.member]]
+config = "test-configs/linux/iNJBiPwwdA53Gds2rnJnSm1sjvnR8Ep72LZKf8fxVo2e.toml"
+
+[[committee.member]]
+config = "test-configs/linux/op7c28pHtcAH3qtKVAPz8amCfs7mcctxeM5ztJKURmzJ.toml"
+
+[[committee.member]]
+config = "test-configs/linux/pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es.toml"
+
+[[committee.member]]
+config = "test-configs/linux/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
+
+[[committee.member]]
+config = "test-configs/linux/u8fkqXA2EnDaAqFbsHew42D5JzHkeM46cLa7UdxYqjHe.toml"
+
+[[committee.member]]
+config = "test-configs/linux/ufyeJDrHnH7BuuBvwaonu86YYZKYW47VedCdZ2yqAanm.toml"
+
+[[committee.member]]
+config = "test-configs/linux/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
+
+[[committee.member]]
+config = "test-configs/linux/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
