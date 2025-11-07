@@ -381,26 +381,25 @@ impl Task {
 
         // Process actions and collect deliveries.
         while let Some(action) = actions.pop_front() {
-            if let Action::Deliver(payload) = action {
-                match payload.data().decode::<MAX_MESSAGE_SIZE>() {
-                    Ok(data) => {
-                        if let Some(dkg) = data.dkg_bundle() {
-                            dkg_bundles.push_back(dkg.clone());
+            match self.sailfish.execute(action).await {
+                Ok(Some(CoordinatorEvent::Deliver(payload))) => {
+                    match payload.data().decode::<MAX_MESSAGE_SIZE>() {
+                        Ok(data) => {
+                            if let Some(dkg) = data.dkg_bundle() {
+                                dkg_bundles.push_back(dkg.clone());
+                            }
+                            payloads.push((payload, data));
                         }
-                        payloads.push((payload, data));
-                    }
-                    Err(err) => {
-                        warn!(
-                            node = %self.label,
-                            err  = %err,
-                            src  = %payload.source(),
-                            "failed to deserialize candidate list"
-                        );
+                        Err(err) => {
+                            warn!(
+                                node = %self.label,
+                                err  = %err,
+                                src  = %payload.source(),
+                                "failed to deserialize candidate list"
+                            );
+                        }
                     }
                 }
-                continue;
-            }
-            match self.sailfish.execute(action).await {
                 Ok(Some(CoordinatorEvent::Gc(r))) => {
                     if let Err(err) = self.decrypter.gc(r.num()).await {
                         warn!(node = %self.label, %err, "decrypt gc error");
@@ -426,7 +425,7 @@ impl Task {
                         warn!(node = %self.label, id = %r.committee(), "committee not found");
                     }
                 }
-                Ok(Some(CoordinatorEvent::Deliver(_)) | None) => {}
+                Ok(None) => {}
                 Err(err) => {
                     error!(node = %self.label, %err, "coordinator error");
                     return Err(err.into());
