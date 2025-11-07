@@ -402,7 +402,7 @@ impl Decrypter {
         k: KeyStore,
     ) -> StdResult<(), DecrypterDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
-        c.update_addresses(|a| a.to_owned().with_offset(DECRYPTER_PORT_OFFSET * 100));
+        c.update_addresses(|a| a.to_owned().with_offset(DECRYPTER_PORT_OFFSET));
         self.worker_tx
             .send(Command::NextCommittee(c, k))
             .await
