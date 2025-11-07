@@ -10,7 +10,6 @@ scrape_configs:
       - node1:8004
       - node2:8004
       - node3:8004
-      - node4:8004
   metrics_path: /i/metrics
 - job_name: cloud_status
   static_configs:

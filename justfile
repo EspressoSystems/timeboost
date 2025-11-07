@@ -68,11 +68,11 @@ ci-local:
   just test-dyn-comm
   just test-contracts
   just run-integration
-  docker wait $(docker compose -f docker-compose.yml ps -q block-checker)
+  docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
 
 run-integration: build-docker
   -docker network create timeboost
-  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \

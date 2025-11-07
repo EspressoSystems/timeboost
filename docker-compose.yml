@@ -78,7 +78,7 @@ services:
         condition: service_healthy
   config-producer:
     user: root
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=trace
     volumes:
@@ -109,7 +109,7 @@ services:
       rollup-creator:
         condition: service_completed_successfully
   contract-deployer:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=debug
     volumes:
@@ -297,7 +297,7 @@ services:
       timeout: 3s
       retries: 12
   node0:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
@@ -332,7 +332,7 @@ services:
       retries: 10
     restart: on-failure
   node1:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
@@ -367,7 +367,7 @@ services:
       retries: 10
     restart: on-failure
   node2:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
@@ -402,7 +402,7 @@ services:
       retries: 10
     restart: on-failure
   node3:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
@@ -437,7 +437,7 @@ services:
         condition: service_healthy
     restart: on-failure
   threshold-key-register:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=info
     volumes:
@@ -459,7 +459,7 @@ services:
       - timeboost
     restart: on-failure
   block-checker:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/block-checker",
@@ -481,8 +481,23 @@ services:
     depends_on:
       contract-deployer:
         condition: service_completed_successfully
+  block-verifier:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    command:
+      [
+        "/app/block-verifier",
+        "--nitro-urls",
+        "http://nitro0:8547,http://nitro1:8547,http://nitro2:8547,http://nitro3:8547",
+      ]
+    environment:
+      - RUST_LOG=info
+    networks:
+      - timeboost
+    depends_on:
+      block-checker:
+        condition: service_completed_successfully
   yapper:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       - /app/yapper
       - --config
