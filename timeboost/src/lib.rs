@@ -191,6 +191,9 @@ impl Timeboost {
                                 comm_info.sailfish_committee(),
                                 comm_info.dkg_key_store()
                             ).await?;
+                            self.certifier
+                                .set_next_committee(comm_info.certifier_committee())
+                                .await?;
                         } else {
                             warn!(node = %self.label, committee_id = %new_id, current = %cur, "ignored new CommitteeCreated event");
                             continue;
