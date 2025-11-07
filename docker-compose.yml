@@ -1,23 +1,12 @@
 services:
   demo-l1-network:
-    #build:
-    #  dockerfile: docker/geth-l1.Dockerfile
-    #  context: .
     image: ghcr.io/espressosystems/timeboost/geth-l1:rollup-creator-round2
     command: --dev --dev.period=1 --verbosity=2
     ports:
       - 8545:8545
       - 8546:8546
-    #volumes:
-    #  - "./geth-config/genesis-default.json:/genesis.json"
-    #  - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
     networks:
       - timeboost
-    healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8545"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
   espresso-dev-node:
     pid: host
     image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:main
@@ -44,19 +33,30 @@ services:
     depends_on:
       demo-l1-network:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8545",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - timeboost
-  rollup-creator:    
+  rollup-creator:
     pid: host
-    #build:
-    #  dockerfile: docker/rollupcreator.Dockerfile
-    #  context: .
-    #  args:
-    #    NITRO_CONTRACTS_BRANCH: v3.1.0
     image: ghcr.io/espressosystems/timeboost/rollup-creator:rollup-creator-round2
     volumes:
       - "config:/config"
-    #  - "./nitro-config:/nitro-config"
     environment:
       AUTHORIZE_VALIDATORS: 10
       CHAIN_DEPLOYMENT_INFO: "/config/deployment.json"
@@ -72,25 +72,25 @@ services:
       WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
     command: ["create-rollup-testnode"]
     networks:
-      - timeboost 
+      - timeboost
     depends_on:
       demo-l1-network:
         condition: service_healthy
   config-producer:
     user: root
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=trace
     volumes:
       - "config:/config"
-    entrypoint: 
+    entrypoint:
       - sh
       - -c
       - >
         /app/mkconfig -n 4 --committee-id 0 \
           --bind "node:8000" \
-          --public-mode "docker-dns" \
-          --nitro-addr "nitro:55000" \
+          --bind-mode "docker-dns" \
+          --nitro "nitro:55000" \
           --nitro-mode "docker-dns" \
           --chain-namespace 412346 \
           --parent-rpc-url "http://demo-l1-network:8545" \
@@ -109,12 +109,12 @@ services:
       rollup-creator:
         condition: service_completed_successfully
   contract-deployer:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=debug
     volumes:
       - "config:/config"
-    entrypoint: 
+    entrypoint:
       - sh
       - -c
       - "/app/scripts/deploy-contract -d /app/deploy -r /app/register -c /config/committee.toml -u http://demo-l1-network:8545"
@@ -124,7 +124,7 @@ services:
       config-producer:
         condition: service_completed_successfully
   nitro0:
-    pid: host # allow debugging
+    pid: host
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
@@ -137,7 +137,6 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
       - "./nitro-config:/nitro-config"
-      - "tokenbridge-data:/tokenbridge-data"
     command:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.feed.output.enable
@@ -150,17 +149,29 @@ services:
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8003
     networks:
-       - timeboost
+      - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8547",
+        ]
       interval: 5s
       timeout: 3s
-      retries: 12        
+      retries: 12
   nitro1:
-    pid: host # allow debugging
+    pid: host
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
@@ -173,25 +184,36 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
       - "./nitro-config:/nitro-config"
-      - "tokenbridge-data:/tokenbridge-data"
     command:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro1:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
-      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s    
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
     networks:
-       - timeboost
+      - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8547",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
   nitro2:
-    pid: host # allow debugging
+    pid: host
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
@@ -204,7 +226,6 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
       - "./nitro-config:/nitro-config"
-      - "tokenbridge-data:/tokenbridge-data"
     command:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro2:8547
@@ -212,17 +233,29 @@ services:
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8003
     networks:
-       - timeboost
+      - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8547",
+        ]
       interval: 5s
       timeout: 3s
-      retries: 12        
+      retries: 12
   nitro3:
-    pid: host # allow debugging
+    pid: host
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
     entrypoint: /usr/local/bin/nitro
     ports:
@@ -235,7 +268,6 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
       - "./nitro-config:/nitro-config"
-      - "tokenbridge-data:/tokenbridge-data"
     command:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro3:8547
@@ -243,22 +275,36 @@ services:
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8003
     networks:
-       - timeboost
+      - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8547",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
   node0:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
-        "--config", "/config/node_0.toml",
-        "--https-only", "false",
+        "--config",
+        "/config/node_0.toml",
+        "--https-only",
+        "false",
       ]
     volumes:
       - "config:/config"
@@ -286,15 +332,17 @@ services:
       retries: 10
     restart: on-failure
   node1:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
-        "--config", "/config/node_1.toml",
-        "--https-only", "false",
+        "--config",
+        "/config/node_1.toml",
+        "--https-only",
+        "false",
       ]
     volumes:
-      - "config:/config"    
+      - "config:/config"
     networks:
       - timeboost
     environment:
@@ -316,18 +364,20 @@ services:
       test: ["CMD", "curl", "-f", "http://node1:8004/i/health"]
       interval: 10s
       timeout: 3s
-      retries: 10      
+      retries: 10
     restart: on-failure
   node2:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
-        "--config", "/config/node_2.toml",
-        "--https-only", "false",
+        "--config",
+        "/config/node_2.toml",
+        "--https-only",
+        "false",
       ]
     volumes:
-      - "config:/config"      
+      - "config:/config"
     networks:
       - timeboost
     environment:
@@ -352,15 +402,17 @@ services:
       retries: 10
     restart: on-failure
   node3:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/timeboost",
-        "--config", "/config/node_3.toml",
-        "--https-only", "false",
+        "--config",
+        "/config/node_3.toml",
+        "--https-only",
+        "false",
       ]
     volumes:
-      - "config:/config"      
+      - "config:/config"
     networks:
       - timeboost
     environment:
@@ -373,7 +425,7 @@ services:
       test: ["CMD", "curl", "-f", "http://node3:8004/i/health"]
       interval: 10s
       timeout: 3s
-      retries: 20      
+      retries: 20
     depends_on:
       nitro0:
         condition: service_healthy
@@ -385,15 +437,15 @@ services:
         condition: service_healthy
     restart: on-failure
   threshold-key-register:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     environment:
       - RUST_LOG=info
     volumes:
-      - "config:/config"      
+      - "config:/config"
     entrypoint:
       - sh
       - -c
-      - "sleep 30s && /app/register --max-members 4 -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
+      - "sleep 60s && /app/register --max-members 4 -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
     depends_on:
       nitro0:
         condition: service_healthy
@@ -407,26 +459,45 @@ services:
       - timeboost
     restart: on-failure
   block-checker:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
         "/app/block-checker",
-        "-c", "/config",
-        "-b", "20000",
-        "--https-only", "false",
-        "--max-nodes", "4",
+        "-c",
+        "/config",
+        "-b",
+        "100",
+        "--https-only",
+        "false",
+        "--max-nodes",
+        "4",
       ]
     volumes:
       - "config:/config"
     environment:
-      - RUST_LOG=trace
+      - RUST_LOG=info
     networks:
       - timeboost
     depends_on:
       contract-deployer:
         condition: service_completed_successfully
+  block-verifier:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    command:
+      [
+        "/app/block-verifier",
+        "--nitro-urls",
+        "http://nitro0:8547,http://nitro1:8547,http://nitro2:8547,http://nitro3:8547",
+      ]
+    environment:
+      - RUST_LOG=info
+    networks:
+      - timeboost
+    depends_on:
+      block-checker:
+        condition: service_completed_successfully
   yapper:
-    image: ghcr.io/espressosystems/timeboost:main
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       - /app/yapper
       - --config
@@ -434,7 +505,7 @@ services:
       - --nitro-url
       - http://nitro0:8547
       - --max-nodes
-      - '4'
+      - "4"
     volumes:
       - "config:/config"
     environment:
@@ -457,4 +528,3 @@ volumes:
   nitro1:
   nitro2:
   nitro3:
-  tokenbridge-data:
