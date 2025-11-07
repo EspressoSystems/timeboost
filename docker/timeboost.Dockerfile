@@ -26,6 +26,7 @@ COPY --from=builder /app/target/release/register .
 COPY --from=builder /app/target/release/deploy .
 COPY --from=builder /app/target/release/block-maker .
 COPY --from=builder /app/target/release/block-checker .
+COPY --from=builder /app/target/release/block-verifier .
 COPY --from=builder /app/target/release/mkconfig .
 COPY --from=builder /app/scripts/deploy-contract /app/scripts/deploy-contract
 
@@ -40,6 +41,7 @@ RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/deploy \
     /app/block-maker \
     /app/block-checker \
+    /app/block-verifier \
     /app/mkconfig \
     /app/scripts/deploy-contract
 
