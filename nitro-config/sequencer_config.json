@@ -72,7 +72,10 @@
             ],
             "poll-interval": "60s",
             "is-decentralized-timeboost": true,
-            "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+            "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35",
+            "decentralized-timeboost-batch-verifier": {
+                "wait-for-leader-delay": "5m"
+            }
         },
         "block-validator": {
             "validation-server": {
