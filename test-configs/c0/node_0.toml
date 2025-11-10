@@ -4,6 +4,7 @@ stamp = "/tmp/timeboost.0.stamp"
 [net]
 bind = "127.0.0.1:8000"
 batch_poster_api = "127.0.0.1:8547"
+nitro = "127.0.0.1:55000"
 
 [keys.signing]
 secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"

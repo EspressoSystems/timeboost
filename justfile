@@ -20,9 +20,6 @@ build-release-until:
 build-docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
-build-docker-amd:
-  docker build . -f ./docker/timeboost-amd.Dockerfile -t timeboost:latest
-
 clean-docker:
   docker ps -q | xargs -r docker stop
   docker compose down --rmi all --volumes --remove-orphans
@@ -63,24 +60,19 @@ fix:
   cargo fix --allow-dirty --allow-staged
 
 ci-local:
-  just build && just lint && just test-ci --release && \
-  just run-demo --ignore-stamp --yapper -c test-configs/c0 && \
-  just run-sailfish-demo && just build-docker
+  just build
+  just lint
+  just test-ci --release
+  just run-sailfish-demo
+  just test-all
+  just test-dyn-comm
+  just test-contracts
+  just run-integration
+  docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
 
-run-integration: build-docker-amd
-    -docker network create timeboost
-    docker compose -f docker-compose.block-maker.yml -f docker-compose.metrics.yml up -d
-
-run-integration-nitro: build-docker-amd
+run-integration: build-docker
   -docker network create timeboost
-  docker compose -f docker-compose.nitro.yml -f docker-compose.metrics.yml up -d
-
-run-integration-nitro-ci:
-  -docker network create timeboost
-  docker compose -f docker-compose.nitro-ci.yml up -d
-
-run-demo *ARGS:
-  scripts/run-timeboost-demo {{ARGS}}
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \
@@ -105,6 +97,8 @@ mkconfig NUM_NODES DATETIME *ARGS:
     -n {{NUM_NODES}} \
     --committee-id 0 \
     --bind "127.0.0.1:8000" \
+    --nitro "127.0.0.1:55000" \
+    --nitro-mode "unchanged" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8545" \
@@ -114,6 +108,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
+    --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
     --output "test-configs/c0" {{ARGS}}
 
 mkconfig-docker DATETIME *ARGS:
@@ -136,44 +131,6 @@ mkconfig-docker DATETIME *ARGS:
     --espresso-base-url "http://espresso-dev-node:41000/v1/" \
     --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
     --output "test-configs/docker" {{ARGS}}
-
-mkconfig-nitro-ci DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n 2 \
-    --committee-id 0 \
-    --bind "0.0.0.0:8000" \
-    --batch-poster-api "host.docker.internal:8547" \
-    --external-base "127.0.0.1:8000" \
-    --nitro "localhost:55000" \
-    --chain-namespace 412346 \
-    --parent-rpc-url "http://127.0.0.1:8545" \
-    --parent-ws-url "ws://127.0.0.1:8546" \
-    --parent-chain-id 1337 \
-    --espresso-base-url "http://127.0.0.1:41000/v1/" \
-    --espresso-websocket-url "ws://127.0.0.1:41000/v1/" \
-    --parent-ibox-contract "0x1F5Aeb9665838a116Ac5BE48C36AA7C87eeFB386" \
-    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-    --timestamp {{DATETIME}} \
-    --stamp-dir "/tmp" \
-    --output "test-configs/nitro-ci" {{ARGS}}
-
-mkconfig-local DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n 5 \
-    --committee-id 0 \
-    --bind "127.0.0.1:8000" \
-    --nitro "127.0.0.1:55000" \
-    --batch-poster-api "127.0.0.1:8547" \
-    --nitro-mode "unchanged" \
-    --chain-namespace 10101 \
-    --parent-rpc-url "http://127.0.0.1:8545" \
-    --parent-ws-url "ws://127.0.0.1:8545" \
-    --parent-chain-id 31337 \
-    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-    --timestamp {{DATETIME}} \
-    --stamp-dir "/tmp" \
-    --output "test-configs/local" {{ARGS}}
 
 mkconfig-linux NUM_NODES DATETIME *ARGS:
   cargo run --release --bin mkconfig -- \
@@ -218,9 +175,6 @@ test-individually: build-port-alloc
         cargo nextest run -- --no-tests=pass -p $pkg) || exit 1; \
   done
 
-test-contract-deploy *ARGS:
-  scripts/test-contract-deploy {{ARGS}}
-
 test-all nodes="5": build-release build-test-utils
   env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error \
   target/release/run \
@@ -228,15 +182,15 @@ test-all nodes="5": build-release build-test-utils
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
-    --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes {{nodes}}" \
-    --spawn "4:target/release/yapper -c test-configs/local/ --max-nodes {{nodes}}" \
+    --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/c0/committee.toml --max-nodes {{nodes}}" \
+    --spawn "4:target/release/yapper -c test-configs/c0/ --max-nodes {{nodes}}" \
     --spawn "5:target/release/run-committee \
-        -c test-configs/local/ \
+        -c test-configs/c0/ \
         -s test-configs/scenarios/rolling-restart.toml \
         --verbose \
         --max-nodes {{nodes}}" \
-    target/release/block-checker -- -c test-configs/local --max-nodes {{nodes}} -b 300
+    target/release/block-checker -- -c test-configs/c0 --max-nodes {{nodes}} -b 300
 
 test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
