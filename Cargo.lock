@@ -210,7 +210,7 @@ dependencies = [
 [[package]]
 name = "alloy-compat"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "ethers-core",
@@ -2555,8 +2555,8 @@ dependencies = [
 
 [[package]]
 name = "cdn-broker"
-version = "0.6.1"
-source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.1#54ee47049c2c90cd418d1fa2fddfbd3533737c35"
+version = "0.6.2-compat"
+source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.2-bcompat#54621aebfe5aadcdb4f57e35e9b19366da22e302"
 dependencies = [
  "cdn-proto",
  "clap",
@@ -2577,8 +2577,8 @@ dependencies = [
 
 [[package]]
 name = "cdn-client"
-version = "0.6.1"
-source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.1#54ee47049c2c90cd418d1fa2fddfbd3533737c35"
+version = "0.6.2"
+source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.2-bcompat#54621aebfe5aadcdb4f57e35e9b19366da22e302"
 dependencies = [
  "cdn-proto",
  "clap",
@@ -2593,8 +2593,8 @@ dependencies = [
 
 [[package]]
 name = "cdn-marshal"
-version = "0.6.1"
-source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.1#54ee47049c2c90cd418d1fa2fddfbd3533737c35"
+version = "0.6.2-compat"
+source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.2-bcompat#54621aebfe5aadcdb4f57e35e9b19366da22e302"
 dependencies = [
  "cdn-proto",
  "clap",
@@ -2606,8 +2606,8 @@ dependencies = [
 
 [[package]]
 name = "cdn-proto"
-version = "0.6.1"
-source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.1#54ee47049c2c90cd418d1fa2fddfbd3533737c35"
+version = "0.6.2-compat"
+source = "git+https://github.com/EspressoSystems/Push-CDN?tag=0.6.2-bcompat#54621aebfe5aadcdb4f57e35e9b19366da22e302"
 dependencies = [
  "anyhow",
  "ark-serialize 0.5.0",
@@ -3801,7 +3801,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4049,7 +4049,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4060,7 +4060,7 @@ source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4
 [[package]]
 name = "espresso-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "alloy-compat",
@@ -5007,7 +5007,7 @@ dependencies = [
 [[package]]
 name = "hotshot"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5050,7 +5050,7 @@ dependencies = [
 [[package]]
 name = "hotshot-builder-api"
 version = "0.1.7"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "async-trait",
  "clap",
@@ -5069,7 +5069,7 @@ dependencies = [
 [[package]]
 name = "hotshot-contract-adapter"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5098,7 +5098,7 @@ dependencies = [
 [[package]]
 name = "hotshot-events-service"
 version = "0.1.57"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "async-broadcast",
@@ -5123,7 +5123,7 @@ dependencies = [
 [[package]]
 name = "hotshot-example-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5153,7 +5153,7 @@ dependencies = [
 [[package]]
 name = "hotshot-libp2p-networking"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5184,7 +5184,7 @@ dependencies = [
 [[package]]
 name = "hotshot-macros"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "derive_builder",
  "proc-macro2",
@@ -5195,7 +5195,7 @@ dependencies = [
 [[package]]
 name = "hotshot-query-service"
 version = "0.1.76"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5248,7 +5248,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "async-broadcast",
  "async-trait",
@@ -5261,7 +5261,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task-impls"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5299,7 +5299,7 @@ dependencies = [
 [[package]]
 name = "hotshot-testing"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5341,7 +5341,7 @@ dependencies = [
 [[package]]
 name = "hotshot-types"
 version = "0.1.11"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5400,7 +5400,7 @@ dependencies = [
 [[package]]
 name = "hotshot-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "tracing",
 ]
@@ -5626,7 +5626,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite 0.2.16",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -5901,7 +5901,7 @@ checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "arbitrary",
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "serde",
  "serde_core",
 ]
@@ -8497,7 +8497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -8510,7 +8510,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -8659,7 +8659,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.32",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -8696,7 +8696,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -9421,7 +9421,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9796,7 +9796,7 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 [[package]]
 name = "sequencer-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "alloy",
  "anyhow",
@@ -10944,7 +10944,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12403,7 +12403,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vid"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#2a7e7cbb49eb2704f9d6f0dadec5015de9e5a91c"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#ba19ba73ddde027187979cf66ef8c3c0e094b087"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -12712,7 +12712,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
