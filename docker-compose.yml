@@ -77,18 +77,6 @@ services:
     depends_on:
       demo-l1-network:
         condition: service_healthy
-  account-generator:
-    image: ghcr.io/espressosystems/account-generator:latest
-    volumes:
-      - l1keystore:/l1keystore
-    environment:
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
-      - L1_PASSPHRASE=passphrase
-    networks:
-      - timeboost
-    depends_on:
-      demo-l1-network:
-        condition: service_healthy
   config-producer:
     user: root
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
@@ -103,9 +91,10 @@ services:
         /app/mkconfig -n 4 --committee-id 0 \
           --bind "node:8000" \
           --bind-mode "docker-dns" \
+          --seed 42 \
           --nitro "nitro:55000" \
           --nitro-mode "docker-dns" \
-          --batch-poster-api "host.docker.internal:8547" \
+          --batch-poster-api "http://host.docker.internal:8547" \
           --chain-namespace 412346 \
           --parent-rpc-url "http://demo-l1-network:8545" \
           --parent-ws-url "ws://demo-l1-network:8546" \
@@ -139,7 +128,7 @@ services:
         condition: service_completed_successfully
   nitro0:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8547:8547"
@@ -162,7 +151,7 @@ services:
       - --graphql.corsdomain=*
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8003
-      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp
+      - --node.batch-poster.parent-chain-wallet.private-key=2837b8532d9be65995b377eae666b386143f1f211999a05444d395203640ef0f
     networks:
       - timeboost
     depends_on:
@@ -187,7 +176,7 @@ services:
       retries: 12
   nitro1:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8557:8547"
@@ -205,7 +194,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
-      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs
+      - --node.batch-poster.parent-chain-wallet.private-key=d785ccfe237647fca51042e2083e085ec29201d5a39f5a61f0da5cab315799ac
     networks:
       - timeboost
     depends_on:
@@ -230,7 +219,7 @@ services:
       retries: 12
   nitro2:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8567:8547"
@@ -248,7 +237,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8003
-      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr
+      - --node.batch-poster.parent-chain-wallet.private-key=1d55854a220011ecdf322f44a14e9f9961fa2f8f4e37587ef7645ccda713507f
     networks:
       - timeboost
     depends_on:
@@ -273,7 +262,7 @@ services:
       retries: 12
   nitro3:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:feat-timeboost-integration-3-6-7
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8577:8547"
@@ -291,7 +280,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8003
-      - --node.batch-poster.decentralized-timeboost-batch-verifier.private-key=CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk
+      - --node.batch-poster.parent-chain-wallet.private-key=aa913b27299e7ae7c3fe9ff721faa9d2ba436257a253e1f823940d5effd25ea1
     networks:
       - timeboost
     depends_on:
@@ -524,6 +513,8 @@ services:
       - http://nitro0:8547
       - --max-nodes
       - "4"
+      - --tps
+      - '1'
     volumes:
       - "config:/config"
     environment:

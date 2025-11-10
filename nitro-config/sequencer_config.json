@@ -60,11 +60,6 @@
             "enable": true,
             "max-delay": "1m",
             "l1-block-bound": "ignore",
-            "parent-chain-wallet": {
-                "account": "0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e",
-                "password": "passphrase",
-                "pathname": "/home/user/l1keystore"
-            },
             "data-poster": {
                 "redis-signer": {
                     "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

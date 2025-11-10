@@ -5,6 +5,9 @@ on:
     tags:
       # Match tags in the format YYYYMMDD
       - "20[0-9][0-9][0-1][0-9][0-3][0-9]*"
+  pull_request:
+    branches:
+      - "*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -131,11 +134,11 @@ jobs:
         with:
             tags: ghcr.io/espressosystems/timeboost/rollup-creator:${{steps.metadata.outputs.version}}
             inputs: ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build-arm.outputs.digest}}
-            push: ${{ github.event_name != 'pull_request' }}
+            push: ${{ github.event_name == 'pull_request' }}
 
       - name: Create and push manifest images to latest
         uses: Noelware/docker-manifest-action@master
         with:
             tags: ghcr.io/espressosystems/timeboost/rollup-creator:latest
             inputs: ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build.outputs.digest}},ghcr.io/espressosystems/timeboost/rollup-creator@${{needs.build-arm.outputs.digest}}
-            push: ${{ github.event_name != 'pull_request' }}
+            push: ${{ github.event_name == 'pull_request' }}
