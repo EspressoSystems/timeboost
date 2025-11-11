@@ -13,6 +13,10 @@ path = "src/binaries/timeboost.rs"
 name = "sailfish"
 path = "src/binaries/sailfish.rs"
 
+[[bin]]
+name = "funder"
+path = "src/binaries/funder.rs"
+
 [features]
 until = []
 times = [

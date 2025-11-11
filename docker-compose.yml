@@ -104,7 +104,9 @@ services:
           --stamp-dir "/tmp" \
           --espresso-base-url "http://espresso-dev-node:41000/v1/" \
           --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-          --output "/config"
+          --output "/config" \
+        && /app/funder --parent-rpc-url "http://demo-l1-network:8545" \
+          --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
     networks:
       - timeboost
     depends_on:

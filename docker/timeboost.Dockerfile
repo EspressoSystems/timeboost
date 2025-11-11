@@ -28,6 +28,7 @@ COPY --from=builder /app/target/release/block-maker .
 COPY --from=builder /app/target/release/block-checker .
 COPY --from=builder /app/target/release/block-verifier .
 COPY --from=builder /app/target/release/mkconfig .
+COPY --from=builder /app/target/release/funder .
 COPY --from=builder /app/scripts/deploy-contract /app/scripts/deploy-contract
 
 COPY --from=builder /root/.foundry/bin/forge /usr/local/bin/forge
@@ -43,6 +44,7 @@ RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/block-checker \
     /app/block-verifier \
     /app/mkconfig \
+    /app/funder \
     /app/scripts/deploy-contract
 
 USER timeboostuser

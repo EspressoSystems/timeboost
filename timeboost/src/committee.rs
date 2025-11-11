@@ -34,6 +34,7 @@ pub struct CommitteeInfo {
     dh_keys: Vec<x25519::PublicKey>,
     dkg_keys: Vec<DkgEncKey>,
     public_addresses: Vec<cliquenet::Address>,
+    sig_key_addresses: Vec<alloy::primitives::Address>,
 }
 
 impl CommitteeInfo {
@@ -58,7 +59,7 @@ impl CommitteeInfo {
             .call()
             .await?;
 
-        let (signing_keys, dh_keys, dkg_keys, public_addresses) = c
+        let (signing_keys, dh_keys, dkg_keys, public_addresses, sig_key_addresses) = c
             .members
             .iter()
             .map(|m| {
@@ -70,7 +71,7 @@ impl CommitteeInfo {
                     .with_context(|| "Failed to parse dkgKey bytes")?;
                 let addr = cliquenet::Address::try_from(m.networkAddress.as_ref())
                     .with_context(|| "Failed to parse networkAddress string")?;
-                Ok((sig_key, dh_key, dkg_key, addr))
+                Ok((sig_key, dh_key, dkg_key, addr, m.sigKeyAddress))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -84,6 +85,7 @@ impl CommitteeInfo {
             dh_keys,
             dkg_keys,
             public_addresses,
+            sig_key_addresses,
         })
     }
 
@@ -101,6 +103,10 @@ impl CommitteeInfo {
 
     pub fn signing_keys(&self) -> &[multisig::PublicKey] {
         &self.signing_keys
+    }
+
+    pub fn sig_key_addresses(&self) -> &[alloy::primitives::Address] {
+        &self.sig_key_addresses
     }
 
     pub fn committee(&self) -> Committee {
