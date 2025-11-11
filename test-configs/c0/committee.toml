@@ -9,6 +9,8 @@ dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7
 address = "127.0.0.1:8000"
 http_api = "127.0.0.1:8004"
 grpc_api = "127.0.0.1:8003"
+batch_poster_api = "127.0.0.1:8547"
+sig_key_address = "0x647ff873518108c6ae1e3b310bb6d68c72d369ab"
 
 [[members]]
 node = "node_1"
@@ -18,6 +20,8 @@ dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNi
 address = "127.0.0.1:8010"
 http_api = "127.0.0.1:8014"
 grpc_api = "127.0.0.1:8013"
+batch_poster_api = "127.0.0.1:8557"
+sig_key_address = "0xd3ab3e193f9c438100f6aefa164a214b5be55379"
 
 [[members]]
 node = "node_2"
@@ -27,6 +31,8 @@ dkg_enc_key = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1e
 address = "127.0.0.1:8020"
 http_api = "127.0.0.1:8024"
 grpc_api = "127.0.0.1:8023"
+batch_poster_api = "127.0.0.1:8567"
+sig_key_address = "0x92be0a723a8cf1c2e74c5c5ebd57625fd7b26bc5"
 
 [[members]]
 node = "node_3"
@@ -36,6 +42,8 @@ dkg_enc_key = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RC
 address = "127.0.0.1:8030"
 http_api = "127.0.0.1:8034"
 grpc_api = "127.0.0.1:8033"
+batch_poster_api = "127.0.0.1:8577"
+sig_key_address = "0xa064549353fafd38f1000627acc581c9354b1cbe"
 
 [[members]]
 node = "node_4"
@@ -45,3 +53,5 @@ dkg_enc_key = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnY
 address = "127.0.0.1:8040"
 http_api = "127.0.0.1:8044"
 grpc_api = "127.0.0.1:8043"
+batch_poster_api = "127.0.0.1:8587"
+sig_key_address = "0x9bfc8551ffd3a21f856490870f111051b1ef39ab"

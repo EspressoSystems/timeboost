@@ -102,6 +102,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-ws-url "ws://127.0.0.1:8545" \
+    --batch-poster-api "127.0.0.1:8547" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -136,6 +137,7 @@ mkconfig-linux NUM_NODES DATETIME *ARGS:
     -n {{NUM_NODES}} \
     --committee-id 0 \
     --bind "11.0.0.1:8000" \
+    --batch-poster-api "127.0.0.1:8547" \
     --bind-mode "increment-address" \
     --nitro "11.0.1.0:55000" \
     --nitro-mode "unchanged" \
@@ -205,6 +207,7 @@ test-dyn-comm: build-release-until build-test-utils
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
                  --bind 127.0.0.1:9000 \
+                 --batch-poster-api "127.0.0.1:8547" \
                  --chain-namespace 10101 \
                  --parent-rpc-url http://127.0.0.1:8545 \
                  --parent-ws-url ws://127.0.0.1:8545 \
