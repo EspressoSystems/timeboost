@@ -26,6 +26,7 @@ pub struct CommitteeMember {
     pub http_api: Address,
     pub grpc_api: Address,
     pub batch_poster_api: Address,
+    pub sig_key_address: alloy::primitives::Address,
 }
 
 impl CommitteeConfig {

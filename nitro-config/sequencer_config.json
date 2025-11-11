@@ -41,7 +41,11 @@
             "enable": false
         },
         "decentralized-timeboost-sequencer": {
-            "enable": true
+            "enable": true,
+            "hotshot-urls": [
+                "http://espresso-dev-node:41000",
+                "http://espresso-dev-node:41000"
+            ]
         },
         "decentralized-timeboost-delayed-sequencer": {
             "enable": true

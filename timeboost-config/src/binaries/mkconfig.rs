@@ -5,7 +5,9 @@ use std::num::NonZeroU8;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use alloy::consensus::crypto::secp256k1::public_key_to_address;
 use alloy::eips::BlockNumberOrTag;
+use alloy::signers::k256::ecdsa::VerifyingKey;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
@@ -288,6 +290,8 @@ impl Args {
                 },
             };
 
+            let pub_key = VerifyingKey::from_sec1_bytes(&config.keys.signing.public.to_bytes())?;
+
             members.push(CommitteeMember {
                 node: format!("node_{i}"),
                 signing_key: config.keys.signing.public,
@@ -309,6 +313,7 @@ impl Args {
                             .map(|a| a.with_offset(GRPC_API_PORT_OFFSET))
                     })
                     .unwrap_or_else(|| bind_addr.clone().with_offset(GRPC_API_PORT_OFFSET)),
+                sig_key_address: public_key_to_address(pub_key),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;

@@ -54,7 +54,7 @@ services:
       - timeboost
   rollup-creator:
     pid: host
-    image: ghcr.io/espressosystems/timeboost/rollup-creator:rollup-creator-round2
+    image: ghcr.io/espressosystems/timeboost/rollup-creator:pr-529
     volumes:
       - "config:/config"
     environment:
@@ -70,7 +70,6 @@ services:
       PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
       SEQUENCER_ADDRESS: 0x2F1eAe7Dd46D88f08fC2f8ED27Fcb2Ab183eb2d0
       WASM_MODULE_ROOT: 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
-      BATCH_POSTERS: 0x3f1eae7d46d88f08fc2f8ed27fcb2ab183eb2d0e
     command: ["create-rollup-testnode"]
     networks:
       - timeboost
@@ -191,7 +190,7 @@ services:
     command:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro1:8547
-      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
       - --node.batch-poster.parent-chain-wallet.private-key=d785ccfe237647fca51042e2083e085ec29201d5a39f5a61f0da5cab315799ac
