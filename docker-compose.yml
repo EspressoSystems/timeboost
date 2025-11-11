@@ -104,9 +104,7 @@ services:
           --stamp-dir "/tmp" \
           --espresso-base-url "http://espresso-dev-node:41000/v1/" \
           --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-          --output "/config" \
-        && /app/funder --parent-rpc-url "http://demo-l1-network:8545" \
-          --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+          --output "/config"
     networks:
       - timeboost
     depends_on:
@@ -121,7 +119,13 @@ services:
     entrypoint:
       - sh
       - -c
-      - "/app/scripts/deploy-contract -d /app/deploy -r /app/register -c /config/committee.toml -u http://demo-l1-network:8545"
+      - > 
+        /app/scripts/deploy-contract -d /app/deploy \
+          -r /app/register \
+          -c /config/committee.toml \
+          -u http://demo-l1-network:8545 \
+        && /app/funder --parent-rpc-url "http://demo-l1-network:8545" \
+          --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
     networks:
       - timeboost
     depends_on:
