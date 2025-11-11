@@ -30,6 +30,7 @@ pub struct NodeConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Net {
     pub bind: Address,
+    pub batch_poster_api: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro: Option<Address>,
 }

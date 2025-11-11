@@ -1,8 +1,10 @@
 //! CLI for registering next committee to KeyManager contract
 
 use alloy::{
+    consensus::crypto::secp256k1::public_key_to_address,
     primitives::Address,
     providers::{Provider, WalletProvider},
+    signers::k256::ecdsa::VerifyingKey,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, ValueEnum};
@@ -87,10 +89,13 @@ async fn main() -> Result<()> {
                 .members
                 .iter()
                 .map(|m| {
+                    let pub_key = VerifyingKey::from_sec1_bytes(&m.signing_key.to_bytes())?;
                     Ok::<_, anyhow::Error>(CommitteeMemberSol {
                         sigKey: m.signing_key.to_bytes().into(),
                         dhKey: m.dh_key.as_bytes().into(),
                         dkgKey: m.dkg_enc_key.to_bytes()?.into(),
+                        batchPosterAddress: m.batch_poster_api.to_string(),
+                        sigKeyAddress: public_key_to_address(pub_key),
                         networkAddress: m.address.to_string(),
                     })
                 })
