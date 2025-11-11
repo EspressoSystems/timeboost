@@ -17,7 +17,7 @@ use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    /// How many nodes should configuration contain?
+    /// How many node configurations to generate.
     #[clap(long, short)]
     num: NonZeroU8,
 
@@ -34,13 +34,10 @@ struct Args {
     nitro_mode: Mode,
 
     /// The base network address to bind to.
-    ///
-    /// Sailfish listens on this address. Other networks are relative to this address,
-    /// listening at different ports.
     #[clap(long, short)]
     bind: Address,
 
-    /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
+    /// The address of the Arbitrum Nitro node listener.
     #[clap(long)]
     nitro: Option<Address>,
 

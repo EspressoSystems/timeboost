@@ -101,8 +101,8 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig NUM_NODES *ARGS:
-  cargo run --release --bin mkconfig -- \
+gen-node-configs NUM_NODES *ARGS:
+  cargo run --release --bin gen-node-configs -- \
     -n {{NUM_NODES}} \
     --bind "127.0.0.1:8000" \
     --nitro "127.0.0.1:55000" \
@@ -117,8 +117,8 @@ mkconfig NUM_NODES *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/nodes" {{ARGS}}
 
-mkconfig-docker *ARGS:
-  cargo run --release --bin mkconfig -- \
+gen-node-configs-docker *ARGS:
+  cargo run --release --bin gen-node-configs -- \
     -n 5 \
     --bind "0.0.0.0:8000" \
     --bind-mode "unchanged" \
@@ -133,8 +133,8 @@ mkconfig-docker *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/docker" {{ARGS}}
 
-mkconfig-linux NUM_NODES *ARGS:
-  cargo run --release --bin mkconfig -- \
+gen-node-configs-linux NUM_NODES *ARGS:
+  cargo run --release --bin gen-node-configs -- \
     -n {{NUM_NODES}} \
     --bind "11.0.0.1:8000" \
     --bind-mode "increment-address" \

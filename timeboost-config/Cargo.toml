@@ -27,5 +27,5 @@ toml = { workspace = true }
 url = { workspace = true }
 
 [[bin]]
-name = "mkconfig"
-path = "src/binaries/mkconfig.rs"
+name = "gen-node-configs"
+path = "src/binaries/gen-node-configs.rs"
