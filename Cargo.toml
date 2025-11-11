@@ -106,7 +106,7 @@ tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
-turmoil = "0.6.4"
+turmoil = "0.7.0"
 url = { version = "2.5.4", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
@@ -114,7 +114,7 @@ espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.gi
 hotshot-query-service = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 
 [workspace.dependencies.alloy]
-version  = "1.0"
+version  = "1.1"
 features = [
     "arbitrary",
     "default",
