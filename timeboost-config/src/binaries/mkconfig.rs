@@ -5,7 +5,9 @@ use std::num::NonZeroU8;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use alloy::consensus::crypto::secp256k1::public_key_to_address;
 use alloy::eips::BlockNumberOrTag;
+use alloy::signers::k256::ecdsa::VerifyingKey;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
@@ -70,6 +72,10 @@ struct Args {
     /// Internal GRPC API of a timeboost node.
     #[clap(long)]
     grpc_api: Option<Address>,
+
+    /// HTTP API of a batch poster node.
+    #[clap(long)]
+    batch_poster_api: Address,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
@@ -179,7 +185,9 @@ impl Mode {
                 let Address::Name(name, port) = base else {
                     bail!("increment dns requires dns name")
                 };
-                if let Some(index) = name.find('.') {
+                if name.contains("host.docker") {
+                    return Ok(Address::Name(name.to_string(), *port + (i as u16 * 10)));
+                } else if let Some(index) = name.find('.') {
                     let (first, rest) = name.split_at(index);
                     return Ok(Address::Name(format!("{}{}{}", first, i, rest), *port));
                 }
@@ -220,6 +228,7 @@ impl Args {
             let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
             let bind_addr = self.bind_mode.adjust_addr(i, &self.bind)?;
+            let batch_poster_api = self.bind_mode.adjust_addr(i, &self.batch_poster_api)?;
             let pub_addr = self
                 .external_base
                 .as_ref()
@@ -245,6 +254,7 @@ impl Args {
                 stamp: self.stamp_dir.join(format!("timeboost.{i}.stamp")),
                 net: Net {
                     bind: bind_addr.clone(),
+                    batch_poster_api: batch_poster_api.clone(),
                     nitro: nitro_addr,
                 },
                 keys: NodeKeys {
@@ -280,11 +290,14 @@ impl Args {
                 },
             };
 
+            let pub_key = VerifyingKey::from_sec1_bytes(&config.keys.signing.public.to_bytes())?;
+
             members.push(CommitteeMember {
                 node: format!("node_{i}"),
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
+                batch_poster_api: batch_poster_api.clone(),
                 address: pub_addr.clone().unwrap_or_else(|| bind_addr.clone()),
                 http_api: http_addr
                     .or_else(|| {
@@ -300,6 +313,7 @@ impl Args {
                             .map(|a| a.with_offset(GRPC_API_PORT_OFFSET))
                     })
                     .unwrap_or_else(|| bind_addr.clone().with_offset(GRPC_API_PORT_OFFSET)),
+                sig_key_address: public_key_to_address(pub_key),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;
