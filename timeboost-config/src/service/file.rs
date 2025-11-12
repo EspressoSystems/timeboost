@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    time::Duration,
-};
+use std::{path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
@@ -12,9 +9,12 @@ use futures::{
 };
 use multisig::CommitteeId;
 use timeboost_types::Timestamp;
-use tokio::{time::sleep};
+use tokio::time::sleep;
 
-use crate::{service::{CommitteeStream, ServiceConfig}, CommitteeConfig, CommitteeMember, ConfigService};
+use crate::{
+    CommitteeConfig, CommitteeMember, ConfigService,
+    service::{CommitteeStream, ServiceConfig},
+};
 
 #[derive(Debug)]
 pub struct FileConfigService {

@@ -6,15 +6,13 @@ use alloy::{
     providers::{Provider, WalletProvider},
     signers::k256::ecdsa::VerifyingKey,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use either::Either;
 use reqwest::Client;
-use timeboost_config::{CommitteeMember, ServiceConfig, HTTP_API_PORT_OFFSET};
+use timeboost_config::{CommitteeMember, HTTP_API_PORT_OFFSET, ServiceConfig};
 use timeboost_contract::{
-    CommitteeMemberSol, KeyManager,
-    deployer::deploy_key_manager_contract,
-    provider::build_provider,
+    CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
 use timeboost_crypto::prelude::ThresholdEncKey;
 use timeboost_types::Timestamp;
@@ -61,7 +59,11 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     match Command::parse() {
-        Command::Deploy { index, rpc_url, mnemonic } => {
+        Command::Deploy {
+            index,
+            rpc_url,
+            mnemonic,
+        } => {
             let provider = build_provider(mnemonic, index, rpc_url)?;
             let manager = provider.default_signer_address();
             println!("deploying with manager address: {manager:#x}");
@@ -70,7 +72,13 @@ async fn main() -> Result<()> {
                 .context("failed to deploy contract")?;
             println!("contract deployed at address: {addr:#x}");
         }
-        Command::RegisterCommittee { index, rpc_url, contract, mnemonic, committee } => {
+        Command::RegisterCommittee {
+            index,
+            rpc_url,
+            contract,
+            mnemonic,
+            committee,
+        } => {
             let config = ServiceConfig::read(committee).await?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
@@ -113,7 +121,13 @@ async fn main() -> Result<()> {
                 println!("registered new committee");
             }
         }
-        Command::RegisterKey { index, rpc_url, contract, mnemonic, committee } => {
+        Command::RegisterKey {
+            index,
+            rpc_url,
+            contract,
+            mnemonic,
+            committee,
+        } => {
             let config = ServiceConfig::read(committee).await?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
@@ -145,7 +159,9 @@ async fn main() -> Result<()> {
                     .await?;
 
                 assert_eq!(
-                    &ThresholdEncKey::from_bytes(&manager.thresholdEncryptionKey().call().await?.0)?,
+                    &ThresholdEncKey::from_bytes(
+                        &manager.thresholdEncryptionKey().call().await?.0
+                    )?,
                     key
                 );
 

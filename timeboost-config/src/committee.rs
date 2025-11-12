@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
 
-use crate::{read_toml, ConfigError, CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET};
+use crate::{CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET, read_toml};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {

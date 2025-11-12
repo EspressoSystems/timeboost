@@ -21,7 +21,7 @@ pub struct ConfigError(PathBuf, #[source] Box<dyn std::error::Error + Send + Syn
 pub(crate) async fn read_toml<T, P>(path: P) -> Result<T, ConfigError>
 where
     T: DeserializeOwned,
-    P: AsRef<Path>
+    P: AsRef<Path>,
 {
     let s = tokio::fs::read_to_string(path.as_ref())
         .await

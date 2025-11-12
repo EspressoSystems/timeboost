@@ -1,7 +1,7 @@
 use core::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::{read_toml, ChainConfig, ConfigError};
+use crate::{ChainConfig, ConfigError, read_toml};
 use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;

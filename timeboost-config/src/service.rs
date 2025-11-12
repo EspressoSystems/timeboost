@@ -10,7 +10,7 @@ use futures::stream::BoxStream;
 use multisig::CommitteeId;
 use serde::Deserialize;
 
-use crate::{read_toml, CommitteeConfig, ConfigError};
+use crate::{CommitteeConfig, ConfigError, read_toml};
 
 pub use contract::ContractConfigService;
 pub use file::FileConfigService;
