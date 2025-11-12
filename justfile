@@ -283,5 +283,5 @@ netsim nodes: build-release build-test-utils
             -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
             -c test-configs/c0/committee.toml \
             --max-members {{nodes}}" \
-        --spawn  "8:target/release/tx-generator -c test-configs/c0/ --max-nodes {{nodes}}" \
+        --spawn  "8:target/release/tx-generator" \
         target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}
