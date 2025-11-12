@@ -1,7 +1,7 @@
 use core::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::{ChainConfig, ConfigError};
+use crate::{read_toml, ChainConfig, ConfigError};
 use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
@@ -54,11 +54,7 @@ pub struct Espresso {
 
 impl NodeConfig {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        let s = tokio::fs::read_to_string(path.as_ref())
-            .await
-            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?;
-
-        toml::from_str(&s).map_err(|e| ConfigError(PathBuf::new(), Box::new(e)))
+        read_toml(path).await
     }
 }
 
