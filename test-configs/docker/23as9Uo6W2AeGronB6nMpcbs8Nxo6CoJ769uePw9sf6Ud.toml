@@ -1,0 +1,29 @@
+stamp = "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp"
+
+[net]
+bind = "0.0.0.0:8000"
+nitro = "nitro1:55000"
+
+[keys.signing]
+secret = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
+public = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+
+[keys.dh]
+secret = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
+public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
+
+[keys.dkg]
+secret = "GLNPt6EYeFQbq8cCX5nKMA4LbCKdrUN5o5hmWTPJbkJZ"
+public = "63zn28rzuHhYTHrv8LqmmB3L1R9ibcv4wtX4zvEoZ3sgLjyLJmrTNcZyeEBwQ9egYE"
+
+[chain]
+id = 1337
+rpc-url = "http://demo-l1-network:8545/"
+inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+inbox-block-tag = "finalized"
+
+[espresso]
+namespace = 412346
+base-url = "http://espresso-dev-node:41000/v1/"
+websockets-base-url = "ws://espresso-dev-node:41000/v1/"
+max-transaction-size = 1048576

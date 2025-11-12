@@ -3,19 +3,19 @@ id    = 0
 start = "2025-10-01T00:00:00Z"
 
 [[committee.member]]
-config = "test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+config = "test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+config = "test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
+config = "test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
+config = "test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
+config = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml"
 
 
 [[committee]]
@@ -23,16 +23,17 @@ id    = 1
 start = "+15s"
 
 [[committee.member]]
-config = "test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+config = "test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+config = "test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/u8fkqXA2EnDaAqFbsHew42D5JzHkeM46cLa7UdxYqjHe.toml"
+config = "test-configs/nodes/h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es.toml"
+config = "test-configs/nodes/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.public.toml"
 
 [[committee.member]]
-config = "test-configs/nodes/iNJBiPwwdA53Gds2rnJnSm1sjvnR8Ep72LZKf8fxVo2e.toml"
+config = "test-configs/nodes/mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8.public.toml"
+

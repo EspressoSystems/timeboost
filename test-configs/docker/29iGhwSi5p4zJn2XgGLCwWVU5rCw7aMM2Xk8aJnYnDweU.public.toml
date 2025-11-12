@@ -1,0 +1,5 @@
+signing_key = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
+dh_key = "G5ZAAaA46UekfDTZL6BTC3tuyNC6LCE24h6Yz9d43zLq"
+dkg_enc_key = "6R54v2X965PWptXoPusAreuY5vNQ6mXtgpw6waVTNCmmEKdY2XWfTn4yjfkeDkQxQU"
+address = "node12:8000"
+batchposter = "node12:8005"

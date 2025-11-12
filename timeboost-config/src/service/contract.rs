@@ -115,14 +115,17 @@ async fn fetch(
         let dh_key =
             x25519::PublicKey::try_from(m.dhKey.as_ref()).context("failed to parse dhKey bytes")?;
         let dkg_enc_key =
-            DkgEncKey::from_bytes(m.dkgKey.as_ref()).context("failed to parse dkgKey bytes")?;
-        let address = cliquenet::Address::try_from(m.networkAddress.as_ref())
+            DkgEncKey::from_bytes(&m.dkgKey).context("failed to parse dkgKey bytes")?;
+        let address = cliquenet::Address::try_from(&*m.networkAddress)
             .context("failed to parse networkAddress string")?;
+        let batchposter = cliquenet::Address::try_from(&*m.batchPosterAddress)
+            .context("failed to parse batchPosterAddress string")?;
         cfg.members.push(CommitteeMember {
             address,
             signing_key,
             dh_key,
             dkg_enc_key,
+            batchposter,
         })
     }
 

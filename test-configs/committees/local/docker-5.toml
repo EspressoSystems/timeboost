@@ -3,21 +3,16 @@ id    = 0
 start = "2025-10-01T00:00:00Z"
 
 [[committee.member]]
-config  = "test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
-address = "node2:8000"
+config = "test-configs/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
 [[committee.member]]
-config  = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
-address = "node0:8000"
+config = "test-configs/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
 [[committee.member]]
-config  = "test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
-address = "node4:8000"
+config = "test-configs/docker/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
 
 [[committee.member]]
-config  = "test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
-address = "node3:8000"
+config = "test-configs/docker/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.public.toml"
 
 [[committee.member]]
-config  = "test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
-address = "node1:8000"
+config = "test-configs/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml"

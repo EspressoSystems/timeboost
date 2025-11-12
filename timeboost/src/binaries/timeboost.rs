@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
                 .clone()
                 .with_offset(CERTIFIER_PORT_OFFSET),
         )
-        .maybe_nitro_addr(node_config.net.nitro.clone())
+        .nitro_addr(node_config.net.nitro.clone())
         .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((

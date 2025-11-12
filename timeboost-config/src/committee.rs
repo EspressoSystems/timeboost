@@ -22,6 +22,7 @@ pub struct CommitteeMember {
     pub dh_key: x25519::PublicKey,
     pub dkg_enc_key: DkgEncKey,
     pub address: Address,
+    pub batchposter: Address,
 }
 
 impl CommitteeConfig {
@@ -86,5 +87,14 @@ impl fmt::Display for CommitteeConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = toml::to_string_pretty(self).map_err(|_| fmt::Error)?;
         f.write_str(&s)
+    }
+}
+
+impl CommitteeMember {
+    pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
+        let s = tokio::fs::read_to_string(path.as_ref())
+            .await
+            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?;
+        toml::from_str(&s).map_err(|e| ConfigError(PathBuf::new(), Box::new(e)))
     }
 }

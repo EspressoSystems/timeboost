@@ -8,7 +8,9 @@ use clap::Parser;
 use cliquenet::Address;
 use multisig::x25519;
 use rand::SeedableRng;
-use timeboost_config::{ChainConfig, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
+use timeboost_config::{
+    ChainConfig, CommitteeMember, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys,
+};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
 
@@ -22,9 +24,17 @@ struct Args {
     #[clap(long, short)]
     bind: Address,
 
+    /// The external network address to bind to.
+    #[clap(long, short)]
+    external: Option<Address>,
+
     /// The address of the Arbitrum Nitro node listener.
     #[clap(long)]
-    nitro: Option<Address>,
+    nitro: Address,
+
+    /// The public batch poster address.
+    #[clap(long, short)]
+    batchposter: Address,
 
     /// Chain rpc url
     #[clap(long)]
@@ -132,14 +142,28 @@ impl Args {
             },
         };
 
-        let toml = toml::to_string_pretty(&config)?;
+        let member = CommitteeMember {
+            address: self.external.unwrap_or_else(|| config.net.bind.clone()),
+            signing_key: config.keys.signing.public,
+            dh_key: config.keys.dh.public,
+            dkg_enc_key: config.keys.dkg.public.clone(),
+            batchposter: self.batchposter,
+        };
+
+        let node_toml = toml::to_string_pretty(&config)?;
+        let member_toml = toml::to_string_pretty(&member)?;
 
         if let Some(path) = &self.output {
-            let fname = path.join(format!("{}.toml", signing_keypair.public_key()));
-            let mut f = File::create(fname)?;
-            f.write_all(toml.as_bytes())?;
+            let node_name = path.join(format!("{}.toml", signing_keypair.public_key()));
+            let member_name = path.join(format!("{}.public.toml", signing_keypair.public_key()));
+            let mut f = File::create(node_name)?;
+            f.write_all(node_toml.as_bytes())?;
+            let mut f = File::create(member_name)?;
+            f.write_all(member_toml.as_bytes())?;
         } else {
-            println!("{toml}")
+            println!("{node_toml}");
+            println!("###");
+            println!("{member_toml}")
         }
 
         Ok(())

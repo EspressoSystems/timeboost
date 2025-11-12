@@ -3,46 +3,46 @@ id    = 0
 start = "2025-10-01T00:00:00Z"
 
 [[committee.member]]
-config = "test-configs/linux/24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU.toml"
+config = "test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+config = "test-configs/linux/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy.toml"
+config = "test-configs/linux/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3.toml"
+config = "test-configs/linux/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/fkTFXcMaEEzutGCreYpDb1B2h8hNMf6UMNRbt8dnhi2v.toml"
+config = "test-configs/linux/h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/hcUWjmK8pTz5AY39CDh1gVnVbaF4nNuEf2dQ5SWXZQyh.toml"
+config = "test-configs/linux/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/iNJBiPwwdA53Gds2rnJnSm1sjvnR8Ep72LZKf8fxVo2e.toml"
+config = "test-configs/linux/mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/op7c28pHtcAH3qtKVAPz8amCfs7mcctxeM5ztJKURmzJ.toml"
+config = "test-configs/linux/o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es.toml"
+config = "test-configs/linux/pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
+config = "test-configs/linux/pG9cBbvmj7qqCAVKR9EKefwYrHX8c4y1go891CVCPw1W.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/u8fkqXA2EnDaAqFbsHew42D5JzHkeM46cLa7UdxYqjHe.toml"
+config = "test-configs/linux/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/ufyeJDrHnH7BuuBvwaonu86YYZKYW47VedCdZ2yqAanm.toml"
+config = "test-configs/linux/tiLaXi4xvFAK2GcUdjbDxWpJKq3kceqgJXTkKjGhduEJ.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
+config = "test-configs/linux/wzaREUZTT8gGNhtnHcdcqbrJVoEi8tQt8XLZyWDretYm.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
+config = "test-configs/linux/yASaJuw8FqNL8zyFv95LMdp2nFvSzM6tbK9D7Dcy1TGy.public.toml"

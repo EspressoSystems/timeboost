@@ -5,7 +5,6 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use cliquenet::Address;
 use either::Either;
 use futures::{
     StreamExt,
@@ -16,9 +15,7 @@ use serde::Deserialize;
 use timeboost_types::Timestamp;
 use tokio::{fs, time::sleep};
 
-use crate::{
-    CommitteeConfig, CommitteeMember, ConfigService, NodeConfig, service::CommitteeStream,
-};
+use crate::{CommitteeConfig, CommitteeMember, ConfigService, service::CommitteeStream};
 
 #[derive(Clone, Debug, Deserialize)]
 struct Config {
@@ -36,7 +33,6 @@ struct Committee {
 #[derive(Clone, Debug, Deserialize)]
 struct Member {
     config: PathBuf,
-    address: Option<Address>,
 }
 
 #[derive(Debug)]
@@ -72,13 +68,8 @@ impl FileConfigService {
                 members: Vec::new(),
             };
             for n in &r.member {
-                let node = NodeConfig::read(&n.config).await?;
-                committee.members.push(CommitteeMember {
-                    signing_key: node.keys.signing.public,
-                    dh_key: node.keys.dh.public,
-                    dkg_enc_key: node.keys.dkg.public,
-                    address: n.address.clone().unwrap_or_else(|| node.net.bind.clone()),
-                });
+                let member = CommitteeMember::read(&n.config).await?;
+                committee.members.push(member);
             }
             committees.push(committee)
         }

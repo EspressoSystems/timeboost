@@ -3,16 +3,17 @@ id    = 0
 start = "2025-10-01T00:00:00Z"
 
 [[committee.member]]
-config = "test-configs/linux/24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU.toml"
+config = "test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+config = "test-configs/linux/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/26zcQ6VfgK5eS9ABtaAg4roUfivEbEVBJFDsZgML8tbxy.toml"
+config = "test-configs/linux/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3.toml"
+config = "test-configs/linux/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.public.toml"
 
 [[committee.member]]
-config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml"
+

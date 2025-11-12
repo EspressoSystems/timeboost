@@ -47,7 +47,7 @@ pub struct Timeboost {
     sequencer: Sequencer,
     certifier: Certifier,
     prometheus: Arc<PrometheusMetrics>,
-    nitro_forwarder: Option<NitroForwarder>,
+    nitro_forwarder: NitroForwarder,
     submitter: Submitter,
     committees: BoxStream<'static, CommitteeConfig>,
 }
@@ -62,14 +62,8 @@ impl Timeboost {
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
 
-        let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
-            Some(NitroForwarder::new(
-                cfg.sign_keypair.public_key(),
-                nitro_addr,
-            )?)
-        } else {
-            None
-        };
+        let nitro_forwarder =
+            NitroForwarder::new(cfg.sign_keypair.public_key(), cfg.nitro_addr.clone())?;
 
         let (tx, rx) = mpsc::channel(100);
 
@@ -129,11 +123,8 @@ impl Timeboost {
                                 writer.save_timeboost_series().await?
                             }
                         }
-                        if let Some(ref mut f) = self.nitro_forwarder {
-                            f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
-                        } else {
-                            warn!(node = %self.label, %round, "no forwarder => dropping output")
-                        }
+                        self.nitro_forwarder
+                            .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?
                     }
                     Ok(Output::UseCommittee(r)) => {
                         if let Err(e) = self.certifier.use_committee(r).await {

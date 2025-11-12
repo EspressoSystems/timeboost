@@ -8,12 +8,11 @@ use alloy::{
 };
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use cliquenet::Address;
 use either::Either;
 use multisig::CommitteeId;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use timeboost_config::{HTTP_API_PORT_OFFSET, NodeConfig};
+use timeboost_config::{CommitteeMember, HTTP_API_PORT_OFFSET};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager,
     deployer::deploy_key_manager_contract,
@@ -26,9 +25,8 @@ use tokio::fs;
 use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
 #[serde(rename_all = "kebab-case")]
-pub struct Config {
+struct Config {
     index: u32,
     rpc_url: Url,
     contract: alloy::primitives::Address,
@@ -36,8 +34,7 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Committee {
+struct Committee {
     id: CommitteeId,
     #[serde(with = "either::serde_untagged")]
     start: Either<jiff::Timestamp, jiff::SignedDuration>,
@@ -45,11 +42,8 @@ pub struct Committee {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Member {
+struct Member {
     config: PathBuf,
-    batchposter: Address,
-    address: Option<Address>,
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -127,17 +121,17 @@ async fn main() -> Result<()> {
 
             let mut members = Vec::new();
             for m in config.committee.member {
-                let node = NodeConfig::read(&m.config).await?;
-                let pubkey = VerifyingKey::from_sec1_bytes(&node.keys.signing.public.to_bytes())?;
-                let member = CommitteeMemberSol {
-                    sigKey: node.keys.signing.public.to_bytes().into(),
-                    dhKey: node.keys.dh.public.as_bytes().into(),
-                    dkgKey: node.keys.dkg.public.to_bytes()?.into(),
-                    networkAddress: m.address.unwrap_or(node.net.bind).to_string(),
-                    batchPosterAddress: m.batchposter.to_string(),
+                let member = CommitteeMember::read(&m.config).await?;
+                let pubkey = VerifyingKey::from_sec1_bytes(&member.signing_key.to_bytes())?;
+                let sol_member = CommitteeMemberSol {
+                    sigKey: member.signing_key.to_bytes().into(),
+                    dhKey: member.dh_key.as_bytes().into(),
+                    dkgKey: member.dkg_enc_key.to_bytes()?.into(),
+                    networkAddress: member.address.to_string(),
+                    batchPosterAddress: member.batchposter.to_string(),
                     sigKeyAddress: public_key_to_address(pubkey),
                 };
-                members.push(member)
+                members.push(sol_member)
             }
 
             let _receipt = manager
@@ -159,11 +153,8 @@ async fn main() -> Result<()> {
 
             let mut urls = Vec::new();
             for m in config.committee.member {
-                let node = NodeConfig::read(&m.config).await?;
-                let addr = m
-                    .address
-                    .unwrap_or(node.net.bind)
-                    .with_offset(HTTP_API_PORT_OFFSET);
+                let member = CommitteeMember::read(&m.config).await?;
+                let addr = member.address.with_offset(HTTP_API_PORT_OFFSET);
                 let url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
                     .with_context(|| format!("parsing {addr} into a url"))?;
                 urls.push(url)

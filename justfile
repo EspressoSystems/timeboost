@@ -70,27 +70,27 @@ run-sailfish-demo: build-test-utils build-release
   target/release/run --verbose \
       --spawn "target/release/sailfish \
         --committee 0 \
-        --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
-        --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
+        --node test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
-        --node test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml \
+        --node test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
-        --node test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml \
+        --node test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       target/release/sailfish -- \
         --committee 0 \
-        --node test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml \
+        --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp \
         --until 300
@@ -101,54 +101,59 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig NUM_NODES *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n {{NUM_NODES}} \
-    --bind "127.0.0.1:8000" \
-    --nitro "127.0.0.1:55000" \
-    --nitro-mode "unchanged" \
-    --espresso-namespace 10101 \
-    --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
-    --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
-    --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
-    --chain-rpc-url "http://127.0.0.1:8545" \
-    --chain-id 31337 \
-    --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-    --stamp-dir "/tmp" \
-    --output "test-configs/nodes" {{ARGS}}
+mkconfig nodes seed:
+    for i in {0..{{nodes}}}; do \
+        cargo run --release --bin configure -- \
+            --seed "$(({{seed}} + $i))" \
+            --bind "127.0.0.1:$((8000 + 10 * $i))" \
+            --nitro "127.0.0.1:55000" \
+            --batchposter "127.0.0.1:$((8005 + 10 * $i))" \
+            --espresso-namespace 10101 \
+            --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
+            --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
+            --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
+            --chain-rpc-url "http://127.0.0.1:8545" \
+            --chain-id 31337 \
+            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --stamp-dir "/tmp" \
+            --output "test-configs/nodes"; \
+    done
 
-mkconfig-docker *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n 5 \
-    --bind "0.0.0.0:8000" \
-    --bind-mode "unchanged" \
-    --nitro "nitro:55000" \
-    --nitro-mode "docker-dns" \
-    --espresso-namespace 412346 \
-    --espresso-base-url "http://espresso-dev-node:41000/v1/" \
-    --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-    --chain-rpc-url "http://demo-l1-network:8545" \
-    --chain-id 1337 \
-    --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-    --stamp-dir "/tmp" \
-    --output "test-configs/docker" {{ARGS}}
+mkconfig-docker nodes seed:
+    for i in {0..{{nodes}}}; do \
+        cargo run --release --bin configure -- \
+            --seed "$(({{seed}} + $i))" \
+            --bind "0.0.0.0:8000" \
+            --external "node$i:8000" \
+            --nitro "nitro$i:55000" \
+            --batchposter "node$i:8005" \
+            --espresso-namespace 412346 \
+            --espresso-base-url "http://espresso-dev-node:41000/v1/" \
+            --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
+            --chain-rpc-url "http://demo-l1-network:8545" \
+            --chain-id 1337 \
+            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --stamp-dir "/tmp" \
+            --output "test-configs/docker"; \
+    done
 
-mkconfig-linux NUM_NODES *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n {{NUM_NODES}} \
-    --bind "11.0.0.1:8000" \
-    --bind-mode "increment-address" \
-    --nitro "11.0.1.0:55000" \
-    --nitro-mode "unchanged" \
-    --espresso-namespace 10101 \
-    --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
-    --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
-    --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
-    --chain-rpc-url "http://11.0.1.0:8545" \
-    --chain-id 31337 \
-    --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-    --stamp-dir "/tmp" \
-    --output "test-configs/linux" {{ARGS}}
+mkconfig-linux nodes seed:
+    for i in {0..{{nodes}}}; do \
+        cargo run --release --bin configure -- \
+            --seed "$(({{seed}} + $i))" \
+            --bind "11.0.0.$((1 + $i)):8000" \
+            --nitro "11.0.1.0:55000" \
+            --batchposter "11.0.1.0:8005" \
+            --espresso-namespace 10101 \
+            --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
+            --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
+            --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
+            --chain-rpc-url "http://11.0.1.0:8545" \
+            --chain-id 31337 \
+            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --stamp-dir "/tmp" \
+            --output "test-configs/linux"; \
+    done
 
 deploy-contract-locally path:
     cast send --value 1ether \
@@ -201,11 +206,11 @@ test-all: build-release build-test-utils
         --verbose" \
     --spawn "5|target/release/yapper \
         --committee 0 \
-        --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
         --config-service file:test-configs/committees/local/static-5.toml" \
     target/release/block-checker -- \
         --committee 0 \
-        --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
         --config-service file:test-configs/committees/local/static-5.toml \
         --blocks 300
 
@@ -225,7 +230,7 @@ test-dyn-comm: build-release-until build-test-utils
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
-            --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+            --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
             --config-service file:test-configs/committees/local/dynamic-5.toml" \
         target/release/run-committee -- \
             --committee 1 \
@@ -286,10 +291,10 @@ netsim nodes: build-release build-test-utils
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
-            --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+            --node test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
             --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
         target/release/block-checker -- \
             --committee 0 \
-            --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
+            --node test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
             --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
             --blocks 200

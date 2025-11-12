@@ -1,0 +1,5 @@
+signing_key = "qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m"
+dh_key = "CetqwdEDC8BkBXB9wpTmuumCsj2kRPcq9hbJVEdaQ7r9"
+dkg_enc_key = "7DLbA7pdikS3BjBWyAPbDLivEEPXGU9anPngeTo8nyAsJFSoBvjD8UStzSp1MgBu8V"
+address = "node3:8000"
+batchposter = "node3:8005"

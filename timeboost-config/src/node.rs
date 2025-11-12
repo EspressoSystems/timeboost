@@ -26,8 +26,7 @@ pub struct NodeConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Net {
     pub bind: Address,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nitro: Option<Address>,
+    pub nitro: Address,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
