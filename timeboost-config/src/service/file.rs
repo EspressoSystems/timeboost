@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     time::Duration,
 };
 
@@ -11,29 +11,10 @@ use futures::{
     stream::{self, FuturesUnordered},
 };
 use multisig::CommitteeId;
-use serde::Deserialize;
 use timeboost_types::Timestamp;
 use tokio::{fs, time::sleep};
 
-use crate::{CommitteeConfig, CommitteeMember, ConfigService, service::CommitteeStream};
-
-#[derive(Clone, Debug, Deserialize)]
-struct Config {
-    committee: Vec<Committee>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct Committee {
-    id: CommitteeId,
-    #[serde(with = "either::serde_untagged")]
-    start: Either<jiff::Timestamp, jiff::SignedDuration>,
-    member: Vec<Member>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct Member {
-    config: PathBuf,
-}
+use crate::{service::{CommitteeStream, ServiceConfig}, CommitteeConfig, CommitteeMember, ConfigService};
 
 #[derive(Debug)]
 pub struct FileConfigService {
@@ -46,7 +27,7 @@ impl FileConfigService {
             .await
             .with_context(|| format!("could not read config file: {:?}", path.as_ref()))?;
 
-        let c: Config = toml::from_str(&s)
+        let c: ServiceConfig = toml::from_str(&s)
             .with_context(|| format!("invalid file config service config: {:?}", path.as_ref()))?;
 
         let mut committees = Vec::new();

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Committee, CommitteeId, x25519};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
 
-use crate::{CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET};
+use crate::{read_toml, ConfigError, CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {
@@ -27,10 +27,7 @@ pub struct CommitteeMember {
 
 impl CommitteeConfig {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        let s = tokio::fs::read_to_string(path.as_ref())
-            .await
-            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?;
-        toml::from_str(&s).map_err(|e| ConfigError(PathBuf::new(), Box::new(e)))
+        read_toml(path).await
     }
 
     pub fn committee(&self) -> Committee {
@@ -92,9 +89,6 @@ impl fmt::Display for CommitteeConfig {
 
 impl CommitteeMember {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        let s = tokio::fs::read_to_string(path.as_ref())
-            .await
-            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?;
-        toml::from_str(&s).map_err(|e| ConfigError(PathBuf::new(), Box::new(e)))
+        read_toml(path).await
     }
 }

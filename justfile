@@ -155,19 +155,23 @@ mkconfig-linux nodes seed:
             --output "test-configs/linux"; \
     done
 
-deploy-contract-locally path:
+deploy-contract-locally:
     cast send --value 1ether \
         --rpc-url http://127.0.0.1:8545 \
         --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
         0x36561082951eed7ffD59cFD82D70570C57072d02
     cargo run --bin contract -- deploy \
-        -c {{path}} \
-        -m "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+        --index 0 \
+        --rpc-url "http://127.0.0.1:8545" \
+        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 register-committee-locally path:
     cargo run --bin contract -- register-committee \
-        -c {{path}} \
-        -m "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+        --committee {{path}} \
+        --index 0 \
+        --rpc-url "http://127.0.0.1:8545" \
+        --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}

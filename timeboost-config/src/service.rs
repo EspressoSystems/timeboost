@@ -1,12 +1,16 @@
 mod contract;
 mod file;
 
+use std::path::{Path, PathBuf};
+
 use anyhow::{Result, bail};
 use async_trait::async_trait;
+use either::Either;
 use futures::stream::BoxStream;
 use multisig::CommitteeId;
+use serde::Deserialize;
 
-use crate::CommitteeConfig;
+use crate::{read_toml, CommitteeConfig, ConfigError};
 
 pub use contract::ContractConfigService;
 pub use file::FileConfigService;
@@ -43,5 +47,29 @@ pub async fn config_service(path: &str) -> Result<Box<dyn ConfigService + Send>>
         Some(("contract", path)) => Ok(Box::new(ContractConfigService::create(path).await?)),
         Some((other, _)) => bail!("unknown config service {other:?}"),
         None => bail!("invalid config service path {path:?}"),
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ServiceConfig {
+    pub committee: Vec<Committee>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Committee {
+    pub id: CommitteeId,
+    #[serde(with = "either::serde_untagged")]
+    pub start: Either<jiff::Timestamp, jiff::SignedDuration>,
+    pub member: Vec<Member>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Member {
+    pub config: PathBuf,
+}
+
+impl ServiceConfig {
+    pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
+        read_toml(path).await
     }
 }
