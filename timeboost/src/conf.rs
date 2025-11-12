@@ -1,22 +1,11 @@
-use anyhow::bail;
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
-use timeboost_config::{ChainConfig, CommitteeConfig, ConfigService, FileConfigService};
-use timeboost_contract::ContractConfigService;
+use timeboost_config::{ChainConfig, CommitteeConfig};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::{KeyStore, ThresholdKeyCell};
-
-pub async fn config_service(path: &str) -> anyhow::Result<Box<dyn ConfigService + Send>> {
-    match path.split_once(':') {
-        Some(("file", path)) => Ok(Box::new(FileConfigService::create(path).await?)),
-        Some(("contract", path)) => Ok(Box::new(ContractConfigService::create(path).await?)),
-        Some((other, _)) => bail!("unknown config service {other:?}"),
-        None => bail!("invalid config service path {path:?}"),
-    }
-}
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {

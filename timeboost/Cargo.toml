@@ -9,10 +9,6 @@ rust-version.workspace = true
 name = "timeboost"
 path = "src/binaries/timeboost.rs"
 
-[[bin]]
-name = "sailfish"
-path = "src/binaries/sailfish.rs"
-
 [features]
 until = []
 times = [
@@ -43,7 +39,6 @@ serde_bytes = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }
-timeboost-contract = { path = "../../timeboost-contracts/rust/timeboost-contract" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }

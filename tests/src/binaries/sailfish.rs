@@ -1,6 +1,6 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc};
 
-use ::metrics::prometheus::PrometheusMetrics;
+use metrics::prometheus::PrometheusMetrics;
 use anyhow::{Context, Result, bail};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
@@ -12,8 +12,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::{config::NodeConfig, config_service};
-use timeboost_config::ConfigService;
+use timeboost::config::{ConfigService, NodeConfig, config_service};
 use timeboost_utils::types::logging;
 use tokio::{select, signal};
 use tracing::{error, info};

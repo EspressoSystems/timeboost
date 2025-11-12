@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use multisig::{CommitteeId, Keypair, x25519};
-use timeboost::config_service;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
+use timeboost_config::config_service;
 use timeboost_config::{ConfigService, GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
 use timeboost_types::{ThresholdKeyCell, Timestamp};
 use tokio::select;

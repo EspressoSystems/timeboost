@@ -12,7 +12,7 @@ use prost::Message;
 use quick_cache::sync::Cache;
 use sailfish::types::RoundNumber;
 use timeboost::config::GRPC_API_PORT_OFFSET;
-use timeboost::config_service;
+use timeboost::config::config_service;
 use timeboost::proto::block::Block;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost::proto::inclusion::InclusionList;

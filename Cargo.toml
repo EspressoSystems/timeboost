@@ -92,6 +92,7 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
     "arkworks-algebra",
 ] }
 thiserror = "2.0"
+timeboost-contract = { path = "../timeboost-contracts/rust/timeboost-contract" }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots", "url"] }

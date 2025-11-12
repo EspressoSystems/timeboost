@@ -1,12 +1,14 @@
+mod contract;
 mod file;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use multisig::CommitteeId;
 
 use crate::CommitteeConfig;
 
+pub use contract::ContractConfigService;
 pub use file::FileConfigService;
 
 type CommitteeStream = BoxStream<'static, CommitteeConfig>;
@@ -32,5 +34,14 @@ impl ConfigService for Box<dyn ConfigService + Send> {
     }
     async fn subscribe(&mut self, start: CommitteeId) -> Result<CommitteeStream> {
         (**self).subscribe(start).await
+    }
+}
+
+pub async fn config_service(path: &str) -> Result<Box<dyn ConfigService + Send>> {
+    match path.split_once(':') {
+        Some(("file", path)) => Ok(Box::new(FileConfigService::create(path).await?)),
+        Some(("contract", path)) => Ok(Box::new(ContractConfigService::create(path).await?)),
+        Some((other, _)) => bail!("unknown config service {other:?}"),
+        None => bail!("invalid config service path {path:?}"),
     }
 }

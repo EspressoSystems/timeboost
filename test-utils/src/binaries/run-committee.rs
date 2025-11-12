@@ -8,7 +8,7 @@ use test_utils::net::Config;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
 use timeboost::config::ConfigService;
-use timeboost::config_service;
+use timeboost::config::config_service;
 use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};

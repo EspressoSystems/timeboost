@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tracing::{error, info, warn};
 
 pub use cliquenet as net;
-pub use conf::{TimeboostConfig, TimeboostConfigBuilder, config_service};
+pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
 pub use multisig;
 pub use timeboost_builder as builder;
 pub use timeboost_config as config;

@@ -6,7 +6,7 @@ use either::Either;
 use multisig::CommitteeId;
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
-use timeboost::{config::NodeConfig, config_service};
+use timeboost::config::{NodeConfig, config_service};
 use timeboost_utils::types::logging::init_logging;
 use tracing::info;
 
