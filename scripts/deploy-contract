@@ -9,6 +9,7 @@ faucet_private_key="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4
 
 deploy_cmd=target/release/deploy
 register_cmd=target/release/register
+fund_cmd=target/release/funder
 committee=
 url=
 max_nodes=5
@@ -21,6 +22,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--register)
             register_cmd="$2"
+            shift 2
+            ;;
+        -f|--fund)
+            fund_cmd="$2"
             shift 2
             ;;
         -m|--max-nodes)
@@ -82,6 +87,10 @@ env RUST_LOG=info $register_cmd \
     -k "$km_addr" \
     -c "$committee" \
     --max-members "$max_nodes"
+
+# Fund addresses
+env RUST_LOG=info $fund_cmd \
+    --parent-rpc-url "$url"
 
 # Clean up the temporary deployment file
 rm -f "$deployment_file"

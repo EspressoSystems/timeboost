@@ -119,7 +119,12 @@ services:
     entrypoint:
       - sh
       - -c
-      - "/app/scripts/deploy-contract -d /app/deploy -r /app/register -c /config/committee.toml -u http://demo-l1-network:8545"
+      - > 
+        /app/scripts/deploy-contract -d /app/deploy \
+          -r /app/register \
+          -f /app/funder \
+          -c /config/committee.toml \
+          -u http://demo-l1-network:8545
     networks:
       - timeboost
     depends_on:
@@ -485,7 +490,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      contract-deployer:
+      config-producer:
         condition: service_completed_successfully
   block-verifier:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
@@ -513,7 +518,7 @@ services:
       - --max-nodes
       - "4"
       - --tps
-      - '1'
+      - '10'
     volumes:
       - "config:/config"
     environment:
