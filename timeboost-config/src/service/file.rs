@@ -12,7 +12,7 @@ use futures::{
 };
 use multisig::CommitteeId;
 use timeboost_types::Timestamp;
-use tokio::{fs, time::sleep};
+use tokio::{time::sleep};
 
 use crate::{service::{CommitteeStream, ServiceConfig}, CommitteeConfig, CommitteeMember, ConfigService};
 
@@ -23,16 +23,11 @@ pub struct FileConfigService {
 
 impl FileConfigService {
     pub async fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let s = fs::read_to_string(path.as_ref())
-            .await
-            .with_context(|| format!("could not read config file: {:?}", path.as_ref()))?;
-
-        let c: ServiceConfig = toml::from_str(&s)
-            .with_context(|| format!("invalid file config service config: {:?}", path.as_ref()))?;
+        let config = ServiceConfig::read(path).await?;
 
         let mut committees = Vec::new();
 
-        for r in &c.committee {
+        for r in &config.committee {
             let t = match r.start {
                 Either::Left(ts) => {
                     let s: u64 = ts.as_second().try_into().context("negative timestamp")?;
