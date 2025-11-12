@@ -22,7 +22,7 @@ struct Cli {
     #[clap(long, short)]
     parent_rpc_url: Url,
 
-    #[clap(long)]
+    #[clap(long, default_value = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35")]
     key_manager_contract: Address,
 
     #[clap(
