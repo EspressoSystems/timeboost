@@ -279,9 +279,10 @@ netsim nodes: build-release build-test-utils
         --run   "7:target/release/register \
             -a threshold-enc-key \
             -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
-            -u http://localhost:8545 \
+            -u http://11.0.1.0:8545 \
             -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-            -c test-configs/c0/committee.toml \
+            -c test-configs/linux/committee.toml \
             --max-members {{nodes}}" \
-        --spawn  "8:target/release/tx-generator" \
+        --spawn "8:target/release/tx-generator \
+            --parent-rpc-url http://11.0.1.0:8545" \
         target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}
