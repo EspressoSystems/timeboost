@@ -119,7 +119,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - > 
+      - >
         /app/scripts/deploy-contract -d /app/deploy \
           -r /app/register \
           -f /app/funder \
@@ -507,18 +507,20 @@ services:
     depends_on:
       block-checker:
         condition: service_completed_successfully
-  yapper:
+  tx-generator:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
-    command:
-      - /app/yapper
-      - --config
-      - /config/
-      - --nitro-url
-      - http://nitro0:8547
-      - --max-nodes
-      - "4"
-      - --tps
-      - '10'
+    entrypoint:
+      - sh
+      - -c
+      - >
+        /app/tx-generator
+        --chain-id 412346
+        --rpc-url http://nitro0:8547
+        --parent-chain-id 1337
+        --parent-rpc-url http://demo-l1-network:8545
+        --parent-ibox-contract "$(jq -r '.inbox' /config/deployment.json)"
+        --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
+        --tps 10
     volumes:
       - "config:/config"
     environment:

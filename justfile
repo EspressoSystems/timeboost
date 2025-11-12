@@ -111,27 +111,6 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
     --output "test-configs/c0" {{ARGS}}
 
-mkconfig-docker DATETIME *ARGS:
-  cargo run --release --bin mkconfig -- \
-    -n 5 \
-    --committee-id 0 \
-    --bind "0.0.0.0:8000" \
-    --external-base "node:8000" \
-    --external-mode "docker-dns" \
-    --nitro "nitro:55000" \
-    --nitro-mode "docker-dns" \
-    --parent-rpc-url "http://demo-l1-network:8545" \
-    --parent-ws-url "ws://demo-l1-network:8546" \
-    --chain-namespace 412346 \
-    --parent-chain-id 1337 \
-    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-    --timestamp {{DATETIME}} \
-    --stamp-dir "/tmp" \
-    --espresso-base-url "http://espresso-dev-node:41000/v1/" \
-    --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-    --output "test-configs/docker" {{ARGS}}
-
 mkconfig-linux NUM_NODES DATETIME *ARGS:
   cargo run --release --bin mkconfig -- \
     -n {{NUM_NODES}} \
@@ -176,27 +155,36 @@ test-individually: build-port-alloc
   done
 
 test-all nodes="5": build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error \
+  env RUST_LOG=block_checker=info,error \
   target/release/run \
     --verbose \
     --timeout 120 \
-    --spawn "1:anvil --port 8545" \
+    --spawn "1:anvil --port 8545 --silent" \
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/c0/committee.toml --max-nodes {{nodes}}" \
-    --spawn "4:target/release/yapper -c test-configs/c0/ --max-nodes {{nodes}}" \
     --spawn "5:target/release/run-committee \
         -c test-configs/c0/ \
         -s test-configs/scenarios/rolling-restart.toml \
         --verbose \
         --max-nodes {{nodes}}" \
+    --run   "6:sleep 3" \
+    --run   "7:target/release/register \
+        -a threshold-enc-key \
+        -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+        -u http://localhost:8545 \
+        -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        -c test-configs/c0/committee.toml \
+        --max-members {{nodes}}" \
+    --spawn  "8:target/release/tx-generator" \
     target/release/block-checker -- -c test-configs/c0 --max-nodes {{nodes}} -b 300
 
 test-dyn-comm: build-release-until build-test-utils
-  env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
+  env RUST_LOG=sailfish=warn,timeboost=info,info
+  target/release/run \
     --verbose \
     --timeout 120 \
-    --spawn "1:anvil --port 8545" \
+    --spawn "1:anvil --port 8545 --silent" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/run-committee \
@@ -204,42 +192,44 @@ test-dyn-comm: build-release-until build-test-utils
         --ignore-stamp \
         --max-nodes 5 \
         --until 2000" \
-    --run   "5:target/release/mkconfig -n 4 \
-                 --committee-id 1 \
-                 --bind 127.0.0.1:9000 \
-                 --batch-poster-api "127.0.0.1:8547" \
-                 --chain-namespace 10101 \
-                 --parent-rpc-url http://127.0.0.1:8545 \
-                 --parent-ws-url ws://127.0.0.1:8545 \
-                 --parent-chain-id 31337 \
-                 --parent-ibox-contract 0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1 \
-                 --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 --timestamp +16s \
-                 --stamp-dir /tmp \
-                 --output test-configs/c1" \
-    --run   "6:sleep 6" \
-    --run   "7:target/release/register \
-                 -a threshold-enc-key \
-                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
-                 -u http://localhost:8545 \
-                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c0/committee.toml \
-                 --max-members 5" \
-    --run   "8:target/release/register \
-                 -a new-committee \
-                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
-                 -u http://localhost:8545 \
-                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c1/committee.toml \
-                 --max-members 4" \
-    --spawn "9:target/release/yapper --config test-configs/c1/ --max-nodes 4" \
+    --run   "5:sleep 3" \
+    --run   "6:target/release/register \
+        -a threshold-enc-key \
+        -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+        -u http://localhost:8545 \
+        -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        -c test-configs/c0/committee.toml \
+        --max-members 5" \
+    --run   "7:target/release/mkconfig -n 4 \
+        --committee-id 1 \
+        --bind 127.0.0.1:9000 \
+        --batch-poster-api "127.0.0.1:8547" \
+        --chain-namespace 10101 \
+        --parent-rpc-url http://127.0.0.1:8545 \
+        --parent-ws-url ws://127.0.0.1:8545 \
+        --parent-chain-id 31337 \
+        --parent-ibox-contract 0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1 \
+        --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        --timestamp +16s \
+        --stamp-dir /tmp \
+        --output test-configs/c1" \
+    --run   "8:sleep 6" \
+    --run   "9:target/release/register \
+        -a new-committee \
+        -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+        -u http://localhost:8545 \
+        -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        -c test-configs/c1/committee.toml \
+        --max-members 4" \
+    --spawn "10:target/release/tx-generator \
+        --committee-id 1" \
     target/release/run-committee -- \
-      -c test-configs/c1/ \
-      --until 800 \
-      --required-decrypt-rounds 3 \
-      --verbose \
-      --ignore-stamp \
-      --max-nodes 4 && rm -rf test-configs/c1
+        -c test-configs/c1/ \
+        --until 800 \
+        --required-decrypt-rounds 3 \
+        --verbose \
+        --ignore-stamp \
+        --max-nodes 4 && rm -rf test-configs/c1
 
 [linux]
 forward-ipv4 val: build-test-utils
@@ -278,7 +268,6 @@ netsim nodes: build-release build-test-utils
         --run   "2:sleep 3" \
         --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
-        --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
         --spawn-as-root "5:target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
@@ -286,4 +275,13 @@ netsim nodes: build-release build-test-utils
             -s test-configs/scenarios/default.toml \
             --verbose \
             --max-nodes {{nodes}}" \
+        --run   "6:sleep 3" \
+        --run   "7:target/release/register \
+            -a threshold-enc-key \
+            -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+            -u http://localhost:8545 \
+            -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+            -c test-configs/c0/committee.toml \
+            --max-members {{nodes}}" \
+        --spawn  "8:target/release/tx-generator -c test-configs/c0/ --max-nodes {{nodes}}" \
         target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}
