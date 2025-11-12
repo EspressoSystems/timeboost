@@ -71,27 +71,27 @@ run-sailfish-demo: build-test-utils build-release
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp" \
       target/release/sailfish -- \
         --committee 0 \
         --node test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --ignore-stamp \
         --until 300
 
@@ -101,8 +101,8 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
-gen-node-configs NUM_NODES *ARGS:
-  cargo run --release --bin gen-node-configs -- \
+mkconfig NUM_NODES *ARGS:
+  cargo run --release --bin mkconfig -- \
     -n {{NUM_NODES}} \
     --bind "127.0.0.1:8000" \
     --nitro "127.0.0.1:55000" \
@@ -117,8 +117,8 @@ gen-node-configs NUM_NODES *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/nodes" {{ARGS}}
 
-gen-node-configs-docker *ARGS:
-  cargo run --release --bin gen-node-configs -- \
+mkconfig-docker *ARGS:
+  cargo run --release --bin mkconfig -- \
     -n 5 \
     --bind "0.0.0.0:8000" \
     --bind-mode "unchanged" \
@@ -133,8 +133,8 @@ gen-node-configs-docker *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/docker" {{ARGS}}
 
-gen-node-configs-linux NUM_NODES *ARGS:
-  cargo run --release --bin gen-node-configs -- \
+mkconfig-linux NUM_NODES *ARGS:
+  cargo run --release --bin mkconfig -- \
     -n {{NUM_NODES}} \
     --bind "11.0.0.1:8000" \
     --bind-mode "increment-address" \
@@ -149,6 +149,20 @@ gen-node-configs-linux NUM_NODES *ARGS:
     --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --stamp-dir "/tmp" \
     --output "test-configs/linux" {{ARGS}}
+
+deploy-contract-locally path:
+    cast send --value 1ether \
+        --rpc-url http://127.0.0.1:8545 \
+        --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+        0x36561082951eed7ffD59cFD82D70570C57072d02
+    cargo run --bin contract -- deploy \
+        -c {{path}} \
+        -m "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+
+register-committee-locally path:
+    cargo run --bin contract -- register-committee \
+        -c {{path}} \
+        -m "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
@@ -178,21 +192,21 @@ test-all: build-release build-test-utils
     --spawn "3|target/release/block-maker \
         --committee 0 \
         --bind 127.0.0.1:55000 \
-        --config-service file:test-configs/committees/static-5.toml" \
+        --config-service file:test-configs/committees/local/static-5.toml" \
     --spawn "4|target/release/run-committee \
         --committee 0 \
         --nodes test-configs/nodes/ \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
     --spawn "5|target/release/yapper \
         --committee 0 \
         --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-        --config-service file:test-configs/committees/static-5.toml" \
+        --config-service file:test-configs/committees/local/static-5.toml" \
     target/release/block-checker -- \
         --committee 0 \
         --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-        --config-service file:test-configs/committees/static-5.toml \
+        --config-service file:test-configs/committees/local/static-5.toml \
         --blocks 300
 
 test-dyn-comm: build-release-until build-test-utils
@@ -205,18 +219,18 @@ test-dyn-comm: build-release-until build-test-utils
         --spawn "3|target/release/run-committee \
             --committee 0 \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/committees/dynamic-5.toml \
+            --config-service file:test-configs/committees/local/dynamic-5.toml \
             --ignore-stamp \
             --until 2000 \
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
             --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-            --config-service file:test-configs/committees/dynamic-5.toml" \
+            --config-service file:test-configs/committees/local/dynamic-5.toml" \
         target/release/run-committee -- \
             --committee 1 \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/committees/dynamic-5.toml \
+            --config-service file:test-configs/committees/local/dynamic-5.toml \
             --ignore-stamp \
             --required-decrypt-rounds 3 \
             --until 500 \
@@ -260,22 +274,22 @@ netsim nodes: build-release build-test-utils
         --spawn "3|target/release/block-maker \
             --bind 11.0.1.0:55000 \
             --committee 0 \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
         --spawn-as-root "4|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
             --committee 0 \
             --nodes test-configs/linux/ \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
             --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
         target/release/block-checker -- \
             --committee 0 \
             --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
             --blocks 200

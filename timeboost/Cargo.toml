@@ -17,14 +17,17 @@ times = [
 
 [dependencies]
 alloy = { workspace = true }
+ark-std = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+either = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+jiff = { workspace = true }
 metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
@@ -61,9 +64,9 @@ name = "timeboost"
 path = "src/binaries/timeboost.rs"
 
 [[bin]]
-name = "register"
-path = "src/binaries/register.rs"
+name = "configure"
+path = "src/binaries/configure.rs"
 
 [[bin]]
-name = "deploy"
-path = "src/binaries/deploy.rs"
+name = "contract"
+path = "src/binaries/contract.rs"

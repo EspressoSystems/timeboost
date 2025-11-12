@@ -1,0 +1,151 @@
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
+use alloy::eips::BlockNumberOrTag;
+use anyhow::Result;
+use clap::Parser;
+use cliquenet::Address;
+use multisig::x25519;
+use rand::SeedableRng;
+use timeboost_config::{ChainConfig, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
+use url::Url;
+
+#[derive(Clone, Debug, Parser)]
+struct Args {
+    /// RNG seed for deterministic key generation.
+    #[clap(long)]
+    seed: Option<u64>,
+
+    /// The base network address to bind to.
+    #[clap(long, short)]
+    bind: Address,
+
+    /// The address of the Arbitrum Nitro node listener.
+    #[clap(long)]
+    nitro: Option<Address>,
+
+    /// Chain rpc url
+    #[clap(long)]
+    chain_rpc_url: Url,
+
+    /// Parent chain id
+    #[clap(long)]
+    chain_id: u64,
+
+    /// Inbox contract address
+    #[clap(long)]
+    inbox_contract: alloy::primitives::Address,
+
+    /// Inbox block tag
+    #[clap(long, default_value = "finalized")]
+    inbox_block_tag: BlockNumberOrTag,
+
+    /// Espresso namespace ID.
+    #[clap(long)]
+    espresso_namespace: u64,
+
+    /// Base URL of Espresso's REST API.
+    #[clap(long)]
+    espresso_base_url: Url,
+
+    /// Base URL of Espresso's Websocket API.
+    #[clap(long)]
+    espresso_websocket_url: Url,
+
+    /// Builder base URL of Espresso's REST API.
+    #[clap(long)]
+    espresso_builder_base_url: Option<Url>,
+
+    #[clap(long, default_value_t = 1024 * 1024)]
+    max_transaction_size: usize,
+
+    /// Directory to store timeboost stamp file in.
+    #[clap(long, short)]
+    stamp_dir: PathBuf,
+
+    /// Where to write the config file to.
+    #[clap(long, short)]
+    output: Option<PathBuf>,
+}
+
+impl Args {
+    fn mk_config(self) -> Result<()> {
+        let mut s_rng = rand::rngs::StdRng::seed_from_u64(
+            self.seed
+                .map(|s| s.wrapping_pow(2))
+                .unwrap_or_else(rand::random),
+        );
+        let mut d_rng = rand::rngs::StdRng::seed_from_u64(
+            self.seed
+                .map(|s| s.wrapping_pow(3))
+                .unwrap_or_else(rand::random),
+        );
+        let mut p_rng = {
+            use ark_std::rand::SeedableRng as _;
+            ark_std::rand::rngs::StdRng::seed_from_u64(
+                self.seed
+                    .map(|s| s.wrapping_pow(4))
+                    .unwrap_or_else(rand::random),
+            )
+        };
+
+        let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
+        let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
+        let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
+
+        let config = NodeConfig {
+            stamp: self
+                .stamp_dir
+                .join(format!("timeboost.{}.stamp", signing_keypair.public_key())),
+            net: Net {
+                bind: self.bind,
+                nitro: self.nitro,
+            },
+            keys: NodeKeys {
+                signing: NodeKeypair {
+                    secret: signing_keypair.secret_key(),
+                    public: signing_keypair.public_key(),
+                },
+                dh: NodeKeypair {
+                    secret: dh_keypair.secret_key(),
+                    public: dh_keypair.public_key(),
+                },
+                dkg: NodeKeypair {
+                    secret: dkg_dec_key.clone(),
+                    public: DkgEncKey::from(&dkg_dec_key),
+                },
+            },
+            chain: ChainConfig {
+                id: self.chain_id,
+                rpc_url: self.chain_rpc_url.clone(),
+                inbox_contract: self.inbox_contract,
+                inbox_block_tag: self.inbox_block_tag,
+            },
+            espresso: Espresso {
+                namespace: self.espresso_namespace,
+                base_url: self.espresso_base_url.clone(),
+                builder_base_url: self.espresso_builder_base_url.clone(),
+                websockets_base_url: self.espresso_websocket_url.clone(),
+                max_transaction_size: self.max_transaction_size,
+            },
+        };
+
+        let toml = toml::to_string_pretty(&config)?;
+
+        if let Some(path) = &self.output {
+            let fname = path.join(format!("{}.toml", signing_keypair.public_key()));
+            let mut f = File::create(fname)?;
+            f.write_all(toml.as_bytes())?;
+        } else {
+            println!("{toml}")
+        }
+
+        Ok(())
+    }
+}
+
+fn main() -> Result<()> {
+    Args::parse().mk_config()
+}

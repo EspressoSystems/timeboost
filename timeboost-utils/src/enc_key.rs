@@ -40,8 +40,14 @@ pub struct ThresholdEncKeyCellAccumulator {
 
 impl ThresholdEncKeyCellAccumulator {
     /// give a list of TimeboostApi's endpoint to query `/enckey` status
-    pub fn new(client: Client, urls: impl Iterator<Item = Url>) -> Self {
-        let results: HashMap<Url, Option<ThresholdEncKey>> = urls.map(|url| (url, None)).collect();
+    pub fn new<I>(client: Client, urls: I) -> Self
+    where
+        I: IntoIterator<Item = Url>,
+    {
+        let results = urls
+            .into_iter()
+            .map(|url| (url, None))
+            .collect::<HashMap<_, _>>();
         let threshold = results.len().div_ceil(3);
         Self {
             client,

@@ -29,5 +29,5 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [[bin]]
-name = "gen-node-configs"
-path = "src/binaries/gen-node-configs.rs"
+name = "mkconfig"
+path = "src/binaries/mkconfig.rs"

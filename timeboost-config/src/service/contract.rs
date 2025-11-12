@@ -16,9 +16,10 @@ use tracing::error;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Config {
-    rpc: Url,
-    websocket: Url,
+    rpc_url: Url,
+    websocket_url: Url,
     contract: Address,
 }
 
@@ -35,7 +36,7 @@ impl ContractConfigService {
     {
         let s = tokio::fs::read_to_string(path).await?;
         let c: Config = toml::from_str(&s)?;
-        let p = ProviderBuilder::new().connect_http(c.rpc.clone());
+        let p = ProviderBuilder::new().connect_http(c.rpc_url.clone());
         Ok(Self {
             config: c,
             provider: p,
@@ -63,7 +64,7 @@ impl ConfigService for ContractConfigService {
     ) -> Result<BoxStream<'static, CommitteeConfig>> {
         let contract = KeyManager::new(self.config.contract, &self.provider);
         let committee = contract.getCommitteeById(start.into()).call().await?;
-        let provider = Arc::new(PubSubProvider::new(self.config.websocket.clone()).await?);
+        let provider = Arc::new(PubSubProvider::new(self.config.websocket_url.clone()).await?);
         let address = self.config.contract;
         let stream = provider
             .event_stream::<CommitteeCreated>(

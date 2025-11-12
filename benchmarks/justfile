@@ -16,35 +16,35 @@ sailfish-times: (build "until" "times")
         --spawn "target/release/sailfish \
           --committee 0 \
           --node test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-          --config-service file:test-configs/committees/static-5.toml \
+          --config-service file:test-configs/committees/local/static-5.toml \
           --times-until 10000 \
           --until 20000 \
           --ignore-stamp" \
         --spawn "target/release/sailfish \
           --committee 0 \
           --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
-          --config-service file:test-configs/committees/static-5.toml \
+          --config-service file:test-configs/committees/local/static-5.toml \
           --times-until 10000 \
           --until 20000 \
           --ignore-stamp" \
         --spawn "target/release/sailfish \
           --committee 0 \
           --node test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml \
-          --config-service file:test-configs/committees/static-5.toml \
+          --config-service file:test-configs/committees/local/static-5.toml \
           --times-until 10000 \
           --until 20000 \
           --ignore-stamp" \
         --spawn "target/release/sailfish \
           --committee 0 \
           --node test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml \
-          --config-service file:test-configs/committees/static-5.toml \
+          --config-service file:test-configs/committees/local/static-5.toml \
           --times-until 10000 \
           --until 20000 \
           --ignore-stamp" \
         target/release/sailfish -- \
           --committee 0 \
           --node test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml \
-          --config-service file:test-configs/committees/static-5.toml \
+          --config-service file:test-configs/committees/local/static-5.toml \
           --times-until 10000 \
           --until 10000 \
           --ignore-stamp
@@ -83,13 +83,13 @@ timeboost-times nodes: (build "times")
         --spawn "3|target/release/block-maker \
             --bind 11.0.1.0:55000 \
             --committee 0 \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
         --spawn-as-root "4|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
             --committee 0 \
             --nodes test-configs/linux/ \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose \
@@ -97,11 +97,11 @@ timeboost-times nodes: (build "times")
         --spawn "5|target/release/yapper \
             --committee 0 \
             --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml" \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
         target/release/block-checker -- \
             --committee 0 \
             --node test-configs/linux/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml \
-            --config-service file:test-configs/committees/linux-{{nodes}}.toml \
+            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
             --blocks 3000
 
 plot-node gnuplot output csv:

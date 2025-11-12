@@ -1,0 +1,27 @@
+index = 0
+rpc-url = "http://127.0.0.1:8545"
+contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
+[committee]
+id = 0
+start = "2025-10-01T00:00:00Z"
+
+[[committee.member]]
+config = "test-configs/nodes/264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE.toml"
+batchposter = "127.0.0.1:8080"
+
+[[committee.member]]
+config = "test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+batchposter = "127.0.0.1:8010"
+
+[[committee.member]]
+config = "test-configs/nodes/tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J.toml"
+batchposter = "127.0.0.1:8050"
+
+[[committee.member]]
+config = "test-configs/nodes/v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA.toml"
+batchposter = "127.0.0.1:8040"
+
+[[committee.member]]
+config = "test-configs/nodes/vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR.toml"
+batchposter = "127.0.0.1:8020"
