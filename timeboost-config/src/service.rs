@@ -1,7 +1,7 @@
 mod contract;
 mod file;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use multisig::CommitteeId;

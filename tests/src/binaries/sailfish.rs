@@ -1,9 +1,9 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc};
 
-use metrics::prometheus::PrometheusMetrics;
 use anyhow::{Context, Result, bail};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use metrics::prometheus::PrometheusMetrics;
 use multisig::{CommitteeId, Keypair, x25519};
 use sailfish::{
     Coordinator,

@@ -5,10 +5,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "timeboost"
-path = "src/binaries/timeboost.rs"
-
 [features]
 until = []
 times = [
@@ -33,12 +29,14 @@ metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }
+timeboost-contract = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
@@ -57,3 +55,15 @@ times = { path = "../times", optional = true }
 
 [dev-dependencies]
 test-utils = { path = "../test-utils", features = ["ports"]}
+
+[[bin]]
+name = "timeboost"
+path = "src/binaries/timeboost.rs"
+
+[[bin]]
+name = "register"
+path = "src/binaries/register.rs"
+
+[[bin]]
+name = "deploy"
+path = "src/binaries/deploy.rs"

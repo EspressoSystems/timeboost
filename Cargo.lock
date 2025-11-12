@@ -3555,7 +3555,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -5626,7 +5626,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite 0.2.16",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8474,8 +8474,8 @@ version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
- "heck 0.5.0",
- "itertools 0.14.0",
+ "heck 0.4.1",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -8497,7 +8497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -8510,7 +8510,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -8659,7 +8659,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.32",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -8696,7 +8696,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -10249,7 +10249,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -11249,6 +11249,7 @@ dependencies = [
  "multisig",
  "prost 0.14.1",
  "rand 0.9.2",
+ "reqwest",
  "sailfish",
  "serde",
  "serde_bytes",
@@ -11256,6 +11257,7 @@ dependencies = [
  "thiserror 2.0.17",
  "timeboost-builder",
  "timeboost-config",
+ "timeboost-contract",
  "timeboost-crypto",
  "timeboost-proto",
  "timeboost-sequencer",
@@ -11326,20 +11328,13 @@ dependencies = [
 [[package]]
 name = "timeboost-contract"
 version = "0.0.0"
+source = "git+https://github.com/EspressoSystems/timeboost-contracts?branch=tw%2Fmv-rust-bindings#f7b94aa6e2f22268e3c11eba383493fbdf28df05"
 dependencies = [
  "alloy",
  "anyhow",
  "futures",
- "timeboost-contract-sys",
- "tracing",
-]
-
-[[package]]
-name = "timeboost-contract-sys"
-version = "0.1.0"
-dependencies = [
- "alloy",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -12718,7 +12713,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

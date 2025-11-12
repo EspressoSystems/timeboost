@@ -1,11 +1,7 @@
-//! Syncing committee info from the KeyManager contract
-
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::{CommitteeConfig, CommitteeMember, ConfigService};
-use timeboost_contract::KeyManager::{self, CommitteeCreated};
-use timeboost_contract::provider::{HttpProvider, PubSubProvider};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -13,8 +9,9 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use multisig::{CommitteeId, x25519};
 use serde::{Deserialize, Serialize};
+use timeboost_contract::KeyManager::{self, CommitteeCreated};
+use timeboost_contract::provider::{HttpProvider, PubSubProvider};
 use timeboost_crypto::prelude::DkgEncKey;
-use tokio::process::{Child, Command};
 use tracing::error;
 use url::Url;
 
@@ -23,14 +20,12 @@ pub struct Config {
     rpc: Url,
     websocket: Url,
     contract: Address,
-    anvil: Option<cliquenet::Address>,
 }
 
 #[derive(Debug)]
 pub struct ContractConfigService {
     config: Config,
     provider: HttpProvider,
-    _anvil: Option<Child>,
 }
 
 impl ContractConfigService {
@@ -41,32 +36,9 @@ impl ContractConfigService {
         let s = tokio::fs::read_to_string(path).await?;
         let c: Config = toml::from_str(&s)?;
         let p = ProviderBuilder::new().connect_http(c.rpc.clone());
-        let a = if let Some(addr) = &c.anvil {
-            let mut anvil = Command::new("anvil");
-            match addr {
-                cliquenet::Address::Inet(ip, port) => {
-                    anvil
-                        .arg("--host")
-                        .arg(format!("{ip}"))
-                        .arg("--port")
-                        .arg(format!("{port}"));
-                }
-                cliquenet::Address::Name(host, port) => {
-                    anvil
-                        .arg("--host")
-                        .arg(format!("{host}"))
-                        .arg("--port")
-                        .arg(format!("{port}"));
-                }
-            }
-            Some(anvil.kill_on_drop(true).spawn()?)
-        } else {
-            None
-        };
         Ok(Self {
             config: c,
             provider: p,
-            _anvil: a,
         })
     }
 }
@@ -92,7 +64,7 @@ impl ConfigService for ContractConfigService {
         let contract = KeyManager::new(self.config.contract, &self.provider);
         let committee = contract.getCommitteeById(start.into()).call().await?;
         let provider = Arc::new(PubSubProvider::new(self.config.websocket.clone()).await?);
-        let address = self.config.contract.clone();
+        let address = self.config.contract;
         let stream = provider
             .event_stream::<CommitteeCreated>(
                 self.config.contract,
@@ -103,7 +75,7 @@ impl ConfigService for ContractConfigService {
                 let provider = provider.clone();
                 async move {
                     let id = log.data().id;
-                    match fetch(&*provider, &address, id.into()).await {
+                    match fetch(&provider, &address, id.into()).await {
                         Ok(Some(c)) => Some(c),
                         Ok(None) => {
                             error!(committee = %id, "no committee for id");
@@ -127,7 +99,7 @@ async fn fetch(
     addr: &Address,
     id: CommitteeId,
 ) -> Result<Option<CommitteeConfig>> {
-    let contract = KeyManager::new(addr.clone(), provider);
+    let contract = KeyManager::new(*addr, provider);
     let committee = contract.getCommitteeById(id.into()).call().await?;
 
     let mut cfg = CommitteeConfig {
