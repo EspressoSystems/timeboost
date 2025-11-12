@@ -8,16 +8,16 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use multisig::{CommitteeId, x25519};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use timeboost_contract::KeyManager::{self, CommitteeCreated};
 use timeboost_contract::provider::{HttpProvider, PubSubProvider};
 use timeboost_crypto::prelude::DkgEncKey;
 use tracing::error;
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Config {
+struct Config {
     rpc_url: Url,
     websocket_url: Url,
     contract: Address,

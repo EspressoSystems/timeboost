@@ -12,7 +12,7 @@ use futures::{
     stream::{self, FuturesUnordered},
 };
 use multisig::CommitteeId;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use timeboost_types::Timestamp;
 use tokio::{fs, time::sleep};
 
@@ -20,24 +20,21 @@ use crate::{
     CommitteeConfig, CommitteeMember, ConfigService, NodeConfig, service::CommitteeStream,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Config {
+#[derive(Clone, Debug, Deserialize)]
+struct Config {
     committee: Vec<Committee>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Committee {
+#[derive(Clone, Debug, Deserialize)]
+struct Committee {
     id: CommitteeId,
     #[serde(with = "either::serde_untagged")]
     start: Either<jiff::Timestamp, jiff::SignedDuration>,
     member: Vec<Member>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Member {
+#[derive(Clone, Debug, Deserialize)]
+struct Member {
     config: PathBuf,
     address: Option<Address>,
 }
