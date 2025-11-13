@@ -152,7 +152,7 @@ services:
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
         /app/funder \
-          --committee /config/docker/committees/docker.toml \
+          --config-service "contract:/config/docker/committees/docker.toml" \
           --committee-id 0 \
           --parent-rpc-url "http://demo-l1-network:8545"
     networks:
