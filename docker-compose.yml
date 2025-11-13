@@ -573,6 +573,8 @@ services:
         "/app/yapper",
         "--committee",
         "0",
+        "--nitro-url",
+        "http://nitro0:8547",
         "--nodes",
         "/config/docker/",
         "--config-service",
