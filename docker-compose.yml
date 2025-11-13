@@ -89,13 +89,14 @@ services:
         mkdir /config/docker/committees
         set -euo pipefail
         for i in $$(seq 0 3); do
-          echo "Running configure for node $$i with seed $$((42 + i))"
+          batch_poster_port=$$((8547 + i * 10))
+          echo "Running configure for node $$i with seed $$((42 + i)) and batch poster port $${batch_poster_port}"
           /app/configure \
             --seed $$((42 + i)) \
             --bind "0.0.0.0:8000" \
             --external "node$$i:8000" \
             --nitro "nitro$$i:55000" \
-            --batchposter "http://node$$i:8547" \
+            --batchposter "http://host.docker.internal:$${batch_poster_port}" \
             --espresso-namespace 412346 \
             --espresso-base-url "http://espresso-dev-node:41000/v1/" \
             --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
@@ -551,6 +552,7 @@ services:
     depends_on:
       config-producer:
         condition: service_completed_successfully
+    restart: on-failure
   block-verifier:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:

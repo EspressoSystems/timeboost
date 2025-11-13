@@ -1,5 +1,0 @@
-signing_key = "mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8"
-dh_key = "EJ3ZpDXbmD9Ma1rRLY8LVGuNGjiskuGmnyzNZWXyQvRa"
-dkg_enc_key = "5kA6kUeAuqVYRcUugGkngV2DJSpDDJTxzGmZdiNEsWonp5yW9oYLNJQB3n6Niyw6PW"
-address = "node13:8000"
-batchposter = "node13:8005"
