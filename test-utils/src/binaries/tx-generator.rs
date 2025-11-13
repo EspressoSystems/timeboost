@@ -18,6 +18,7 @@ use reqwest::{Client, Url};
 use timeboost::{committee::CommitteeInfo, crypto::prelude::ThresholdEncKey, types::BundleVariant};
 use timeboost_contract::KeyManager;
 use timeboost_utils::{
+    enc_key::fetch_encryption_key,
     load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis},
     types::logging::init_logging,
 };
@@ -55,6 +56,9 @@ struct Args {
 
     #[clap(long, default_value_t = 100)]
     tps: u32,
+
+    #[clap(long, default_value_t = false)]
+    enc_key_from_peer: bool,
 
     #[clap(long, default_value_t = 0.5)]
     enc_ratio: f64,
@@ -444,17 +448,9 @@ async fn main() -> Result<()> {
     let provider = ProviderBuilder::new().connect_http(args.parent_rpc_url.clone());
     let contract = KeyManager::new(args.key_manager_contract, provider);
 
-    let bytes = contract
-        .thresholdEncryptionKey()
-        .call()
-        .await
-        .expect("enc key present")
-        .0;
-    let enc_key = ThresholdEncKey::from_bytes(&bytes)?;
-
     let mut urls = Vec::new();
 
-    for addr in c.http_api() {
+    for addr in c.http_api().clone() {
         let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
         let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
 
@@ -463,6 +459,19 @@ async fn main() -> Result<()> {
             priority_url,
         });
     }
+
+    let enc_key = if args.enc_key_from_peer {
+        let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
+        let http_apis = c.http_api();
+        let peer = http_apis.first().expect("non-empty committee");
+        let enc_url = format!("http://{peer}/v1/encryption-key").parse()?;
+        fetch_encryption_key(&client, &enc_url)
+            .await
+            .expect("peer has key")
+    } else {
+        let bytes = contract.thresholdEncryptionKey().call().await?.0;
+        ThresholdEncKey::from_bytes(&bytes)?
+    };
 
     let nitro_cfg = args.rpc_url.map(|rpc_url| {
         NitroConfig::builder()
