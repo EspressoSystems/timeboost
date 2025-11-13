@@ -228,7 +228,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8004
-      - --node.batch-poster.parent-chain-wallet.private-key=d785ccfe237647fca51042e2083e085ec29201d5a39f5a61f0da5cab315799ac
+      - --node.batch-poster.parent-chain-wallet.private-key=8c2a14253df56cc16553a61406ec6da1e4ecfd7053f66e9e15367a6f1459f6a0
     networks:
       - timeboost
     depends_on:
@@ -271,7 +271,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8004
-      - --node.batch-poster.parent-chain-wallet.private-key=1d55854a220011ecdf322f44a14e9f9961fa2f8f4e37587ef7645ccda713507f
+      - --node.batch-poster.parent-chain-wallet.private-key=da0488a39b7e47c4677804a0911a2a4e4604ef9d0b3aefa44dca7de598866e3d
     networks:
       - timeboost
     depends_on:
@@ -314,7 +314,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8004
-      - --node.batch-poster.parent-chain-wallet.private-key=aa913b27299e7ae7c3fe9ff721faa9d2ba436257a253e1f823940d5effd25ea1
+      - --node.batch-poster.parent-chain-wallet.private-key=ddaf9416def9dc9a2729d3ddd631508ff4e4d75e66451bb219ad42fb944223a0
     networks:
       - timeboost
     depends_on:
