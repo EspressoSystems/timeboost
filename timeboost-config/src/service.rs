@@ -52,19 +52,19 @@ pub async fn config_service(path: &str) -> Result<Box<dyn ConfigService + Send>>
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ServiceConfig {
-    pub committee: Vec<Committee>,
+    pub committee: Vec<CommitteeFile>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Committee {
+pub struct CommitteeFile {
     pub id: CommitteeId,
     #[serde(with = "either::serde_untagged")]
     pub start: Either<jiff::Timestamp, jiff::SignedDuration>,
-    pub member: Vec<Member>,
+    pub member: Vec<MemberFile>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Member {
+pub struct MemberFile {
     pub config: PathBuf,
 }
 

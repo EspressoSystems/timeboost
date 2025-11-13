@@ -71,27 +71,27 @@ run-sailfish-demo: build-test-utils build-release
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
       --spawn "target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
       target/release/sailfish -- \
         --committee 0 \
         --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp \
         --until 300
 
@@ -168,6 +168,7 @@ deploy-contract-locally:
 register-committee-locally path:
     cargo run --bin contract -- register-committee \
         --committee {{path}} \
+        --id 0 \
         --index 0 \
         --rpc-url "http://127.0.0.1:8545" \
         --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -201,21 +202,21 @@ test-all: build-release build-test-utils
     --spawn "3|target/release/block-maker \
         --committee 0 \
         --bind 127.0.0.1:55000 \
-        --config-service file:test-configs/committees/local/static-5.toml" \
+        --config-service file:test-configs/nodes/committees/static-5.toml" \
     --spawn "4|target/release/run-committee \
         --committee 0 \
         --nodes test-configs/nodes/ \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
     --spawn "5|target/release/yapper \
         --committee 0 \
-        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-        --config-service file:test-configs/committees/local/static-5.toml" \
+        --nodes test-configs/nodes/ \
+        --config-service file:test-configs/nodes/committees/static-5.toml" \
     target/release/block-checker -- \
         --committee 0 \
-        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-        --config-service file:test-configs/committees/local/static-5.toml \
+        --nodes test-configs/nodes/ \
+        --config-service file:test-configs/nodes/committees/static-5.toml \
         --blocks 300
 
 test-dyn-comm: build-release-until build-test-utils
@@ -228,18 +229,18 @@ test-dyn-comm: build-release-until build-test-utils
         --spawn "3|target/release/run-committee \
             --committee 0 \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/committees/local/dynamic-5.toml \
+            --config-service file:test-configs/nodes/committees/dynamic-5.toml \
             --ignore-stamp \
             --until 2000 \
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
-            --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-            --config-service file:test-configs/committees/local/dynamic-5.toml" \
+            --nodes test-configs/nodes/ \
+            --config-service file:test-configs/nodes/committees/dynamic-5.toml" \
         target/release/run-committee -- \
             --committee 1 \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/committees/local/dynamic-5.toml \
+            --config-service file:test-configs/nodes/committees/dynamic-5.toml \
             --ignore-stamp \
             --required-decrypt-rounds 3 \
             --until 500 \
@@ -283,22 +284,22 @@ netsim nodes: build-release build-test-utils
         --spawn "3|target/release/block-maker \
             --bind 11.0.1.0:55000 \
             --committee 0 \
-            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
+            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml" \
         --spawn-as-root "4|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
             --committee 0 \
             --nodes test-configs/linux/ \
-            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
+            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
         --spawn "4|target/release/yapper \
             --committee 0 \
-            --node test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml" \
+            --nodes test-configs/linux/ \
+            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml" \
         target/release/block-checker -- \
             --committee 0 \
-            --node test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-            --config-service file:test-configs/committees/local/linux-{{nodes}}.toml \
+            --nodes test-configs/linux/ \
+            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml \
             --blocks 200

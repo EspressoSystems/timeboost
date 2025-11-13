@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail, ensure};
 use clap::Parser;
-use multisig::CommitteeId;
+use multisig::{CommitteeId, rand::seq::IndexedRandom};
 use reqwest::Url;
 use timeboost::config::{HTTP_API_PORT_OFFSET, NodeConfig, config_service};
 
@@ -29,7 +29,7 @@ mod yapper;
 struct Cli {
     /// Path to a node config file.
     #[clap(long, short)]
-    node: PathBuf,
+    nodes: PathBuf,
 
     #[clap(long)]
     committee: CommitteeId,
@@ -72,12 +72,17 @@ async fn main() -> Result<()> {
         "prio_ratio must be a fraction between 0 and 1"
     );
 
-    let node = NodeConfig::read(&cli.node).await?;
     let mut service = config_service(&cli.config_service).await?;
 
     let Some(committee) = service.get(cli.committee).await? else {
         bail!("no committee found for id {}", cli.committee)
     };
+
+    let Some(member) = committee.members.choose(&mut rand::rng()) else {
+        bail!("committee {} has no members", cli.committee)
+    };
+
+    let node = NodeConfig::read(cli.nodes.join(format!("{}.toml", member.signing_key))).await?;
 
     let rpc = node.chain.rpc_url.clone();
 

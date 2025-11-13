@@ -3,7 +3,10 @@ use std::{collections::BTreeSet, path::PathBuf};
 use anyhow::{Result, bail};
 use clap::Parser;
 use either::Either;
-use multisig::CommitteeId;
+use multisig::{
+    CommitteeId,
+    rand::{self, seq::IndexedRandom},
+};
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
 use timeboost::config::{NodeConfig, config_service};
@@ -13,7 +16,7 @@ use tracing::info;
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    node: PathBuf,
+    nodes: PathBuf,
 
     #[clap(long)]
     committee: CommitteeId,
@@ -33,15 +36,19 @@ async fn main() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
-    let node = NodeConfig::read(&args.node).await?;
 
     let mut service = config_service(&args.config_service).await?;
-    let committees = {
-        let Some(conf) = service.get(args.committee).await? else {
-            bail!("no committee found for id {}", args.committee)
-        };
-        CommitteeVec::<1>::new(conf.sailfish().committee().clone())
+    let Some(committee) = service.get(args.committee).await? else {
+        bail!("no committee found for id {}", args.committee)
     };
+
+    let committees = CommitteeVec::<1>::new(committee.sailfish().committee().clone());
+
+    let Some(member) = committee.members.choose(&mut rand::rng()) else {
+        bail!("committee {} has no members", args.committee)
+    };
+
+    let node = NodeConfig::read(args.nodes.join(format!("{}.toml", member.signing_key))).await?;
 
     let conf = Config::builder()
         .https_only(args.https_only)

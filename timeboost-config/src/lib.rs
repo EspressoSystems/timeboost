@@ -12,7 +12,8 @@ pub use node::{
 };
 pub use node::{Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
 use serde::de::DeserializeOwned;
-pub use service::{ConfigService, ServiceConfig, config_service};
+pub use service::{CommitteeFile, MemberFile, ServiceConfig};
+pub use service::{ConfigService, config_service};
 
 #[derive(Debug, thiserror::Error)]
 #[error("config error {0}: {1}")]
