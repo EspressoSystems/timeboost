@@ -150,7 +150,11 @@ services:
           --index 0 \
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
+        /app/funder \
+          --committee /config/docker/committees/docker.toml \
+          --committee-id 0 \
+          --parent-rpc-url "http://demo-l1-network:8545"
     networks:
       - timeboost
     depends_on:
@@ -566,7 +570,7 @@ services:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
-        "/app/block-checker",
+        "/app/yapper",
         "--committee",
         "0",
         "--nodes",

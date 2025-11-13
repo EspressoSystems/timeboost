@@ -5,7 +5,7 @@ use alloy::{
         SignableTransaction, TxEnvelope, TxLegacy, crypto::secp256k1::public_key_to_address,
     },
     network::{Ethereum, TxSignerSync},
-    primitives::{Address, U256},
+    primitives::U256,
     providers::{Provider, RootProvider},
     rlp::{BytesMut, Encodable},
     signers::{k256::ecdsa::VerifyingKey, local::PrivateKeySigner},
@@ -22,9 +22,6 @@ use url::Url;
 struct Cli {
     #[clap(long, short)]
     parent_rpc_url: Url,
-
-    #[clap(long, default_value = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35")]
-    key_manager_contract: Address,
 
     #[clap(
         long,
@@ -81,10 +78,10 @@ async fn main() -> Result<()> {
         env.encode(&mut rlp);
         let pending = p.send_raw_transaction(&rlp.freeze()).await?;
         let _ = pending.get_receipt().await;
-        
+
         let balance = p.get_balance(addr).await?;
         info!(%addr, balance=%balance, "received funds for address");
-        
+
         let balance = p.get_balance(funding_addr).await?;
         info!(%funding_addr, balance=%balance, "remaining balance from funding key");
     }

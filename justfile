@@ -65,6 +65,10 @@ run-integration: # build-docker
   -docker network create timeboost
   env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
+run-integration-main:
+  -docker network create timeboost
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \
   target/release/run --verbose \
