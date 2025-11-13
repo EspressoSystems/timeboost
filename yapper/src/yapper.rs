@@ -266,31 +266,45 @@ impl Yapper {
         bridge_addr: Address,
     ) -> Result<()> {
         let mut failures = 0;
-        let max = 3;
+        let max = 40;
+        let d = Duration::from_millis(100);
         for k in keys {
             loop {
-                if failures == max {
-                    return Err(anyhow::anyhow!(
-                        "max retries hit for key {}. falling back to dev acct only",
-                        k.address()
-                    ));
-                }
                 let Ok(nonce) = parent.get_transaction_count(DEV_ACCT_ADDRESS).await else {
-                    warn!(addr=%k.address(), "failed to get nonce");
                     failures += 1;
-                    sleep(Duration::from_secs(1)).await;
+                    if failures == max {
+                        warn!(addr=%k.address(), "failed to get nonce");
+                        return Err(anyhow::anyhow!(
+                            "max retries hit for key {}. falling back to dev acct only",
+                            k.address()
+                        ));
+                    }
+
+                    sleep(d).await;
                     continue;
                 };
                 if let Err(err) = Self::fund_address(parent, chain_id, k, nonce).await {
-                    warn!(addr=%k.address(), %err, "failed to fund address");
                     failures += 1;
-                    sleep(Duration::from_secs(1)).await;
+                    if failures == max {
+                        warn!(addr=%k.address(), %err, "failed to fund address");
+                        return Err(anyhow::anyhow!(
+                            "max retries hit for key {}. falling back to dev acct only",
+                            k.address()
+                        ));
+                    }
+                    sleep(d).await;
                     continue;
                 }
                 if let Err(err) = Self::bridge_funds(parent, chain_id, k, bridge_addr).await {
-                    warn!(addr=%k.address(), %err, "failed to bridge funds");
                     failures += 1;
-                    sleep(Duration::from_secs(1)).await;
+                    if failures == max {
+                        warn!(addr=%k.address(), %err, "failed to bridge funds");
+                        return Err(anyhow::anyhow!(
+                            "max retries hit for key {}. falling back to dev acct only",
+                            k.address()
+                        ));
+                    }
+                    sleep(d).await;
                     continue;
                 }
                 info!("bridged ETH to L2 for address {}", k.address());
@@ -328,8 +342,7 @@ impl Yapper {
         let mut rlp = BytesMut::new();
         env.encode(&mut rlp);
         let raw_tx: bytes::Bytes = rlp.freeze();
-        let pending = p.send_raw_transaction(&raw_tx).await?;
-        let _ = pending.get_receipt().await;
+        let _ = p.send_raw_transaction(&raw_tx).await?;
         Ok(())
     }
 
@@ -362,8 +375,7 @@ impl Yapper {
         let mut rlp = BytesMut::new();
         env.encode(&mut rlp);
         let raw_tx: bytes::Bytes = rlp.freeze();
-        let pending = p.send_raw_transaction(&raw_tx).await?;
-        let _ = pending.get_receipt().await?;
+        let _ = p.send_raw_transaction(&raw_tx).await?;
         Ok(())
     }
 
