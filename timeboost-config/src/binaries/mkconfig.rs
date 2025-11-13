@@ -20,6 +20,7 @@ use timeboost_config::{
     CommitteeConfig, CommitteeMember, Espresso, NodeConfig, NodeKeypair, NodeKeys,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
+use tracing::info;
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
@@ -335,5 +336,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
     args.mk_config()?;
 
+    info!("successfully produced configuration");
     Ok(())
 }
