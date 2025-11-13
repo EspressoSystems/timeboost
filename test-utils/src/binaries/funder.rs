@@ -79,13 +79,14 @@ async fn main() -> Result<()> {
         let env = TxEnvelope::Legacy(signed);
         let mut rlp = BytesMut::new();
         env.encode(&mut rlp);
-        let raw_tx = rlp.freeze();
-        let pending = p.send_raw_transaction(&raw_tx).await?;
+        let pending = p.send_raw_transaction(&rlp.freeze()).await?;
         let _ = pending.get_receipt().await;
+        
         let balance = p.get_balance(addr).await?;
-        info!(%addr, balance=%balance.to_string(), "received funds for address");
+        info!(%addr, balance=%balance, "received funds for address");
+        
         let balance = p.get_balance(funding_addr).await?;
-        info!(%funding_addr, balance=%balance.to_string(), "remaining balance from funding key");
+        info!(%funding_addr, balance=%balance, "remaining balance from funding key");
     }
 
     Ok(())
