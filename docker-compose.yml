@@ -549,7 +549,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      contract-deployer:
+      config-producer:
         condition: service_completed_successfully
   block-verifier:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
