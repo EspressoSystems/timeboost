@@ -33,7 +33,7 @@ struct Cli {
     committee_id: CommitteeId,
 
     #[clap(long)]
-    config_service: String,
+    committee: String,
 }
 
 #[tokio::main]
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let mut service = config_service(&cli.config_service).await?;
+    let mut service = config_service(&cli.committee).await?;
 
     let Some(committee) = service.get(cli.committee_id).await? else {
         bail!("committee not found: {}", cli.committee_id)
