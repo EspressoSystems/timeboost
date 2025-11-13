@@ -61,7 +61,7 @@ ci-local:
   just run-integration
   docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
 
-run-integration: # build-docker
+run-integration: build-docker
   -docker network create timeboost
   env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
