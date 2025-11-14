@@ -190,7 +190,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -233,7 +233,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -276,7 +276,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -319,7 +319,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
