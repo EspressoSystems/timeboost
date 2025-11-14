@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::process::exit;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use bytes::Bytes;
 use clap::Parser;
-use multisig::PublicKey;
+use multisig::{CommitteeId, PublicKey};
 use prost::Message;
 use quick_cache::sync::Cache;
 use sailfish::types::RoundNumber;
-use timeboost::config::CommitteeConfig;
+use timeboost::config::config_service;
+use timeboost::config::{ConfigService, GRPC_API_PORT_OFFSET};
 use timeboost::proto::block::Block;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost::proto::inclusion::InclusionList;
@@ -29,11 +29,11 @@ struct Args {
     #[clap(long, short)]
     bind: SocketAddr,
 
-    #[clap(long, short)]
-    committee: PathBuf,
+    #[clap(long)]
+    committee: CommitteeId,
 
-    #[clap(long, short)]
-    max_nodes: usize,
+    #[clap(long)]
+    config_service: String,
 
     #[clap(long, default_value_t = 10_000)]
     capacity: usize,
@@ -133,12 +133,21 @@ impl ForwardApi for Service {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging();
+
     let args = Args::parse();
-    let mut committee = CommitteeConfig::read(&args.committee).await?;
-    committee.members.truncate(args.max_nodes);
+
+    let mut committees = config_service(&args.config_service).await?;
+    let Some(committee) = committees.get(args.committee).await? else {
+        bail!("no committee found for id {}", args.committee)
+    };
+
     let mut srv = Service::new();
     for member in committee.members {
-        let uri: Uri = format!("http://{}", member.grpc_api).parse()?;
+        let uri: Uri = format!(
+            "http://{}",
+            member.address.with_offset(GRPC_API_PORT_OFFSET)
+        )
+        .parse()?;
         srv.register(member.signing_key, uri)
     }
     srv.serve(args.bind).await

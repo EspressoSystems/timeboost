@@ -160,7 +160,7 @@ struct Commandline {
 }
 
 fn parse_command_line(s: &str) -> Result<Commandline> {
-    let (p, a) = s.split_once(':').unwrap_or(("0", s));
+    let (p, a) = s.split_once('|').unwrap_or(("0", s));
     Ok(Commandline {
         prio: p.parse()?,
         args: a.to_string(),

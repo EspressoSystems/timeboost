@@ -63,24 +63,30 @@
         },
         "batch-poster": {
             "enable": true,
-            "max-delay": "1m",
+            "max-delay": "4m",
             "l1-block-bound": "ignore",
             "data-poster": {
                 "redis-signer": {
                     "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 },
-                "wait-for-l1-finality": false
+                "wait-for-l1-finality": false,
+                "replacement-times": [
+                    "30s",
+                    "1m",
+                    "2m"
+                ]
             },
             "hotshot-urls": [
                 "http://espresso-dev-node:41000",
                 "http://espresso-dev-node:41000"
             ],
-            "poll-interval": "60s",
+            "poll-interval": "15s",
             "is-decentralized-timeboost": true,
             "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35",
             "decentralized-timeboost-batch-verifier": {
                 "wait-for-leader-delay": "5m"
-            }
+            },
+            "wait-for-max-delay": false
         },
         "block-validator": {
             "validation-server": {

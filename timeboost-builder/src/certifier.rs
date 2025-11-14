@@ -66,7 +66,7 @@ impl Certifier {
 
         let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
 
-        let net = Network::create(
+        let mut net = Network::create(
             "block",
             cfg.address.clone(),
             cfg.sign_keypair.public_key(),
@@ -75,6 +75,13 @@ impl Certifier {
             net_metrics,
         )
         .await?;
+
+        if let Some(prev) = &cfg.previous_committee {
+            // Add peers from the previous committee which are not members of
+            // the current one for a proper handover.
+            let old = prev.diff(&cfg.committee);
+            net.add(old.collect()).await?
+        }
 
         let worker = Worker::builder()
             .label(cfg.sign_keypair.public_key())

@@ -5,18 +5,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
-pub struct ChainConfig {
-    pub namespace: u64,
-    pub parent: ParentChain,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[serde(rename_all = "kebab-case")]
-pub struct ParentChain {
+pub struct ChainConfig {
     pub id: u64,
     pub rpc_url: Url,
-    pub ws_url: Url,
-    pub ibox_contract: Address,
-    pub block_tag: BlockNumberOrTag,
-    pub key_manager_contract: Address,
+    pub inbox_contract: Address,
+    pub inbox_block_tag: BlockNumberOrTag,
 }

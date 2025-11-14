@@ -1,5 +1,6 @@
 use ipnet::Ipv4Net;
 use jiff::Span;
+use multisig::PublicKey;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -17,7 +18,7 @@ pub struct BridgeConfig {
 
 #[derive(Deserialize)]
 pub struct DeviceConfig {
-    pub node: String,
+    pub node: PublicKey,
     pub name: String,
     pub cidr: Ipv4Net,
 

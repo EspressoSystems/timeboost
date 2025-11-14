@@ -1,0 +1,112 @@
+[nat]
+device = "eth0"
+cidr   = "11.0.0.0/8"
+
+[bridge]
+name = "bridge"
+cidr = "11.0.1.0/16"
+
+[[device]]
+node   = "o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD"
+name   = "dev7"
+cidr   = "11.0.0.8/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
+name   = "dev2"
+cidr   = "11.0.0.3/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8"
+name   = "dev13"
+cidr   = "11.0.0.14/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "yASaJuw8FqNL8zyFv95LMdp2nFvSzM6tbK9D7Dcy1TGy"
+name   = "dev9"
+cidr   = "11.0.0.10/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+name   = "dev0"
+cidr   = "11.0.0.1/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3"
+name   = "dev8"
+cidr   = "11.0.0.9/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq"
+name   = "dev5"
+cidr   = "11.0.0.6/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "pG9cBbvmj7qqCAVKR9EKefwYrHX8c4y1go891CVCPw1W"
+name   = "dev11"
+cidr   = "11.0.0.12/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
+name   = "dev12"
+cidr   = "11.0.0.13/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "wzaREUZTT8gGNhtnHcdcqbrJVoEi8tQt8XLZyWDretYm"
+name   = "dev10"
+cidr   = "11.0.0.11/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
+name   = "dev4"
+cidr   = "11.0.0.5/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "tiLaXi4xvFAK2GcUdjbDxWpJKq3kceqgJXTkKjGhduEJ"
+name   = "dev14"
+cidr   = "11.0.0.15/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
+name   = "dev6"
+cidr   = "11.0.0.7/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m"
+name   = "dev3"
+cidr   = "11.0.0.4/16"
+delay  = "10ms"
+#jitter = "2ms"
+
+[[device]]
+node   = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+name   = "dev1"
+cidr   = "11.0.0.2/16"
+delay  = "10ms"
+#jitter = "2ms"

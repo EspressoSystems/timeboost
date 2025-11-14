@@ -119,7 +119,7 @@ impl Sequencer {
 
         let ibox = DelayedInbox::connect(public_key, &cfg.chain_config, queue.clone())
             .await
-            .expect("connection to succeed");
+            .map_err(|e| TimeboostError::Other("delayed inbox connect failure", e.into()))?;
 
         let sailfish = {
             let met = NetworkMetrics::new(
@@ -515,4 +515,10 @@ pub enum TimeboostError {
 
     #[error("dkg/reshare error: {0}")]
     Dkg(#[from] VessError),
+
+    #[error("{0}: {0}")]
+    Other(
+        &'static str,
+        #[source] Box<dyn std::error::Error + Send + Sync>,
+    ),
 }

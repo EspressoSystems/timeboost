@@ -7,9 +7,11 @@ rust-version.workspace = true
 
 [dependencies]
 alloy = { workspace = true }
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
+clap = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
@@ -21,12 +23,18 @@ rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
+serde_bytes = { workspace = true }
 test-utils = { path = "../test-utils", features = ["ports"]}
 timeboost = { path = "../timeboost" }
 timeboost-utils = { path = "../timeboost-utils" }
+times = { path = "../times", optional = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true }
 url = { workspace = true }
+
+[[bin]]
+name = "sailfish"
+path = "src/binaries/sailfish.rs"

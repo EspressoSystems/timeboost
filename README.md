@@ -66,11 +66,6 @@ Release build
 just build-release
 ```
 
-## Contracts Build
-```sh
-just build-contracts
-```
-
 ## Run
 
 Run in docker
@@ -106,11 +101,6 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 
 ```shell
 just test
-```
-
-Contracts test
-```shell
-just test-contracts
 ```
 
 [noise]: https://noiseprotocol.org/

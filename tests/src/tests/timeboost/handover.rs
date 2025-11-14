@@ -15,7 +15,7 @@ use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, CoordinatorEvent};
 use test_utils::ports::alloc_ports;
-use timeboost::config::{ChainConfig, ParentChain};
+use timeboost::config::ChainConfig;
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::{KeyStore, ThresholdKeyCell};
@@ -159,25 +159,14 @@ where
                 .threshold_dec_key(enc_key.clone())
                 .chain_config(
                     ChainConfig::builder()
-                        .namespace(10101)
-                        .parent(
-                            ParentChain::builder()
-                                .id(1)
-                                .rpc_url(
-                                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                                        .parse::<Url>()
-                                        .expect("valid url"),
-                                )
-                                .ws_url(
-                                    "wss://theserversroom.com/ethereumws/54cmzzhcj1o/"
-                                        .parse::<Url>()
-                                        .expect("valid url"),
-                                )
-                                .ibox_contract(alloy::primitives::Address::default())
-                                .key_manager_contract(alloy::primitives::Address::default())
-                                .block_tag(BlockNumberOrTag::Finalized)
-                                .build(),
+                        .id(1)
+                        .rpc_url(
+                            "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                .parse::<Url>()
+                                .expect("valid url"),
                         )
+                        .inbox_contract(alloy::primitives::Address::default())
+                        .inbox_block_tag(BlockNumberOrTag::Finalized)
                         .build(),
                 )
                 .build()
