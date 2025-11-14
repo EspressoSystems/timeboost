@@ -140,7 +140,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - > 
+      - >
         /app/contract deploy \
           --index 0 \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" \
@@ -350,8 +350,7 @@ services:
         "--committee",
         "0",
         "--node",
-        "/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml",
-        "--ignore-stamp"
+        "/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
       ]
     volumes:
       - "config:/config"
@@ -390,8 +389,7 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml",
-        "--ignore-stamp"
+        "/config/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
       ]
     volumes:
       - "config:/config"
@@ -430,8 +428,7 @@ services:
         "--committee",
         "0",
         "--node",
-        "/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml",
-        "--ignore-stamp"
+        "/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
       ]
     volumes:
       - "config:/config"
@@ -470,8 +467,7 @@ services:
         "--committee",
         "0",
         "--node",
-        "/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml",
-        "--ignore-stamp"
+        "/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
       ]
     volumes:
       - "config:/config"
