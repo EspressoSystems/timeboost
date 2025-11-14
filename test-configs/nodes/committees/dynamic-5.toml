@@ -1,6 +1,6 @@
 [[committee]]
 id    = 0
-start = "2025-10-01T00:00:00Z"
+start = "+0s"
 
 [[committee.member]]
 config = "test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
@@ -36,4 +36,3 @@ config = "test-configs/nodes/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.public
 
 [[committee.member]]
 config = "test-configs/nodes/mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8.public.toml"
-
