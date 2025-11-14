@@ -13,7 +13,7 @@ use alloy::{
 use anyhow::{Result, bail};
 use clap::Parser;
 use multisig::CommitteeId;
-use timeboost::config::config_service;
+use timeboost::config::{ConfigService, config_service};
 use timeboost_utils::types::logging;
 use tracing::info;
 use url::Url;

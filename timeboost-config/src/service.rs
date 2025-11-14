@@ -26,7 +26,7 @@ pub trait ConfigService {
 }
 
 #[async_trait]
-impl ConfigService for Box<dyn ConfigService + Send> {
+impl<T: ConfigService + Send + 'static + ?Sized> ConfigService for Box<T> {
     async fn get(&mut self, id: CommitteeId) -> Result<Option<CommitteeConfig>> {
         (**self).get(id).await
     }
@@ -41,12 +41,22 @@ impl ConfigService for Box<dyn ConfigService + Send> {
     }
 }
 
-pub async fn config_service(path: &str) -> Result<Box<dyn ConfigService + Send>> {
+pub async fn config_service(path: &str) -> Result<impl ConfigService + Send + 'static> {
     match path.split_once(':') {
-        Some(("file", path)) => Ok(Box::new(FileConfigService::create(path).await?)),
-        Some(("contract", path)) => Ok(Box::new(ContractConfigService::create(path).await?)),
-        Some((other, _)) => bail!("unknown config service {other:?}"),
-        None => bail!("invalid config service path {path:?}"),
+        Some(("file", path)) => {
+            let srv = FileConfigService::create(path).await?;
+            Ok(Box::new(srv) as Box<dyn ConfigService + Send>)
+        }
+        Some(("contract", path)) => {
+            let srv = ContractConfigService::create(path).await?;
+            Ok(Box::new(srv) as Box<dyn ConfigService + Send>)
+        }
+        Some((other, _)) => {
+            bail!("unknown config service {other:?}")
+        }
+        None => {
+            bail!("invalid config service path {path:?}")
+        }
     }
 }
 

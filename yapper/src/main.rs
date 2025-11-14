@@ -10,7 +10,7 @@ use anyhow::{Result, bail, ensure};
 use clap::Parser;
 use multisig::{CommitteeId, rand::seq::IndexedRandom};
 use reqwest::Url;
-use timeboost::config::{HTTP_API_PORT_OFFSET, NodeConfig, config_service};
+use timeboost::config::{ConfigService, HTTP_API_PORT_OFFSET, NodeConfig, config_service};
 
 use timeboost_utils::types::logging::init_logging;
 use tokio::signal::{

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::{Result, bail};
-use futures::StreamExt;
 use futures::stream::BoxStream;
+use futures::{Stream, StreamExt};
 use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, SenderTaskDown, Submitter};
 use timeboost_config::CommitteeConfig;
@@ -53,10 +53,10 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
-    pub async fn new(
-        cfg: TimeboostConfig,
-        stream: BoxStream<'static, CommitteeConfig>,
-    ) -> Result<Self> {
+    pub async fn new<S>(cfg: TimeboostConfig, stream: S) -> Result<Self>
+    where
+        S: Stream<Item = CommitteeConfig> + Send + 'static,
+    {
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
@@ -77,7 +77,7 @@ impl Timeboost {
             prometheus: pro,
             nitro_forwarder,
             submitter: sub,
-            committees: stream,
+            committees: stream.boxed(),
         })
     }
 
