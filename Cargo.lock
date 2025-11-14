@@ -11329,7 +11329,7 @@ dependencies = [
 [[package]]
 name = "timeboost-contract"
 version = "0.0.0"
-source = "git+https://github.com/EspressoSystems/timeboost-contracts?branch=tw%2Fmv-rust-bindings#f7b94aa6e2f22268e3c11eba383493fbdf28df05"
+source = "git+https://github.com/EspressoSystems/timeboost-contracts#7c55e09b901d646aa42468358f17c37822085d74"
 dependencies = [
  "alloy",
  "anyhow",
