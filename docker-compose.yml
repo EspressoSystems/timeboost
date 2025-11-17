@@ -111,11 +111,12 @@ services:
           --start 2025-10-01T00:00:00Z \
           --output /config/docker/committees/docker.toml \
           /config/docker/*.public.toml
-        cat <<EOF > /config/docker/contract.toml
+        $(cat <<EOF > /config/docker/contract.toml
         rpc-url = "http://demo-l1-network:8545/"
         websocket-url = "ws://demo-l1-network:8546/"
         contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
         EOF
+        )
       '
     networks:
       - timeboost
