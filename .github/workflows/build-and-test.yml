@@ -201,7 +201,7 @@ jobs:
         just run-integration
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
     - name: Docker logs
-      if: failure()
+      if: failure() || cancelled()
       run: |
         for s in {node0,node1,node2,node3,nitro0,nitro1,nitro2,nitro3,block-checker,block-verifier}; do
           echo "==== Logs for $s ===="
