@@ -62,7 +62,7 @@ csv = "1.4.0"
 data-encoding = "2.6.0"
 derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
-ed25519-compact = "2.1.1"
+ed25519-compact = "2.2.0"
 either = "1.13.0"
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
