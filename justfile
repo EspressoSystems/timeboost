@@ -105,8 +105,8 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig nodes seed:
-    for i in {0..{{nodes}}}; do \
+mkconfig nodes seed="42":
+    for i in $(seq 0 $(({{nodes}} - 1))); do \
         cargo run --release --bin configure -- \
             --seed "$(({{seed}} + $i))" \
             --bind "127.0.0.1:$((8000 + 10 * $i))" \
@@ -123,26 +123,8 @@ mkconfig nodes seed:
             --output "test-configs/nodes"; \
     done
 
-mkconfig-docker nodes seed:
-    for i in {0..{{nodes}}}; do \
-        cargo run --release --bin configure -- \
-            --seed "$(({{seed}} + $i))" \
-            --bind "0.0.0.0:8000" \
-            --external "node$i:8000" \
-            --nitro "nitro$i:55000" \
-            --batchposter "node$i:8005" \
-            --espresso-namespace 412346 \
-            --espresso-base-url "http://espresso-dev-node:41000/v1/" \
-            --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-            --chain-rpc-url "http://demo-l1-network:8545" \
-            --chain-id 1337 \
-            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
-            --stamp-dir "/tmp" \
-            --output "test-configs/docker"; \
-    done
-
-mkconfig-linux nodes seed:
-    for i in {0..{{nodes}}}; do \
+mkconfig-linux nodes seed="42":
+    for i in $(seq 0 $(({{nodes}} - 1))); do \
         cargo run --release --bin configure -- \
             --seed "$(({{seed}} + $i))" \
             --bind "11.0.0.$((1 + $i)):8000" \
@@ -158,6 +140,9 @@ mkconfig-linux nodes seed:
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
+
+verify-blocks *ARGS:
+  cargo run --release --bin block-verifier {{ARGS}}
 
 deploy-contract-locally:
     cast send --value 1ether \

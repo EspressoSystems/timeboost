@@ -106,25 +106,16 @@ services:
             --stamp-dir "/tmp" \
             --output "/config/docker"
         done
-        echo "rpc-url       = \"http://demo-l1-network:8545/\"" >> /config/docker/committees/docker.toml
-        echo "websocket-url = \"ws://demo-l1-network:8546/\"" >> /config/docker/committees/docker.toml
-        echo "contract      = \"0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35\"" >> /config/docker/committees/docker.toml
-        echo "" >> /config/docker/committees/docker.toml
-        echo "[[committee]]" >> /config/docker/committees/docker.toml
-        echo "id    = 0" >> /config/docker/committees/docker.toml
-        echo "start = \"2025-10-01T00:00:00Z\"" >> /config/docker/committees/docker.toml
-        echo "" >> /config/docker/committees/docker.toml
-        echo "[[committee.member]]" >> /config/docker/committees/docker.toml
-        echo "config = \"/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml\"" >> /config/docker/committees/docker.toml
-        echo "" >> /config/docker/committees/docker.toml
-        echo "[[committee.member]]" >> /config/docker/committees/docker.toml
-        echo "config = \"/config/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml\"" >> /config/docker/committees/docker.toml
-        echo "" >> /config/docker/committees/docker.toml
-        echo "[[committee.member]]" >> /config/docker/committees/docker.toml
-        echo "config = \"/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml\"" >> /config/docker/committees/docker.toml
-        echo "" >> /config/docker/committees/docker.toml
-        echo "[[committee.member]]" >> /config/docker/committees/docker.toml
-        echo "config = \"/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.public.toml\"" >> /config/docker/committees/docker.toml
+        /app/assemble \
+          --committee 0 \
+          --start 2025-10-01T00:00:00Z \
+          --output /config/docker/committees/docker.toml \
+          /config/docker/*.public.toml
+        cat <<EOF > /config/docker/contract.toml
+        rpc-url = "http://demo-l1-network:8545/"
+        websocket-url = "ws://demo-l1-network:8546/"
+        contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+        EOF
       '
     networks:
       - timeboost
@@ -153,7 +144,7 @@ services:
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
         /app/funder \
-          --config-service "contract:/config/docker/committees/docker.toml" \
+          --config-service "contract:/config/docker/contract.toml" \
           --committee-id 0 \
           --parent-rpc-url "http://demo-l1-network:8545"
     networks:
@@ -344,7 +335,7 @@ services:
       [
         "/app/timeboost",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -383,7 +374,7 @@ services:
       [
         "/app/timeboost",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--committee",
         "0",
         "--https-only",
@@ -422,7 +413,7 @@ services:
       [
         "/app/timeboost",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -461,7 +452,7 @@ services:
       [
         "/app/timeboost",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -535,7 +526,7 @@ services:
         "--https-only",
         "false",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--blocks",
         "100"
       ]
@@ -576,7 +567,7 @@ services:
         "--nodes",
         "/config/docker/",
         "--config-service",
-        "contract:/config/docker/committees/docker.toml",
+        "contract:/config/docker/contract.toml",
         "--tps",
         "10"
       ]
