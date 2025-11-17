@@ -189,13 +189,15 @@ jobs:
 
   nitro-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         fetch-depth: 0
     - uses: taiki-e/install-action@just
+    - name: Prune docker
+      run: docker system prune -a -f
     - name: Run Timeboost integration
       run: |
         just run-integration
