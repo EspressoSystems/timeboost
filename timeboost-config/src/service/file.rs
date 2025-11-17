@@ -13,7 +13,7 @@ use tokio::time::sleep;
 
 use crate::{
     CommitteeConfig, CommitteeMember, ConfigService,
-    service::{CommitteeStream, ServiceConfig},
+    service::{CommitteeDefinitions, CommitteeStream},
 };
 
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub struct FileConfigService {
 
 impl FileConfigService {
     pub async fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let config = ServiceConfig::read(path).await?;
+        let config = CommitteeDefinitions::read(path).await?;
 
         let mut committees = Vec::new();
 

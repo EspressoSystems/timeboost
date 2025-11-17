@@ -12,7 +12,9 @@ use clap::Parser;
 use either::Either;
 use multisig::CommitteeId;
 use reqwest::Client;
-use timeboost_config::{CommitteeFile, CommitteeMember, HTTP_API_PORT_OFFSET, ServiceConfig};
+use timeboost_config::{
+    CommitteeDefinitions, CommitteeFile, CommitteeMember, HTTP_API_PORT_OFFSET,
+};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
@@ -86,7 +88,7 @@ async fn main() -> Result<()> {
             mnemonic,
             committee,
         } => {
-            let config = ServiceConfig::read(&committee).await?;
+            let config = CommitteeDefinitions::read(&committee).await?;
             let committee = get_committee(&committee, id, config)?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
@@ -137,7 +139,7 @@ async fn main() -> Result<()> {
             mnemonic,
             committee,
         } => {
-            let config = ServiceConfig::read(&committee).await?;
+            let config = CommitteeDefinitions::read(&committee).await?;
             let committee = get_committee(&committee, id, config)?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
@@ -178,7 +180,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn get_committee<P>(path: P, id: CommitteeId, config: ServiceConfig) -> Result<CommitteeFile>
+fn get_committee<P>(path: P, id: CommitteeId, config: CommitteeDefinitions) -> Result<CommitteeFile>
 where
     P: AsRef<Path>,
 {

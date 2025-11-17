@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{CommitteeConfig, CommitteeMember, ConfigService};
+use crate::{CommitteeConfig, CommitteeMember, ConfigService, read_toml};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -34,8 +34,7 @@ impl ContractConfigService {
     where
         P: AsRef<Path>,
     {
-        let s = tokio::fs::read_to_string(path).await?;
-        let c: Config = toml::from_str(&s)?;
+        let c: Config = read_toml(path).await?;
         let p = ProviderBuilder::new().connect_http(c.rpc_url.clone());
         Ok(Self {
             config: c,

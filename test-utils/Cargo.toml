@@ -89,3 +89,7 @@ required-features = ["netns"]
 [[bin]]
 name = "funder"
 path = "src/binaries/funder.rs"
+
+[[bin]]
+name = "assemble"
+path = "src/binaries/assemble.rs"

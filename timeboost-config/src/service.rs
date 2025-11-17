@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use either::Either;
 use futures::stream::BoxStream;
 use multisig::CommitteeId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{CommitteeConfig, ConfigError, read_toml};
+use crate::{CommitteeConfig, ConfigError, read_toml, write_toml};
 
 pub use contract::ContractConfigService;
 pub use file::FileConfigService;
@@ -60,12 +60,12 @@ pub async fn config_service(path: &str) -> Result<impl ConfigService + Send + 's
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ServiceConfig {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CommitteeDefinitions {
     pub committee: Vec<CommitteeFile>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CommitteeFile {
     pub id: CommitteeId,
     #[serde(with = "either::serde_untagged")]
@@ -73,13 +73,17 @@ pub struct CommitteeFile {
     pub member: Vec<MemberFile>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MemberFile {
     pub config: PathBuf,
 }
 
-impl ServiceConfig {
+impl CommitteeDefinitions {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         read_toml(path).await
+    }
+
+    pub async fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), ConfigError> {
+        write_toml(self, path).await
     }
 }
