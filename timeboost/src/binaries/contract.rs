@@ -1,6 +1,5 @@
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
-use std::{collections::HashSet, path::PathBuf};
 
 use alloy::{
     consensus::crypto::secp256k1::public_key_to_address,
@@ -9,17 +8,12 @@ use alloy::{
 };
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use either::Either;
-use multisig::CommitteeId;
 use reqwest::Client;
-use timeboost_config::{
-    CommitteeDefinitions, CommitteeFile, CommitteeMember, HTTP_API_PORT_OFFSET,
-};
+use timeboost_config::{CommitteeDefinition, CommitteeMember, HTTP_API_PORT_OFFSET};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
 use timeboost_crypto::prelude::ThresholdEncKey;
-use timeboost_types::Timestamp;
 use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
 use url::Url;
 
@@ -36,8 +30,6 @@ enum Command {
     },
     RegisterCommittee {
         #[arg(long)]
-        id: CommitteeId,
-        #[arg(long)]
         index: u32,
         #[arg(long)]
         rpc_url: Url,
@@ -49,8 +41,6 @@ enum Command {
         committee: PathBuf,
     },
     RegisterKey {
-        #[arg(long)]
-        id: CommitteeId,
         #[arg(long)]
         index: u32,
         #[arg(long)]
@@ -81,35 +71,21 @@ async fn main() -> Result<()> {
             println!("contract deployed at address: {addr:#x}");
         }
         Command::RegisterCommittee {
-            id,
             index,
             rpc_url,
             contract,
             mnemonic,
             committee,
         } => {
-            let config = CommitteeDefinitions::read(&committee).await?;
-            let committee = get_committee(&committee, id, config)?;
+            let definition = CommitteeDefinition::read(&committee).await?;
+            let committee = definition.to_config().await?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
                 bail!("invalid contract address: {contract}");
             }
             let manager = KeyManager::new(contract, provider);
-
-            let effective = match committee.start {
-                Either::Left(ts) => {
-                    let s: u64 = ts.as_second().try_into().context("negative timestamp")?;
-                    Timestamp::from(s)
-                }
-                Either::Right(d) => {
-                    let s: u64 = d.as_secs().try_into().context("invalid duration")?;
-                    Timestamp::now() + s
-                }
-            };
-
             let mut members = Vec::new();
-            for m in committee.member {
-                let member = CommitteeMember::read(&m.config).await?;
+            for member in committee.members {
                 let pubkey = VerifyingKey::from_sec1_bytes(&member.signing_key.to_bytes())?;
                 let sol_member = CommitteeMemberSol {
                     sigKey: member.signing_key.to_bytes().into(),
@@ -123,7 +99,7 @@ async fn main() -> Result<()> {
             }
 
             let _receipt = manager
-                .setNextCommittee(effective.into(), members)
+                .setNextCommittee(committee.effective.into(), members)
                 .send()
                 .await?
                 .get_receipt()
@@ -132,15 +108,13 @@ async fn main() -> Result<()> {
             println!("registered new committee");
         }
         Command::RegisterKey {
-            id,
             index,
             rpc_url,
             contract,
             mnemonic,
             committee,
         } => {
-            let config = CommitteeDefinitions::read(&committee).await?;
-            let committee = get_committee(&committee, id, config)?;
+            let committee = CommitteeDefinition::read(&committee).await?;
             let provider = build_provider(mnemonic, index, rpc_url)?;
             if provider.get_code_at(contract).await?.is_empty() {
                 bail!("invalid key manager contract address: {contract}");
@@ -178,18 +152,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn get_committee<P>(path: P, id: CommitteeId, config: CommitteeDefinitions) -> Result<CommitteeFile>
-where
-    P: AsRef<Path>,
-{
-    let set: HashSet<CommitteeId> = HashSet::from_iter(config.committee.iter().map(|c| c.id));
-    if set.len() != config.committee.len() {
-        bail!("duplicate committee ids in {:?}", path.as_ref())
-    }
-    let Some(committee) = config.committee.into_iter().find(|c| c.id == id) else {
-        bail!("no committee with id {id}")
-    };
-    Ok(committee)
 }

@@ -16,6 +16,11 @@ public = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
 secret = "BW8gq8MARtDkSJL6daobPtGQm22TKkXdbLNrNGngNGTB"
 public = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 
+[committee.contract]
+rpc-url = "http://127.0.0.1:8545/"
+websocket-url = "ws://127.0.0.1:8545/"
+address = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
 [chain]
 id = 31337
 rpc-url = "http://127.0.0.1:8545/"

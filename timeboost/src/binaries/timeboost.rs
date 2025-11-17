@@ -4,8 +4,8 @@ use anyhow::{Context, Result, bail};
 use multisig::{CommitteeId, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_config::config_service;
-use timeboost_config::{ConfigService, GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
+use timeboost_config::CommitteeContract;
+use timeboost_config::{GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
 use timeboost_types::{ThresholdKeyCell, Timestamp};
 use tokio::select;
 use tokio::signal;
@@ -25,10 +25,6 @@ struct Cli {
 
     #[clap(long)]
     committee: CommitteeId,
-
-    /// Committee config service name.
-    #[clap(long)]
-    config_service: String,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
@@ -74,14 +70,14 @@ async fn main() -> Result<()> {
     let sign_keypair = Keypair::from(node_config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
-    let mut config_service = config_service(&cli.config_service).await?;
+    let mut contract = CommitteeContract::from(&node_config);
 
-    let Some(committee) = config_service.get(cli.committee).await? else {
+    let Some(committee) = contract.get(cli.committee).await? else {
         bail!("no config for committee id {}", cli.committee)
     };
 
     let prev_committee = if committee.effective > Timestamp::now() {
-        let Some(prev) = config_service.prev(committee.id).await? else {
+        let Some(prev) = contract.prev(committee.id).await? else {
             bail!("no committee before {}", committee.id)
         };
         info!(
@@ -152,7 +148,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "times"))]
     let config = config.build();
 
-    let committees = config_service.subscribe(committee.id).await?;
+    let committees = contract.subscribe(committee.id).await?;
     let timeboost = Timeboost::new(config, committees).await?;
 
     let mut grpc = {

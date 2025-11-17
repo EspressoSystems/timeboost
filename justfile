@@ -72,30 +72,29 @@ run-integration-main:
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \
   target/release/run --verbose \
-      --spawn "target/release/sailfish \
+      --spawn "1|anvil --port 8545" \
+      --run   "2|sleep 3" \
+      --run   "3|just deploy-contract 127.0.0.1:8545" \
+      --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+      --spawn "5|target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
-      --spawn "target/release/sailfish \
+      --spawn "5|target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
-      --spawn "target/release/sailfish \
+      --spawn "5|target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
-      --spawn "target/release/sailfish \
+      --spawn "5|target/release/sailfish \
         --committee 0 \
         --node test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.toml \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp" \
       target/release/sailfish -- \
         --committee 0 \
         --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --ignore-stamp \
         --until 300
 
@@ -117,8 +116,10 @@ mkconfig nodes seed="42":
             --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
             --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
             --chain-rpc-url "http://127.0.0.1:8545" \
+            --chain-websocket-url "ws://127.0.0.1:8545" \
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
             --output "test-configs/nodes"; \
     done
@@ -135,8 +136,10 @@ mkconfig-linux nodes seed="42":
             --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
             --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
             --chain-rpc-url "http://11.0.1.0:8545" \
+            --chain-websocket-url "ws://11.0.1.0:8545" \
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
@@ -144,23 +147,22 @@ mkconfig-linux nodes seed="42":
 verify-blocks *ARGS:
   cargo run --release --bin block-verifier {{ARGS}}
 
-deploy-contract-locally:
+deploy-contract host:
     cast send --value 1ether \
-        --rpc-url http://127.0.0.1:8545 \
+        --rpc-url http://{{host}} \
         --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
         0x36561082951eed7ffD59cFD82D70570C57072d02
-    cargo run --bin contract -- deploy \
+    target/release/contract deploy \
         --index 0 \
-        --rpc-url "http://127.0.0.1:8545" \
+        --rpc-url http://{{host}} \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
-register-committee-locally path:
-    cargo run --bin contract -- register-committee \
+register-committee host path:
+    target/release/contract register-committee \
         --committee {{path}} \
-        --id 0 \
         --index 0 \
-        --rpc-url "http://127.0.0.1:8545" \
-        --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+        --rpc-url http://{{host}} \
+        --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc
@@ -188,24 +190,22 @@ test-all: build-release build-test-utils
     --timeout 120 \
     --spawn "1|anvil --port 8545" \
     --run   "2|sleep 3" \
-    --spawn "3|target/release/block-maker \
-        --committee 0 \
-        --bind 127.0.0.1:55000 \
-        --config-service file:test-configs/nodes/committees/static-5.toml" \
-    --spawn "4|target/release/run-committee \
-        --committee 0 \
+    --run   "3|just deploy-contract 127.0.0.1:8545" \
+    --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+    --spawn "5|target/release/block-maker \
+        --committee test-configs/nodes/committees/committee-0.toml \
+        --bind 127.0.0.1:55000" \
+    --spawn "6|target/release/run-committee \
+        --committee test-configs/nodes/committees/committee-0.toml \
         --nodes test-configs/nodes/ \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
-    --spawn "5|target/release/yapper \
-        --committee 0 \
-        --nodes test-configs/nodes/ \
-        --config-service file:test-configs/nodes/committees/static-5.toml" \
+    --spawn "7|target/release/yapper \
+        --committee test-configs/nodes/committees/committee-0.toml \
+        --nodes test-configs/nodes/" \
     target/release/block-checker -- \
-        --committee 0 \
+        --committee test-configs/nodes/committees/committee-0.toml \
         --nodes test-configs/nodes/ \
-        --config-service file:test-configs/nodes/committees/static-5.toml \
         --blocks 300
 
 test-dyn-comm: build-release-until build-test-utils
@@ -213,26 +213,27 @@ test-dyn-comm: build-release-until build-test-utils
     target/release/run \
         --verbose \
         --timeout 120 \
-        --spawn "1|anvil --host 127.0.0.1 --port 8545" \
+        --spawn "1|anvil --port 8545" \
         --run   "2|sleep 3" \
-        --spawn "3|target/release/run-committee \
-            --committee 0 \
+        --run   "3|just deploy-contract 127.0.0.1:8545" \
+        --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+        --spawn "5|target/release/run-committee \
+            --committee test-configs/nodes/committees/committee-0.toml \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/nodes/committees/dynamic-5.toml \
             --ignore-stamp \
             --until 2000 \
             --verbose" \
-        --spawn "4|target/release/yapper \
-            --committee 0 \
-            --nodes test-configs/nodes/ \
-            --config-service file:test-configs/nodes/committees/dynamic-5.toml" \
+        --spawn "6|target/release/yapper \
+            --committee test-configs/nodes/committees/committee-0.toml \
+            --nodes test-configs/nodes/" \
+        --run   "7|sleep 5" \
+        --run   "8|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-1.toml" \
         target/release/run-committee -- \
-            --committee 1 \
+            --committee test-configs/nodes/committees/committee-1.toml \
             --nodes test-configs/nodes/ \
-            --config-service file:test-configs/nodes/committees/dynamic-5.toml \
             --ignore-stamp \
-            --required-decrypt-rounds 3 \
-            --until 500 \
+            --required-decrypt-rounds 50 \
+            --until 1000 \
             --verbose
 
 [linux]
@@ -270,25 +271,23 @@ netsim nodes: build-release build-test-utils
         --gid $(id -g) \
         --spawn "1|anvil --host 11.0.1.0 --port 8545" \
         --run   "2|sleep 3" \
-        --spawn "3|target/release/block-maker \
+        --run   "3|just deploy-contract 11.0.1.0:8545" \
+        --run   "4|just register-committee 11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
+        --spawn "5|target/release/block-maker \
             --bind 11.0.1.0:55000 \
-            --committee 0 \
-            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml" \
-        --spawn-as-root "4|target/release/run-committee \
+            --committee test-configs/linux/committees/linux-{{nodes}}.toml" \
+        --spawn-as-root "6|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
-            --committee 0 \
+    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
             --nodes test-configs/linux/ \
-            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
-        --spawn "4|target/release/yapper \
-            --committee 0 \
-            --nodes test-configs/linux/ \
-            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml" \
+        --spawn "7|target/release/yapper \
+    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
+            --nodes test-configs/linux/" \
         target/release/block-checker -- \
-            --committee 0 \
+    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
             --nodes test-configs/linux/ \
-            --config-service file:test-configs/linux/committees/linux-{{nodes}}.toml \
             --blocks 200

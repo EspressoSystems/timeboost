@@ -12,7 +12,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::config::{ConfigService, NodeConfig, config_service};
+use timeboost::config::{CommitteeContract, NodeConfig};
 use timeboost_utils::types::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
@@ -27,9 +27,6 @@ struct Cli {
 
     #[clap(long)]
     committee: CommitteeId,
-
-    #[clap(long)]
-    config_service: String,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -78,9 +75,9 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to read node config")?;
 
-    let mut config_service = config_service(&cli.config_service).await?;
+    let mut contract = CommitteeContract::from(&config);
 
-    let Some(committee) = config_service.get(cli.committee).await? else {
+    let Some(committee) = contract.get(cli.committee).await? else {
         bail!("no config for committee id {}", cli.committee)
     };
 

@@ -3,13 +3,10 @@ use std::{collections::BTreeSet, path::PathBuf};
 use anyhow::{Result, bail};
 use clap::Parser;
 use either::Either;
-use multisig::{
-    CommitteeId,
-    rand::{self, seq::IndexedRandom},
-};
+use multisig::rand::{self, seq::IndexedRandom};
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
-use timeboost::config::{ConfigService, NodeConfig, config_service};
+use timeboost::config::{CommitteeDefinition, NodeConfig};
 use timeboost_utils::types::logging::init_logging;
 use tracing::info;
 
@@ -19,10 +16,7 @@ struct Args {
     nodes: PathBuf,
 
     #[clap(long)]
-    committee: CommitteeId,
-
-    #[clap(long)]
-    config_service: String,
+    committee: PathBuf,
 
     #[clap(long, short)]
     blocks: usize,
@@ -37,15 +31,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut service = config_service(&args.config_service).await?;
-    let Some(committee) = service.get(args.committee).await? else {
-        bail!("no committee found for id {}", args.committee)
-    };
-
+    let definition = CommitteeDefinition::read(&args.committee).await?;
+    let committee = definition.to_config().await?;
     let committees = CommitteeVec::<1>::new(committee.sailfish().committee().clone());
-
     let Some(member) = committee.members.choose(&mut rand::rng()) else {
-        bail!("committee {} has no members", args.committee)
+        bail!("committee {:?} has no members", args.committee)
     };
 
     let node = NodeConfig::read(args.nodes.join(format!("{}.toml", member.signing_key))).await?;
