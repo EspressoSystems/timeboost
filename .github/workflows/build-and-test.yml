@@ -190,6 +190,20 @@ jobs:
   nitro-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      matrix:
+        container:
+          - timeboost-node0-1
+          - timeboost-node1-1
+          - timeboost-node2-1
+          - timeboost-node3-1
+          - timeboost-nitro0-1
+          - timeboost-nitro1-1
+          - timeboost-nitro2-1
+          - timeboost-nitro3-1
+          - timeboost-block-checker-1
+          - timeboost-block-verifier-1
+      fail-fast: false
     steps:
     - uses: actions/checkout@v4
       with:
@@ -205,17 +219,3 @@ jobs:
       run: |
         echo "==== Logs for ${{ matrix.container }} ===="
         docker logs ${{ matrix.container }} || echo "(no logs or container not found)"
-    strategy:
-        matrix:
-          container:
-            - timeboost-node0-1
-            - timeboost-node1-1
-            - timeboost-node2-1
-            - timeboost-node3-1
-            - timeboost-nitro0-1
-            - timeboost-nitro1-1
-            - timeboost-nitro2-1
-            - timeboost-nitro3-1
-            - timeboost-block-checker-1
-            - timeboost-block-verifier-1
-        fail-fast: false
