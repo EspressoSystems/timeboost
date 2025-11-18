@@ -189,21 +189,7 @@ jobs:
 
   nitro-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      matrix:
-        container:
-          - timeboost-node0-1
-          - timeboost-node1-1
-          - timeboost-node2-1
-          - timeboost-node3-1
-          - timeboost-nitro0-1
-          - timeboost-nitro1-1
-          - timeboost-nitro2-1
-          - timeboost-nitro3-1
-          - timeboost-block-checker-1
-          - timeboost-block-verifier-1
-      fail-fast: false
+    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v4
       with:
@@ -214,8 +200,36 @@ jobs:
       run: |
         just run-integration
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
-    - name: Docker logs – ${{ matrix.container }}
+    - name: Docker logs – timeboost-node0-1
       if: always()
-      run: |
-        echo "==== Logs for ${{ matrix.container }} ===="
-        docker logs ${{ matrix.container }} || echo "(no logs or container not found)"
+      run: docker logs timeboost-node0-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-node1-1
+      if: always()
+      run: docker logs timeboost-node1-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-node2-1
+      if: always()
+      run: docker logs timeboost-node2-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-node3-1
+      if: always()
+      run: docker logs timeboost-node3-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-nitro0-1
+      if: always()
+      run: docker logs timeboost-nitro0-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-nitro1-1
+      if: always()
+      run: docker logs timeboost-nitro1-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-nitro2-1
+      if: always()
+      run: docker logs timeboost-nitro2-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-nitro2-1
+      if: always()
+      run: docker logs timeboost-nitro2-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-nitro3-1
+      if: always()
+      run: docker logs timeboost-nitro3-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-block-checker-1
+      if: always()
+      run: docker logs timeboost-block-checker-1 || echo "(no logs or container not found)"
+    - name: Docker logs – timeboost-block-verifier-1
+      if: always()
+      run: docker logs timeboost-block-verifier-1 || echo "(no logs or container not found)"
