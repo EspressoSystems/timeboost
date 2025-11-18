@@ -101,7 +101,7 @@ services:
             --espresso-base-url "http://espresso-dev-node:41000/v1/" \
             --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
             --chain-rpc-url "http://demo-l1-network:8545" \
-            --chain-websocket-url "ws://demo-l1-network:8545" \
+            --chain-websocket-url "ws://demo-l1-network:8546" \
             --chain-id 1337 \
             --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -487,7 +487,6 @@ services:
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --committee "/config/docker/committees/docker.toml" \
-          --id 0 \
           --index 0
     depends_on:
       nitro0:
