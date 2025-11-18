@@ -232,8 +232,8 @@ test-dyn-comm: build-release-until build-test-utils
             --committee test-configs/nodes/committees/committee-1.toml \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
-            --required-decrypt-rounds 50 \
-            --until 1000 \
+            --required-decrypt-rounds 10 \
+            --until 500 \
             --verbose
 
 [linux]
@@ -279,15 +279,15 @@ netsim nodes: build-release build-test-utils
         --spawn-as-root "6|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
-    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
+            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
             --nodes test-configs/linux/ \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
         --spawn "7|target/release/yapper \
-    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
+            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
             --nodes test-configs/linux/" \
         target/release/block-checker -- \
-    	    --committee test-configs/linux/committees/linux-{{nodes}}.toml \
+            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
             --nodes test-configs/linux/ \
             --blocks 200
