@@ -200,10 +200,21 @@ jobs:
       run: |
         just run-integration
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
-    - name: Docker logs
-      if: failure() || cancelled()
+    - name: Docker logs – ${{ matrix.container }}
       run: |
-        for s in {node0,node1,node2,node3,nitro0,nitro1,nitro2,nitro3,block-checker,block-verifier}; do
-          echo "==== Logs for $s ===="
-          docker logs timeboost-$s-1 || true
-        done
+        echo "==== Logs for ${{ matrix.container }} ===="
+        docker logs ${{ matrix.container }} || echo "(no logs or container not found)"
+    strategy:
+        matrix:
+          container:
+            - timeboost-node0-1
+            - timeboost-node1-1
+            - timeboost-node2-1
+            - timeboost-node3-1
+            - timeboost-nitro0-1
+            - timeboost-nitro1-1
+            - timeboost-nitro2-1
+            - timeboost-nitro3-1
+            - timeboost-block-checker-1
+            - timeboost-block-verifier-1
+        fail-fast: false
