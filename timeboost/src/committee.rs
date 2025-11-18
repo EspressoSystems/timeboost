@@ -12,7 +12,9 @@ use cliquenet::AddressableCommittee;
 use futures::{Stream, StreamExt};
 use itertools::{Itertools, izip};
 use multisig::{Committee, CommitteeId, x25519};
-use timeboost_config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, ParentChain};
+use timeboost_config::{
+    CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, HTTP_API_PORT_OFFSET, ParentChain,
+};
 use timeboost_contract::KeyManager::{self, CommitteeCreated};
 use timeboost_contract::provider::PubSubProvider;
 use timeboost_crypto::prelude::DkgEncKey;
@@ -157,6 +159,13 @@ impl CommitteeInfo {
                     .map(|a| a.clone().with_offset(CERTIFIER_PORT_OFFSET)),
             ),
         )
+    }
+
+    pub fn http_api(&self) -> Vec<cliquenet::Address> {
+        self.public_addresses
+            .iter()
+            .map(|a| a.clone().with_offset(HTTP_API_PORT_OFFSET))
+            .collect()
     }
 
     pub fn dkg_key_store(&self) -> KeyStore {

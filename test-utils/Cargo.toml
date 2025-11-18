@@ -9,6 +9,7 @@ default = [
     "dep:alloy",
     "dep:bincode",
     "dep:bytes",
+    "dep:cliquenet",
     "dep:either",
     "dep:jiff",
     "dep:multisig",
@@ -22,6 +23,7 @@ default = [
     "dep:tonic",
     "dep:timeboost",
     "dep:timeboost-utils",
+    "dep:timeboost-contract",
     "ports"
 ]
 netns = ["dep:ipnet"]
@@ -30,6 +32,7 @@ scenario = ["dep:jiff", "dep:serde"]
 
 [dependencies]
 anyhow = { workspace = true }
+bon = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 rustix = { workspace = true }
@@ -39,12 +42,14 @@ tracing = { workspace = true }
 alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
+cliquenet = { path = "../cliquenet", optional = true }
 either = { workspace = true, optional = true }
 ipnet = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 multisig = { path = "../multisig", optional = true }
 prost = { workspace = true, optional = true }
 quick_cache = { workspace = true, optional = true }
+reqwest = { workspace = true }
 robusta = { path = "../robusta", optional = true }
 sailfish = { path = "../sailfish", optional = true }
 serde = { workspace = true, optional = true }
@@ -52,6 +57,7 @@ tokio-util = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost = { path = "../timeboost", optional = true }
+timeboost-contract = { path = "../timeboost-contract", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
 
 [[bin]]
@@ -65,6 +71,11 @@ path = "src/binaries/block-maker.rs"
 [[bin]]
 name = "block-verifier"
 path = "src/binaries/block-verifier.rs"
+
+[[bin]]
+name = "net-setup"
+path = "src/binaries/net-setup.rs"
+required-features = ["netns"]
 
 [[bin]]
 name = "port-alloc"
@@ -81,6 +92,5 @@ path = "src/binaries/run-committee.rs"
 required-features = ["netns", "scenario"]
 
 [[bin]]
-name = "net-setup"
-path = "src/binaries/net-setup.rs"
-required-features = ["netns"]
+name = "tx-generator"
+path = "src/binaries/tx-generator.rs"

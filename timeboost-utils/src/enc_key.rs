@@ -4,7 +4,7 @@ use timeboost_crypto::prelude::ThresholdEncKey;
 
 use tracing::warn;
 
-async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<ThresholdEncKey> {
+pub async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<ThresholdEncKey> {
     let response = match client.get(enckey_url.clone()).send().await {
         Ok(response) => response,
         Err(err) => {
