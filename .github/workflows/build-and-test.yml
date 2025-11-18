@@ -201,6 +201,7 @@ jobs:
         just run-integration
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
     - name: Docker logs – ${{ matrix.container }}
+      if: always()
       run: |
         echo "==== Logs for ${{ matrix.container }} ===="
         docker logs ${{ matrix.container }} || echo "(no logs or container not found)"
