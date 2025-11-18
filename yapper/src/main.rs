@@ -6,18 +6,13 @@
 
 use std::path::PathBuf;
 
-use alloy::providers::ProviderBuilder;
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail, ensure};
 use clap::Parser;
+use multisig::{CommitteeId, rand::seq::IndexedRandom};
 use reqwest::Url;
-use timeboost::{
-    config::{CommitteeConfig, NodeConfig},
-    crypto::prelude::ThresholdEncKey,
-};
+use timeboost::config::{ConfigService, HTTP_API_PORT_OFFSET, NodeConfig, config_service};
 
-use timeboost_contract::KeyManager;
 use timeboost_utils::types::logging::init_logging;
-use timeboost_utils::wait_for_live_peer;
 use tokio::signal::{
     ctrl_c,
     unix::{SignalKind, signal},
@@ -32,11 +27,15 @@ mod yapper;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Path to folder containing the configs
-    ///
-    /// The files contain backend urls and public key material.
+    /// Path to a node config file.
     #[clap(long, short)]
-    config: PathBuf,
+    nodes: PathBuf,
+
+    #[clap(long)]
+    committee: CommitteeId,
+
+    #[clap(long)]
+    config_service: String,
 
     /// Specify how many transactions per second to send to each node
     #[clap(long, short, default_value_t = 100)]
@@ -57,9 +56,6 @@ struct Cli {
     /// Number of sender addresses on Nitro L2
     #[clap(long, default_value_t = 20)]
     nitro_senders: u32,
-
-    #[clap(long)]
-    max_nodes: usize,
 }
 
 #[tokio::main]
@@ -76,38 +72,36 @@ async fn main() -> Result<()> {
         "prio_ratio must be a fraction between 0 and 1"
     );
 
-    let mut conf = CommitteeConfig::read(cli.config.join("committee.toml")).await?;
-    conf.members.truncate(cli.max_nodes);
-    let node = NodeConfig::read(cli.config.join("node_0.toml")).await?;
+    let mut service = config_service(&cli.config_service).await?;
 
-    let mut addresses = Vec::new();
-    for node in conf.members {
-        info!("waiting for peer: {}", node.http_api);
-        wait_for_live_peer(&node.http_api).await?;
-        addresses.push(node.http_api);
-    }
+    let Some(committee) = service.get(cli.committee).await? else {
+        bail!("no committee found for id {}", cli.committee)
+    };
 
-    let km_addr = node.chain.parent.key_manager_contract;
-    let rpc = node.chain.parent.rpc_url.clone();
+    let Some(member) = committee.members.choose(&mut rand::rng()) else {
+        bail!("committee {} has no members", cli.committee)
+    };
 
-    let provider = ProviderBuilder::new().connect_http(rpc.clone());
-    let contract = KeyManager::new(km_addr, provider);
+    let node = NodeConfig::read(cli.nodes.join(format!("{}.toml", member.signing_key))).await?;
 
-    let enc_key =
-        ThresholdEncKey::from_bytes(&contract.thresholdEncryptionKey().call().await?.0).ok();
+    let rpc = node.chain.rpc_url.clone();
 
     let config = YapperConfig::builder()
-        .addresses(addresses)
+        .addresses(
+            committee
+                .members
+                .iter()
+                .map(|m| m.address.clone().with_offset(HTTP_API_PORT_OFFSET))
+                .collect(),
+        )
         .tps(cli.tps)
         .enc_ratio(cli.enc_ratio)
         .prio_ratio(cli.prio_ratio)
-        .maybe_threshold_enc_key(enc_key)
-        // nitro-relevant configs
         .maybe_nitro_url(cli.nitro_url)
         .parent_url(rpc)
-        .parent_id(node.chain.parent.id)
-        .chain_id(node.chain.namespace)
-        .bridge_addr(node.chain.parent.ibox_contract)
+        .parent_id(node.chain.id)
+        .chain_id(node.espresso.namespace)
+        .bridge_addr(node.chain.inbox_contract)
         .nitro_senders(cli.nitro_senders)
         .build();
     let yapper = Yapper::new(config).await?;

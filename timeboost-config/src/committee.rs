@@ -1,48 +1,82 @@
 use core::fmt;
-use std::{path::Path, str::FromStr};
+use std::path::Path;
 
-use cliquenet::Address;
-use multisig::{CommitteeId, x25519};
+use cliquenet::{Address, AddressableCommittee};
+use multisig::{Committee, CommitteeId, x25519};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
+use timeboost_types::{KeyStore, Timestamp};
 
-use crate::ConfigError;
+use crate::{CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET, read_toml};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {
     pub id: CommitteeId,
-    pub effective_timestamp: jiff::Timestamp,
-    #[serde(default)]
+    pub effective: Timestamp,
     pub members: Vec<CommitteeMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeMember {
-    pub node: String,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
     pub dkg_enc_key: DkgEncKey,
     pub address: Address,
-    pub http_api: Address,
-    pub grpc_api: Address,
-    pub batch_poster_api: Address,
-    pub sig_key_address: alloy::primitives::Address,
+    pub batchposter: Address,
 }
 
 impl CommitteeConfig {
     pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        tokio::fs::read_to_string(path.as_ref())
-            .await
-            .map_err(|e| ConfigError(path.as_ref().into(), Box::new(e)))?
-            .parse()
+        read_toml(path).await
     }
-}
 
-impl FromStr for CommitteeConfig {
-    type Err = ConfigError;
+    pub fn committee(&self) -> Committee {
+        Committee::new(
+            self.id,
+            self.members
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (i as u8, m.signing_key)),
+        )
+    }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| ConfigError(Path::new("").into(), Box::new(e)))
+    pub fn sailfish(&self) -> AddressableCommittee {
+        let addrs = self
+            .members
+            .iter()
+            .map(|m| (m.signing_key, m.dh_key, m.address.clone()));
+        AddressableCommittee::new(self.committee(), addrs)
+    }
+
+    pub fn decrypt(&self) -> AddressableCommittee {
+        let addrs = self.members.iter().map(|m| {
+            (
+                m.signing_key,
+                m.dh_key,
+                m.address.clone().with_offset(DECRYPTER_PORT_OFFSET),
+            )
+        });
+        AddressableCommittee::new(self.committee(), addrs)
+    }
+
+    pub fn certify(&self) -> AddressableCommittee {
+        let addrs = self.members.iter().map(|m| {
+            (
+                m.signing_key,
+                m.dh_key,
+                m.address.clone().with_offset(CERTIFIER_PORT_OFFSET),
+            )
+        });
+        AddressableCommittee::new(self.committee(), addrs)
+    }
+
+    pub fn dkg_key_store(&self) -> KeyStore {
+        let keys = self
+            .members
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (i as u8, m.dkg_enc_key.clone()));
+        KeyStore::new(self.committee(), keys)
     }
 }
 
@@ -50,5 +84,11 @@ impl fmt::Display for CommitteeConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = toml::to_string_pretty(self).map_err(|_| fmt::Error)?;
         f.write_str(&s)
+    }
+}
+
+impl CommitteeMember {
+    pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
+        read_toml(path).await
     }
 }

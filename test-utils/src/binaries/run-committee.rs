@@ -1,36 +1,38 @@
-use std::collections::{BTreeMap, HashSet};
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
+use multisig::CommitteeId;
 use test_utils::net::Config;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
-use timeboost::config::CommitteeConfig;
+use timeboost::config::ConfigService;
+use timeboost::config::config_service;
+use timeboost::types::Timestamp;
 use tokio::time::sleep;
-
-use tokio::{
-    fs::{self, read_dir},
-    process::Command,
-};
+use tokio::{fs, process::Command};
 use tokio_util::task::TaskTracker;
 
 #[derive(Parser, Debug)]
 struct Args {
+    #[clap(long)]
+    committee: CommitteeId,
+
+    #[clap(long)]
+    config_service: String,
+
+    #[clap(long)]
+    nodes: PathBuf,
+
     #[clap(long, short)]
-    configs: PathBuf,
+    net: Option<PathBuf>,
 
     #[clap(long, short)]
     scenario: Option<PathBuf>,
 
     #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
-
-    #[clap(long)]
-    max_nodes: usize,
 
     #[clap(long, short)]
     uid: Option<u32>,
@@ -61,10 +63,6 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    if !args.configs.is_dir() {
-        bail!("{:?} is not a directory", args.configs)
-    }
-
     if !args.tmp.is_dir() {
         bail!("{:?} is not a directory", args.tmp)
     }
@@ -73,41 +71,58 @@ async fn main() -> Result<()> {
         bail!("{:?} is not a file", args.timeboost)
     }
 
-    let mut netconf: Option<Config> = None;
-    let mut committee: Option<CommitteeConfig> = None;
-    let mut commands = BTreeMap::new();
-    let mut entries = read_dir(&args.configs).await?;
+    let mut service = config_service(&args.config_service).await?;
 
-    while let Some(entry) = entries.next_entry().await? {
-        match ConfigType::read(&entry.path()) {
-            ConfigType::Network => {
-                ensure!(netconf.is_none());
-                let bytes = fs::read(&entry.path()).await?;
-                netconf = Some(toml::from_slice(&bytes)?);
-            }
-            ConfigType::Node(name) => {
-                let mut cmd = Cmd::new(&args.timeboost);
-                cmd.with_arg("--config").with_arg(entry.path());
-                if let Some(until) = args.until {
-                    cmd.with_args(["--until", &until.to_string()]);
-                }
-                if let Some(r) = args.required_decrypt_rounds {
-                    cmd.with_args(["--required-decrypt-rounds", &r.to_string()]);
-                }
-                if let Some(t) = args.times_until {
-                    cmd.with_args(["--times-until", &t.to_string()]);
-                }
-                if args.scenario.is_none() || args.ignore_stamp {
-                    cmd.with_arg("--ignore-stamp");
-                }
-                commands.insert(name.to_string(), cmd);
-            }
-            ConfigType::Committee => {
-                ensure!(committee.is_none());
-                committee = Some(CommitteeConfig::read(&entry.path()).await?)
-            }
-            ConfigType::Unknown => continue,
+    let Some(committee) = service.get(args.committee).await? else {
+        bail!("committee not found: {}", args.committee)
+    };
+
+    let prev_committee = if committee.effective > Timestamp::now() {
+        let Some(prev) = service.prev(committee.id).await? else {
+            bail!("no committee before {}", committee.id)
+        };
+        Some(prev)
+    } else {
+        None
+    };
+
+    let netconf: Option<Config> = if let Some(net) = &args.net {
+        let bytes = fs::read(net).await?;
+        Some(toml::from_slice(&bytes)?)
+    } else {
+        None
+    };
+
+    let mut commands = BTreeMap::new();
+
+    for m in &committee.members {
+        if prev_committee
+            .as_ref()
+            .map(|p| p.members.iter().any(|o| o.signing_key == m.signing_key))
+            .unwrap_or(false)
+        {
+            continue;
         }
+        let mut cmd = Cmd::new(&args.timeboost);
+        cmd.with_arg("--node")
+            .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)))
+            .with_arg("--committee")
+            .with_arg(args.committee.to_string())
+            .with_arg("--config-service")
+            .with_arg(&args.config_service);
+        if let Some(until) = args.until {
+            cmd.with_args(["--until", &until.to_string()]);
+        }
+        if let Some(r) = args.required_decrypt_rounds {
+            cmd.with_args(["--required-decrypt-rounds", &r.to_string()]);
+        }
+        if let Some(t) = args.times_until {
+            cmd.with_args(["--times-until", &t.to_string()]);
+        }
+        if args.scenario.is_none() || args.ignore_stamp {
+            cmd.with_arg("--ignore-stamp");
+        }
+        commands.insert(m.signing_key, cmd);
     }
 
     #[cfg(target_os = "linux")]
@@ -134,17 +149,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    let Some(conf) = committee else {
-        bail!("missing committee config")
-    };
-
-    let subset: HashSet<String> = conf
-        .members
-        .into_iter()
-        .take(args.max_nodes)
-        .map(|m| m.node)
-        .collect();
-
     let tasks = TaskTracker::new();
 
     if let Some(path) = &args.scenario {
@@ -153,9 +157,6 @@ async fn main() -> Result<()> {
         for s in &scenario.steps {
             match &s.action {
                 Action::StartNode { node, .. } | Action::StopNode { node, .. } => {
-                    if !subset.contains(node) {
-                        bail!("can not resolve node {node} of scenario {path:?}");
-                    }
                     if !commands.contains_key(node) {
                         bail!("node {node} of scenario {path:?} not found");
                     }
@@ -207,15 +208,9 @@ async fn main() -> Result<()> {
         }
     } else {
         for (node, cmd) in commands {
-            if !subset.contains(&node) {
-                if args.verbose {
-                    eprintln!("ignoring node {node} command");
-                }
-                continue;
-            }
             tasks.spawn(async move {
                 if args.verbose {
-                    eprintln!("spawning timeboost: \"{cmd}\"");
+                    eprintln!("spawning timeboost node {node}: \"{cmd}\"");
                 }
                 let mut cmd = Command::from(cmd);
                 cmd.kill_on_drop(true);
@@ -229,32 +224,4 @@ async fn main() -> Result<()> {
     tasks.wait().await;
 
     Ok(())
-}
-
-enum ConfigType<'a> {
-    Committee,
-    Node(&'a str),
-    Network,
-    Unknown,
-}
-
-impl<'a> ConfigType<'a> {
-    fn read(p: &'a Path) -> Self {
-        if p.extension() != Some(OsStr::new("toml")) {
-            return ConfigType::Unknown;
-        }
-        let Some(name) = p.file_stem().and_then(|n| n.to_str()) else {
-            return ConfigType::Unknown;
-        };
-        if name.starts_with("node") {
-            return ConfigType::Node(name);
-        }
-        if name == "committee" {
-            return ConfigType::Committee;
-        }
-        if name == "net" {
-            return ConfigType::Network;
-        }
-        ConfigType::Unknown
-    }
 }

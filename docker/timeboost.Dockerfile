@@ -22,14 +22,13 @@ RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
 COPY --from=builder /app/target/release/timeboost .
 COPY --from=builder /app/target/release/yapper .
-COPY --from=builder /app/target/release/register .
-COPY --from=builder /app/target/release/deploy .
+COPY --from=builder /app/target/release/contract .
 COPY --from=builder /app/target/release/block-maker .
 COPY --from=builder /app/target/release/block-checker .
 COPY --from=builder /app/target/release/block-verifier .
-COPY --from=builder /app/target/release/mkconfig .
+COPY --from=builder /app/target/release/configure .
 COPY --from=builder /app/target/release/funder .
-COPY --from=builder /app/scripts/deploy-contract /app/scripts/deploy-contract
+COPY --from=builder /app/target/release/assemble .
 
 COPY --from=builder /root/.foundry/bin/forge /usr/local/bin/forge
 COPY --from=builder /root/.foundry/bin/cast /usr/local/bin/cast
@@ -38,14 +37,13 @@ RUN chmod +x /usr/local/bin/forge /usr/local/bin/cast
 RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/timeboost \
     /app/yapper \
-    /app/register \
-    /app/deploy \
+    /app/contract \
     /app/block-maker \
     /app/block-checker \
     /app/block-verifier \
-    /app/mkconfig \
+    /app/configure \
     /app/funder \
-    /app/scripts/deploy-contract
+    /app/assemble
 
 USER timeboostuser
 

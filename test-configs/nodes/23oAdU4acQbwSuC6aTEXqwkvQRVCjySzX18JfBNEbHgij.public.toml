@@ -1,0 +1,5 @@
+signing_key = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
+dh_key = "B65CLdoYGSRtXRR4YU2wqzpqrwcd4KHiQqgaW5ShnoY6"
+dkg_enc_key = "7KgCqy1taizFPX2v5CvZit8HDnNPQF2M7EbHHy24a3banaKkqeqye6kM4apnbjZMhd"
+address = "127.0.0.1:8060"
+batchposter = "127.0.0.1:8065"

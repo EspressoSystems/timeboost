@@ -1,7 +1,6 @@
 use bon::Builder;
 use cliquenet::Address;
 use reqwest::Url;
-use timeboost::crypto::prelude::ThresholdEncKey;
 
 #[derive(Debug, Clone, Builder)]
 pub(crate) struct YapperConfig {
@@ -13,8 +12,6 @@ pub(crate) struct YapperConfig {
     pub(crate) enc_ratio: f64,
     /// Ratio of priority bundles
     pub(crate) prio_ratio: f64,
-    /// Use a given threshold encryption key, instead of fetching from nodes
-    pub(crate) threshold_enc_key: Option<ThresholdEncKey>,
 
     // Nitro-specific configs
     /// URL of nitro chain that is configured

@@ -11002,6 +11002,7 @@ dependencies = [
  "toml 0.9.8",
  "tonic 0.14.2",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -11009,9 +11010,11 @@ name = "tests"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "anyhow",
  "async-trait",
  "blake3",
  "bytes 1.10.1",
+ "clap",
  "cliquenet",
  "committable 0.2.4",
  "crossbeam-queue",
@@ -11023,9 +11026,11 @@ dependencies = [
  "sailfish",
  "sailfish-types",
  "serde",
+ "serde_bytes",
  "test-utils",
  "timeboost",
  "timeboost-utils",
+ "times",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -11261,19 +11266,22 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "ark-std 0.5.0",
  "axum 0.8.7",
  "bon",
  "clap",
  "cliquenet",
  "committable 0.2.4",
  "csv",
+ "either",
  "futures",
  "http 1.3.1",
- "itertools 0.14.0",
+ "jiff",
  "metrics",
  "multisig",
  "prost 0.14.1",
  "rand 0.9.2",
+ "reqwest",
  "sailfish",
  "serde",
  "serde_bytes",
@@ -11327,41 +11335,35 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "ark-std 0.5.0",
+ "async-trait",
  "bon",
- "clap",
  "cliquenet",
+ "either",
+ "futures",
  "jiff",
  "multisig",
  "rand 0.9.2",
- "secp256k1 0.31.1",
  "serde",
  "thiserror 2.0.17",
+ "timeboost-contract",
  "timeboost-crypto",
+ "timeboost-types",
  "tokio",
  "toml 0.9.8",
+ "tracing",
  "url",
 ]
 
 [[package]]
 name = "timeboost-contract"
-version = "0.1.0"
+version = "0.0.0"
+source = "git+https://github.com/EspressoSystems/timeboost-contracts#7c55e09b901d646aa42468358f17c37822085d74"
 dependencies = [
  "alloy",
  "anyhow",
- "clap",
  "futures",
- "rand 0.9.2",
- "reqwest",
  "serde",
- "timeboost-config",
- "timeboost-crypto",
- "timeboost-types",
- "timeboost-utils",
- "tokio",
- "toml 0.9.8",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -13241,9 +13243,9 @@ dependencies = [
  "cliquenet",
  "futures",
  "multisig",
+ "rand 0.9.2",
  "reqwest",
  "timeboost",
- "timeboost-contract",
  "timeboost-utils",
  "tokio",
  "tracing",

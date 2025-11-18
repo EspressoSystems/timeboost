@@ -1,15 +1,17 @@
 use std::time::Duration;
 
 use alloy::consensus::BlockHeader;
+use alloy::network::Ethereum;
 use alloy::primitives::{Address, U256};
-use alloy::providers::ProviderBuilder;
+use alloy::providers::fillers::FillProvider;
+use alloy::providers::utils::JoinedRecommendedFillers;
 use alloy::providers::{Provider, network::BlockResponse};
+use alloy::providers::{ProviderBuilder, RootProvider};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, Filter};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
 use timeboost_config::ChainConfig;
-use timeboost_types::HttpProvider;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -26,6 +28,8 @@ sol! {
     event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
 
+type HttpProvider = FillProvider<JoinedRecommendedFillers, RootProvider, Ethereum>;
+
 pub struct DelayedInbox {
     node: PublicKey,
     ibox_addr: Address,
@@ -41,24 +45,24 @@ impl DelayedInbox {
         cfg: &ChainConfig,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let url = &cfg.parent.rpc_url;
-        let parent_chain_id = cfg.parent.id;
+        let url = &cfg.rpc_url;
+        let parent_chain_id = cfg.id;
         let provider = ProviderBuilder::new().connect_http(url.clone());
         let rpc_chain_id = provider
             .get_chain_id()
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
-        if cfg.parent.id != rpc_chain_id {
+        if cfg.id != rpc_chain_id {
             error!(%parent_chain_id, %rpc_chain_id, "mismatching chain id");
             return Err(Error::MismatchingChainID(parent_chain_id, rpc_chain_id));
         }
         Ok(Self {
             node,
-            ibox_addr: cfg.parent.ibox_contract,
+            ibox_addr: cfg.inbox_contract,
             provider,
             queue,
             url: url.to_string(),
-            tag: cfg.parent.block_tag,
+            tag: cfg.inbox_block_tag,
         })
     }
 

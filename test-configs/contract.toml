@@ -1,0 +1,3 @@
+rpc-url = "http://127.0.0.1:8545"
+websocket-url = "ws://127.0.0.1:8545"
+contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"

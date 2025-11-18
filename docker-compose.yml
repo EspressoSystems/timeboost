@@ -83,28 +83,41 @@ services:
       - RUST_LOG=trace
     volumes:
       - "config:/config"
-    entrypoint:
-      - sh
-      - -c
-      - >
-        /app/mkconfig -n 4 --committee-id 0 \
-          --bind "node:8000" \
-          --bind-mode "docker-dns" \
-          --seed 42 \
-          --nitro "nitro:55000" \
-          --nitro-mode "docker-dns" \
-          --batch-poster-api "http://host.docker.internal:8547" \
-          --chain-namespace 412346 \
-          --parent-rpc-url "http://demo-l1-network:8545" \
-          --parent-ws-url "ws://demo-l1-network:8546" \
-          --parent-chain-id 1337 \
-          --parent-ibox-contract "$(jq -r '.inbox' /config/deployment.json)" \
-          --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-          --timestamp $(date -u +"%Y-%m-%dT%H:%M:%SZ") \
-          --stamp-dir "/tmp" \
-          --espresso-base-url "http://espresso-dev-node:41000/v1/" \
-          --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-          --output "/config"
+    entrypoint: |
+      bash -c '
+        mkdir /config/docker
+        mkdir /config/docker/committees
+        set -euo pipefail
+        for i in $$(seq 0 3); do
+          batch_poster_port=$$((8547 + i * 10))
+          echo "Running configure for node $$i with seed $$((42 + i)) and batch poster port $${batch_poster_port}"
+          /app/configure \
+            --seed $$((42 + i)) \
+            --bind "0.0.0.0:8000" \
+            --external "node$$i:8000" \
+            --nitro "nitro$$i:55000" \
+            --batchposter "http://host.docker.internal:$${batch_poster_port}" \
+            --espresso-namespace 412346 \
+            --espresso-base-url "http://espresso-dev-node:41000/v1/" \
+            --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
+            --chain-rpc-url "http://demo-l1-network:8545" \
+            --chain-id 1337 \
+            --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
+            --stamp-dir "/tmp" \
+            --output "/config/docker"
+        done
+        /app/assemble \
+          --committee 0 \
+          --start 2025-10-01T00:00:00Z \
+          --output /config/docker/committees/docker.toml \
+          /config/docker/*.public.toml
+        $(cat <<EOF > /config/docker/contract.toml
+      rpc-url = "http://demo-l1-network:8545/"
+      websocket-url = "ws://demo-l1-network:8546/"
+      contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+      EOF
+        )
+      '
     networks:
       - timeboost
     depends_on:
@@ -119,12 +132,22 @@ services:
     entrypoint:
       - sh
       - -c
-      - > 
-        /app/scripts/deploy-contract -d /app/deploy \
-          -r /app/register \
-          -f /app/funder \
-          -c /config/committee.toml \
-          -u http://demo-l1-network:8545
+      - >
+        /app/contract deploy \
+          --index 0 \
+          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" \
+          --rpc-url "http://demo-l1-network:8545" && \
+        /app/contract register-committee \
+          --committee /config/docker/committees/docker.toml \
+          --id 0 \
+          --index 0 \
+          --rpc-url "http://demo-l1-network:8545" \
+          --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
+        /app/funder \
+          --config-service "contract:/config/docker/contract.toml" \
+          --committee-id 0 \
+          --parent-rpc-url "http://demo-l1-network:8545"
     networks:
       - timeboost
     depends_on:
@@ -154,12 +177,12 @@ services:
       - --graphql.vhosts=*
       - --graphql.corsdomain=*
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
-      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8003
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8004
       - --node.batch-poster.parent-chain-wallet.private-key=2837b8532d9be65995b377eae666b386143f1f211999a05444d395203640ef0f
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -197,12 +220,12 @@ services:
       - --node.seq-coordinator.my-url=http://nitro1:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
-      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
-      - --node.batch-poster.parent-chain-wallet.private-key=d785ccfe237647fca51042e2083e085ec29201d5a39f5a61f0da5cab315799ac
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8004
+      - --node.batch-poster.parent-chain-wallet.private-key=8c2a14253df56cc16553a61406ec6da1e4ecfd7053f66e9e15367a6f1459f6a0
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -240,12 +263,12 @@ services:
       - --node.seq-coordinator.my-url=http://nitro2:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
-      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8003
-      - --node.batch-poster.parent-chain-wallet.private-key=1d55854a220011ecdf322f44a14e9f9961fa2f8f4e37587ef7645ccda713507f
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8004
+      - --node.batch-poster.parent-chain-wallet.private-key=da0488a39b7e47c4677804a0911a2a4e4604ef9d0b3aefa44dca7de598866e3d
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -283,12 +306,12 @@ services:
       - --node.seq-coordinator.my-url=http://nitro3:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
       - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
-      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8003
-      - --node.batch-poster.parent-chain-wallet.private-key=aa913b27299e7ae7c3fe9ff721faa9d2ba436257a253e1f823940d5effd25ea1
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8004
+      - --node.batch-poster.parent-chain-wallet.private-key=ddaf9416def9dc9a2729d3ddd631508ff4e4d75e66451bb219ad42fb944223a0
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -312,10 +335,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config",
-        "/config/node_0.toml",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
+        "--committee",
+        "0",
+        "--node",
+        "/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
       ]
     volumes:
       - "config:/config"
@@ -347,10 +374,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config",
-        "/config/node_1.toml",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
+        "--committee",
+        "0",
         "--https-only",
         "false",
+        "--node",
+        "/config/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
       ]
     volumes:
       - "config:/config"
@@ -382,10 +413,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config",
-        "/config/node_2.toml",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
+        "--committee",
+        "0",
+        "--node",
+        "/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
       ]
     volumes:
       - "config:/config"
@@ -417,10 +452,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config",
-        "/config/node_3.toml",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
+        "--committee",
+        "0",
+        "--node",
+        "/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
       ]
     volumes:
       - "config:/config"
@@ -456,7 +495,14 @@ services:
     entrypoint:
       - sh
       - -c
-      - "sleep 60s && /app/register --max-members 4 -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
+      - >
+        /app/contract register-key \
+          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" \
+          --rpc-url "http://demo-l1-network:8545" \
+          --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+          --committee "/config/docker/committees/docker.toml" \
+          --id 0 \
+          --index 0
     depends_on:
       nitro0:
         condition: service_healthy
@@ -474,14 +520,16 @@ services:
     command:
       [
         "/app/block-checker",
-        "-c",
-        "/config",
-        "-b",
-        "100",
+        "--committee",
+        "0",
+        "--nodes",
+        "/config/docker/",
         "--https-only",
         "false",
-        "--max-nodes",
-        "4",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
+        "--blocks",
+        "100"
       ]
     volumes:
       - "config:/config"
@@ -492,6 +540,7 @@ services:
     depends_on:
       config-producer:
         condition: service_completed_successfully
+    restart: on-failure
   block-verifier:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
@@ -510,15 +559,19 @@ services:
   yapper:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
-      - /app/yapper
-      - --config
-      - /config/
-      - --nitro-url
-      - http://nitro0:8547
-      - --max-nodes
-      - "4"
-      - --tps
-      - '10'
+      [
+        "/app/yapper",
+        "--committee",
+        "0",
+        "--nitro-url",
+        "http://nitro0:8547",
+        "--nodes",
+        "/config/docker/",
+        "--config-service",
+        "contract:/config/docker/contract.toml",
+        "--tps",
+        "10"
+      ]
     volumes:
       - "config:/config"
     environment:

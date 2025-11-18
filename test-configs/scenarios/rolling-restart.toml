@@ -4,113 +4,98 @@
 [step.action]
 kind  = "remove"
 files = [
-    "/tmp/timeboost.0.stamp",
-    "/tmp/timeboost.1.stamp",
-    "/tmp/timeboost.2.stamp",
-    "/tmp/timeboost.3.stamp",
-    "/tmp/timeboost.4.stamp"
+    "/tmp/timeboost.21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.stamp",
+    "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp",
+    "/tmp/timeboost.23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.stamp",
+    "/tmp/timeboost.29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.stamp",
+    "/tmp/timeboost.eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.stamp"
 ]
 
 # Start whole committee one by one:
 
 [[step]]
 [step.action]
-kind  = "start-node"
-node  = "node_0"
-label = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_1"
-label = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_2"
-label = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
-
-[[step]]
-[step.action]
-kind  = "start-node"
-node  = "node_3"
-label = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+kind = "start-node"
+node = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
 
 [[step]]
 [step.action]
 kind = "start-node"
-node = "node_4"
-label = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+node = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
+
+[[step]]
+[step.action]
+kind = "start-node"
+node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
 
 # Stop and start all nodes one by one:
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "stop-node"
-node  = "node_0"
-label = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+kind = "stop-node"
+node = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "start-node"
-node  = "node_0"
-label = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+kind = "start-node"
+node = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "stop-node"
-node  = "node_1"
-label = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+kind = "stop-node"
+node = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "start-node"
-node  = "node_1"
-label = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+kind = "start-node"
+node = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "stop-node"
-node  = "node_2"
-label = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+kind = "stop-node"
+node = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "start-node"
-node  = "node_2"
-label = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+kind = "start-node"
+node = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "stop-node"
-node  = "node_3"
-label = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+kind = "stop-node"
+node = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "start-node"
-node  = "node_3"
-label = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+kind = "start-node"
+node = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "stop-node"
-node  = "node_4"
-label = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+kind = "stop-node"
+node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
 
 [[step]]
 delay = "+10s"
 [step.action]
-kind  = "start-node"
-node  = "node_4"
-label = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+kind = "start-node"
+node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"

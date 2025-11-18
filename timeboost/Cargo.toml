@@ -5,18 +5,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "timeboost"
-path = "src/binaries/timeboost.rs"
-
-[[bin]]
-name = "sailfish"
-path = "src/binaries/sailfish.rs"
-
-[[bin]]
-name = "funder"
-path = "src/binaries/funder.rs"
-
 [features]
 until = []
 times = [
@@ -29,26 +17,29 @@ times = [
 
 [dependencies]
 alloy = { workspace = true }
+ark-std = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+either = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-itertools = { workspace = true }
+jiff = { workspace = true }
 metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }
-timeboost-contract = { path = "../timeboost-contract" }
+timeboost-contract = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
@@ -67,3 +58,15 @@ times = { path = "../times", optional = true }
 
 [dev-dependencies]
 test-utils = { path = "../test-utils", features = ["ports"]}
+
+[[bin]]
+name = "timeboost"
+path = "src/binaries/timeboost.rs"
+
+[[bin]]
+name = "configure"
+path = "src/binaries/configure.rs"
+
+[[bin]]
+name = "contract"
+path = "src/binaries/contract.rs"

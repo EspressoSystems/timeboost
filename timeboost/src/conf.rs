@@ -1,25 +1,19 @@
-use alloy::primitives::BlockNumber;
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
-use timeboost_config::ChainConfig;
+use timeboost_config::{ChainConfig, CommitteeConfig};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::{KeyStore, ThresholdKeyCell};
-
-use crate::committee::CommitteeInfo;
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
-    /// The block in which the current committee is registered
-    pub(crate) registered_blk: BlockNumber,
-
-    /// Previous committee info stored on chain
-    pub(crate) prev_committee: Option<CommitteeInfo>,
+    /// Previous committee config.
+    pub(crate) prev_committee: Option<CommitteeConfig>,
 
     /// The decrypt peers that this node will connect to.
     pub(crate) decrypt_committee: AddressableCommittee,
@@ -49,7 +43,7 @@ pub struct TimeboostConfig {
     pub(crate) certifier_addr: Address,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
-    pub(crate) nitro_addr: Option<Address>,
+    pub(crate) nitro_addr: Address,
 
     /// Max. size of an espresso transaction.
     pub(crate) max_transaction_size: usize,
@@ -67,6 +61,9 @@ pub struct TimeboostConfig {
 
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
+
+    /// Espresso namespace ID.
+    pub(crate) namespace: u64,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -87,13 +84,11 @@ impl TimeboostConfig {
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
-            .maybe_previous_sailfish_committee(
-                self.prev_committee.as_ref().map(|c| c.sailfish_committee()),
-            )
+            .maybe_previous_sailfish_committee(self.prev_committee.as_ref().map(|c| c.sailfish()))
             .maybe_previous_decrypt_committee(
                 self.prev_committee
                     .as_ref()
-                    .map(|c| (c.decrypt_committee(), c.dkg_key_store())),
+                    .map(|c| (c.decrypt(), c.dkg_key_store())),
             )
             .leash_len(self.leash_len)
             .threshold_dec_key(self.threshold_dec_key.clone())
@@ -107,6 +102,7 @@ impl TimeboostConfig {
             .dh_keypair(self.dh_keypair.clone())
             .address(self.certifier_addr.clone())
             .committee(self.certifier_committee.clone())
+            .maybe_previous_committee(self.prev_committee.as_ref().map(|c| c.certify()))
             .recover(self.recover)
             .build()
     }
@@ -115,7 +111,7 @@ impl TimeboostConfig {
         SubmitterConfig::builder()
             .pubkey(self.sign_keypair.public_key())
             .robusta(self.robusta.clone())
-            .namespace(self.chain_config.namespace)
+            .namespace(self.namespace)
             .committee(self.sailfish_committee.committee().clone())
             .max_transaction_size(self.max_transaction_size)
             .build()

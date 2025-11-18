@@ -1,0 +1,5 @@
+signing_key = "tiLaXi4xvFAK2GcUdjbDxWpJKq3kceqgJXTkKjGhduEJ"
+dh_key = "2179bYS7qukTLacc3Wz5mS5oFJnUKzNmrFAMwwUGn7B5"
+dkg_enc_key = "6MFv9guPANDGQ9gnzXhWdPW29nTsYqXodgtE1hV7JhDjSRjiuaM4AESb4uW2Pc74DR"
+address = "11.0.0.15:8000"
+batchposter = "11.0.1.0:8005"
