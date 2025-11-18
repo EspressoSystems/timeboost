@@ -61,7 +61,7 @@ csv = "1.4.0"
 data-encoding = "2.6.0"
 derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
-ed25519-compact = "2.1.1"
+ed25519-compact = "2.2.0"
 either = { version = "1.13.0", features = ["serde"] }
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
@@ -84,7 +84,7 @@ secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
-serde_with = "3.15.1"
+serde_with = "3.16.0"
 sha2 = { version = "0.10", default-features = false }
 smallvec = "1.15.1"
 snow = "0.10.0"
