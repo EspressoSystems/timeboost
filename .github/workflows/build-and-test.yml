@@ -198,7 +198,7 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Run Timeboost integration
       run: |
-        just run-integration
+        just run-integration-ci
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
     - name: Docker logs – timeboost-node0-1
       if: always()
