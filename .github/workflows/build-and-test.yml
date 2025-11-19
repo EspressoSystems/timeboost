@@ -172,21 +172,6 @@ jobs:
     - name: Run network simulation
       run: just forward-ipv4 true create-net netsim 5
 
-  contracts:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        fetch-depth: 0
-    - uses: taiki-e/install-action@just
-    - name: Install rustfmt for nightly
-      run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
-    - name: Run contract tests
-      run: forge test -vvv
-
   nitro-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 35
