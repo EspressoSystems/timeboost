@@ -8,9 +8,9 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail, ensure};
 use clap::Parser;
-use multisig::{CommitteeId, rand::seq::IndexedRandom};
+use multisig::rand::seq::IndexedRandom;
 use reqwest::Url;
-use timeboost::config::{ConfigService, HTTP_API_PORT_OFFSET, NodeConfig, config_service};
+use timeboost::config::{CommitteeDefinition, HTTP_API_PORT_OFFSET, NodeConfig};
 
 use timeboost_utils::types::logging::init_logging;
 use tokio::signal::{
@@ -32,10 +32,7 @@ struct Cli {
     nodes: PathBuf,
 
     #[clap(long)]
-    committee: CommitteeId,
-
-    #[clap(long)]
-    config_service: String,
+    committee: PathBuf,
 
     /// Specify how many transactions per second to send to each node
     #[clap(long, short, default_value_t = 100)]
@@ -72,16 +69,11 @@ async fn main() -> Result<()> {
         "prio_ratio must be a fraction between 0 and 1"
     );
 
-    let mut service = config_service(&cli.config_service).await?;
-
-    let Some(committee) = service.get(cli.committee).await? else {
-        bail!("no committee found for id {}", cli.committee)
-    };
-
+    let definition = CommitteeDefinition::read(&cli.committee).await?;
+    let committee = definition.to_config().await?;
     let Some(member) = committee.members.choose(&mut rand::rng()) else {
-        bail!("committee {} has no members", cli.committee)
+        bail!("committee {:?} has no members", cli.committee)
     };
-
     let node = NodeConfig::read(cli.nodes.join(format!("{}.toml", member.signing_key))).await?;
 
     let rpc = node.chain.rpc_url.clone();

@@ -9,7 +9,8 @@ use cliquenet::Address;
 use multisig::x25519;
 use rand::SeedableRng;
 use timeboost_config::{
-    ChainConfig, CommitteeMember, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys,
+    ChainConfig, Committee, CommitteeMember, Contract, Espresso, Net, NodeConfig, NodeKeypair,
+    NodeKeys,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -40,6 +41,10 @@ struct Args {
     #[clap(long)]
     chain_rpc_url: Url,
 
+    /// Chain websocket url
+    #[clap(long)]
+    chain_websocket_url: Url,
+
     /// Parent chain id
     #[clap(long)]
     chain_id: u64,
@@ -47,6 +52,10 @@ struct Args {
     /// Inbox contract address
     #[clap(long)]
     inbox_contract: alloy::primitives::Address,
+
+    /// Committee contract address
+    #[clap(long)]
+    committee_contract: alloy::primitives::Address,
 
     /// Inbox block tag
     #[clap(long, default_value = "finalized")]
@@ -127,17 +136,24 @@ impl Args {
                     public: DkgEncKey::from(&dkg_dec_key),
                 },
             },
+            committee: Committee {
+                contract: Contract {
+                    rpc_url: self.chain_rpc_url.clone(),
+                    websocket_url: self.chain_websocket_url,
+                    address: self.committee_contract,
+                },
+            },
             chain: ChainConfig {
                 id: self.chain_id,
-                rpc_url: self.chain_rpc_url.clone(),
+                rpc_url: self.chain_rpc_url,
                 inbox_contract: self.inbox_contract,
                 inbox_block_tag: self.inbox_block_tag,
             },
             espresso: Espresso {
                 namespace: self.espresso_namespace,
-                base_url: self.espresso_base_url.clone(),
-                builder_base_url: self.espresso_builder_base_url.clone(),
-                websockets_base_url: self.espresso_websocket_url.clone(),
+                base_url: self.espresso_base_url,
+                builder_base_url: self.espresso_builder_base_url,
+                websockets_base_url: self.espresso_websocket_url,
                 max_transaction_size: self.max_transaction_size,
             },
         };

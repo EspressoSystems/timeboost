@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use alloy::{
     consensus::{
@@ -10,10 +10,9 @@ use alloy::{
     rlp::{BytesMut, Encodable},
     signers::{k256::ecdsa::VerifyingKey, local::PrivateKeySigner},
 };
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Parser;
-use multisig::CommitteeId;
-use timeboost::config::{ConfigService, config_service};
+use timeboost::config::CommitteeDefinition;
 use timeboost_utils::types::logging;
 use tracing::info;
 use url::Url;
@@ -29,11 +28,8 @@ struct Cli {
     )]
     funder_private_key: String,
 
-    #[clap(long, default_value_t = Default::default())]
-    committee_id: CommitteeId,
-
     #[clap(long)]
-    config_service: String,
+    committee: PathBuf,
 }
 
 #[tokio::main]
@@ -42,13 +38,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let mut service = config_service(&cli.config_service).await?;
-
-    let Some(committee) = service.get(cli.committee_id).await? else {
-        bail!("committee not found: {}", cli.committee_id)
-    };
-
-    info!("received committed info from contract");
+    let definition = CommitteeDefinition::read(&cli.committee).await?;
+    let committee = definition.to_config().await?;
 
     let p = RootProvider::<Ethereum>::connect(cli.parent_rpc_url.as_str()).await?;
     let funding_key = PrivateKeySigner::from_str(&cli.funder_private_key)?;

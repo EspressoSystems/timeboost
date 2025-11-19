@@ -1,3 +1,5 @@
+mod definition;
+
 use core::fmt;
 use std::path::Path;
 
@@ -8,6 +10,8 @@ use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
 
 use crate::{CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET, read_toml};
+
+pub use definition::{CommitteeDefinition, MemberFile};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {

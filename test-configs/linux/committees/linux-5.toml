@@ -1,19 +1,17 @@
-[[committee]]
 id    = 0
 start = "2025-10-01T00:00:00Z"
 
-[[committee.member]]
+[[member]]
 config = "test-configs/linux/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
 
-[[committee.member]]
+[[member]]
 config = "test-configs/linux/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
 
-[[committee.member]]
+[[member]]
 config = "test-configs/linux/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
 
-[[committee.member]]
+[[member]]
 config = "test-configs/linux/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.public.toml"
 
-[[committee.member]]
+[[member]]
 config = "test-configs/linux/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.public.toml"
-

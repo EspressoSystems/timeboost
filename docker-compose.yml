@@ -101,8 +101,10 @@ services:
             --espresso-base-url "http://espresso-dev-node:41000/v1/" \
             --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
             --chain-rpc-url "http://demo-l1-network:8545" \
+            --chain-websocket-url "ws://demo-l1-network:8546" \
             --chain-id 1337 \
             --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
+            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
             --output "/config/docker"
         done
@@ -111,12 +113,6 @@ services:
           --start 2025-10-01T00:00:00Z \
           --output /config/docker/committees/docker.toml \
           /config/docker/*.public.toml
-        $(cat <<EOF > /config/docker/contract.toml
-      rpc-url = "http://demo-l1-network:8545/"
-      websocket-url = "ws://demo-l1-network:8546/"
-      contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
-      EOF
-        )
       '
     networks:
       - timeboost
@@ -139,14 +135,12 @@ services:
           --rpc-url "http://demo-l1-network:8545" && \
         /app/contract register-committee \
           --committee /config/docker/committees/docker.toml \
-          --id 0 \
           --index 0 \
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
         /app/funder \
-          --config-service "contract:/config/docker/contract.toml" \
-          --committee-id 0 \
+          --committee "/config/docker/committees/docker.toml" \
           --parent-rpc-url "http://demo-l1-network:8545"
     networks:
       - timeboost
@@ -335,8 +329,6 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -374,8 +366,6 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--committee",
         "0",
         "--https-only",
@@ -413,8 +403,6 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -452,8 +440,6 @@ services:
     command:
       [
         "/app/timeboost",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--https-only",
         "false",
         "--committee",
@@ -501,7 +487,6 @@ services:
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --committee "/config/docker/committees/docker.toml" \
-          --id 0 \
           --index 0
     depends_on:
       nitro0:
@@ -521,13 +506,11 @@ services:
       [
         "/app/block-checker",
         "--committee",
-        "0",
+        "/config/docker/committees/docker.toml",
         "--nodes",
         "/config/docker/",
         "--https-only",
         "false",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--blocks",
         "100"
       ]
@@ -562,13 +545,11 @@ services:
       [
         "/app/yapper",
         "--committee",
-        "0",
+        "/config/docker/committees/docker.toml",
         "--nitro-url",
         "http://nitro0:8547",
         "--nodes",
         "/config/docker/",
-        "--config-service",
-        "contract:/config/docker/contract.toml",
         "--tps",
         "10"
       ]

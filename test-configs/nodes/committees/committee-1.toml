@@ -1,0 +1,17 @@
+id    = 1
+start = "+10s"
+
+[[member]]
+config = "test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
+
+[[member]]
+config = "test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
+
+[[member]]
+config = "test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
+
+[[member]]
+config = "test-configs/nodes/h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq.public.toml"
+
+[[member]]
+config = "test-configs/nodes/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.public.toml"

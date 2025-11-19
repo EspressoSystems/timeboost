@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use either::Either;
 use multisig::CommitteeId;
-use timeboost::config::{CommitteeDefinitions, CommitteeFile, MemberFile};
+use timeboost::config::{CommitteeDefinition, MemberFile};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -23,16 +23,14 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let config = CommitteeDefinitions {
-        committee: vec![CommitteeFile {
-            id: args.committee,
-            start: Either::Left(args.start),
-            member: args
-                .members
-                .into_iter()
-                .map(|path| MemberFile { config: path })
-                .collect(),
-        }],
+    let config = CommitteeDefinition {
+        id: args.committee,
+        start: Either::Left(args.start),
+        member: args
+            .members
+            .into_iter()
+            .map(|path| MemberFile { config: path })
+            .collect(),
     };
     config.write(args.output).await?;
     Ok(())

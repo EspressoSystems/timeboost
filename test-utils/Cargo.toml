@@ -32,6 +32,7 @@ scenario = ["dep:jiff", "dep:serde"]
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+rand = { workspace = true }
 rustix = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
