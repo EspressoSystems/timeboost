@@ -6,7 +6,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-until = []
 times = [
     "dep:csv",
     "dep:times",
