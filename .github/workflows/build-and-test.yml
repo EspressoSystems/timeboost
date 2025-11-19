@@ -33,10 +33,6 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
     - name: Build
       run: just build-release
     - name: Upload binaries
@@ -60,10 +56,6 @@ jobs:
         save-if: ${{ github.ref == 'refs/heads/main' }}
         prefix-key: tests
     - uses: taiki-e/install-action@nextest
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -86,10 +78,6 @@ jobs:
         cache-on-failure: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
         prefix-key: lint
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -127,10 +115,6 @@ jobs:
         cache-on-failure: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
         prefix-key: integration
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
@@ -160,10 +144,6 @@ jobs:
         prefix-key: netsim
     - name: Show net devices
       run: ip -o addr show scope global
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt

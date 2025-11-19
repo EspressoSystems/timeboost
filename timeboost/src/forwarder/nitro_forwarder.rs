@@ -6,7 +6,6 @@ use alloy::eips::Encodable2718;
 use cliquenet::Address;
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
-use timeboost_proto::forward::forward_api_client::ForwardApiClient;
 use timeboost_proto::inclusion::InclusionList;
 use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};

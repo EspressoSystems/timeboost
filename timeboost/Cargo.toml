@@ -40,7 +40,7 @@ timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }
 timeboost-contract = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
-timeboost-proto = { path = "../timeboost-proto" }
+timeboost-proto = { workspace = true }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
