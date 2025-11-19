@@ -62,6 +62,10 @@ run-integration: build-docker
   -docker network create timeboost
   env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
+run-integration-ci: build-docker
+  -docker network create timeboost
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml up -d
+
 run-integration-main:
   -docker network create timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
