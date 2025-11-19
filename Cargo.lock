@@ -11395,8 +11395,9 @@ dependencies = [
 [[package]]
 name = "timeboost-proto"
 version = "0.0.0"
-source = "git+https://github.com/EspressoSystems/timeboost-proto?branch=li%2Frust-gen#e0e7d6357240620b1aa5701fc62b35e176f6f3bb"
+source = "git+https://github.com/EspressoSystems/timeboost-proto?branch=li%2Frust-gen#6ea8538c1d1996143cd2cd5072b059e8dbb53eea"
 dependencies = [
+ "prost 0.14.1",
  "tonic 0.14.2",
  "tonic-prost",
  "tonic-prost-build",
