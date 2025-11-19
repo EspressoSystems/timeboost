@@ -7,7 +7,7 @@ use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::types::UNKNOWN_COMMITTEE_ID;
 use test_utils::ports::alloc_ports_blocking;
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::time::timeout;
 
 use crate::prelude::*;

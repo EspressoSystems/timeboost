@@ -8,7 +8,7 @@ use multisig::Certificate;
 use timeboost::builder::Certifier;
 use timeboost::sequencer::{Output, Sequencer};
 use timeboost::types::{Block, BlockInfo};
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};

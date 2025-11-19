@@ -1,5 +1,5 @@
 use sailfish::types::{Round, RoundNumber, Timeout, UNKNOWN_COMMITTEE_ID};
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 
 use crate::prelude::*;
 use crate::tests::consensus::helpers::key_manager::KeyManager;

@@ -94,3 +94,7 @@ path = "src/binaries/funder.rs"
 [[bin]]
 name = "assemble"
 path = "src/binaries/assemble.rs"
+
+[[bin]]
+name = "until"
+path = "src/binaries/until.rs"

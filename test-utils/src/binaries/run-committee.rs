@@ -7,7 +7,7 @@ use rand::seq::IndexedRandom;
 use test_utils::net::Config;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
-use timeboost::config::{CommitteeContract, CommitteeDefinition, NodeConfig};
+use timeboost::config::{CommitteeContract, CommitteeDefinition, HTTP_API_PORT_OFFSET, NodeConfig};
 use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};
@@ -39,11 +39,8 @@ struct Args {
     #[clap(long, default_value = "/tmp")]
     tmp: PathBuf,
 
-    #[clap(long)]
-    until: Option<u64>,
-
-    #[clap(long)]
-    required_decrypt_rounds: Option<u64>,
+    #[clap(flatten)]
+    until: UntilArgs,
 
     #[clap(long)]
     times_until: Option<u64>,
@@ -53,6 +50,22 @@ struct Args {
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(required = false)]
+pub struct UntilArgs {
+    #[clap(long)]
+    until_round: Option<u64>,
+
+    #[clap(long)]
+    until_decrypt_round: Option<u64>,
+
+    #[clap(long, default_value = "target/release/until")]
+    until: PathBuf,
+
+    #[clap(long, default_value_t = 60)]
+    until_timeout: u64,
 }
 
 #[tokio::main]
@@ -111,17 +124,28 @@ async fn main() -> Result<()> {
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)))
             .with_arg("--committee")
             .with_arg(committee.id.to_string());
-        if let Some(until) = args.until {
-            cmd.with_args(["--until", &until.to_string()]);
-        }
-        if let Some(r) = args.required_decrypt_rounds {
-            cmd.with_args(["--required-decrypt-rounds", &r.to_string()]);
-        }
         if let Some(t) = args.times_until {
             cmd.with_args(["--times-until", &t.to_string()]);
         }
         if args.scenario.is_none() || args.ignore_stamp {
             cmd.with_arg("--ignore-stamp");
+        }
+        if let Some(until) = &args.until.until_round {
+            let mut u = Cmd::new(args.until.until.clone());
+            u.with_arg("--api")
+                .with_arg(format!(
+                    "http://{}",
+                    m.address.clone().with_offset(HTTP_API_PORT_OFFSET)
+                ))
+                .with_arg("--timeout")
+                .with_arg(args.until.until_timeout.to_string())
+                .with_arg("--sailfish-rounds")
+                .with_arg(until.to_string());
+            if let Some(r) = args.until.until_decrypt_round {
+                u.with_arg("--decrypt-rounds").with_arg(r.to_string());
+            }
+            u.with_arg("--").with_arg(cmd.exe()).with_args(cmd.args());
+            cmd = u;
         }
         commands.insert(m.signing_key, cmd);
     }

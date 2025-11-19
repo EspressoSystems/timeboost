@@ -1551,7 +1551,7 @@ mod tests {
         time::Instant,
     };
     use test_utils::ports::alloc_port;
-    use timeboost_utils::types::logging;
+    use timeboost_utils::logging;
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};

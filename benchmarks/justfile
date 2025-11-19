@@ -1,10 +1,9 @@
 [private]
-build *features:
-    cargo build --release --bin run --bin run-committee --features "netns,scenario"
-    cargo build --release --workspace --all-targets --features "{{features}}"
+build-release *ARGS:
+  cargo build --release --workspace --all-targets --bins --all-features {{ARGS}}
 
 [working-directory: ".."]
-sailfish-times: (build "until" "times")
+sailfish-times: build-release
     env RUST_LOG=times,error TOKIO_WORKER_THREADS=4 RAYON_NUM_THREADS=4 \
     target/release/run \
         --verbose \
@@ -49,7 +48,7 @@ sailfish-times: (build "until" "times")
           --ignore-stamp
 
 [working-directory: ".."]
-timeboost-times nodes: (build "times")
+timeboost-times nodes: build-release
     #!/usr/bin/env bash
     set -eo pipefail
     function run_as_root {

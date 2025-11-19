@@ -1,4 +1,4 @@
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 
 #[tokio::test]
 async fn test_timeboost_startup() {

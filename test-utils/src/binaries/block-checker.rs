@@ -7,7 +7,7 @@ use multisig::rand::{self, seq::IndexedRandom};
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
 use timeboost::config::{CommitteeDefinition, NodeConfig};
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tracing::info;
 
 #[derive(Parser, Debug)]

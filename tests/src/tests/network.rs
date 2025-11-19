@@ -6,7 +6,7 @@ use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::types::Comm;
 use testnet::MsgQueues;
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 

@@ -19,7 +19,7 @@ use timeboost::config::ChainConfig;
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::{KeyStore, ThresholdKeyCell};
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;

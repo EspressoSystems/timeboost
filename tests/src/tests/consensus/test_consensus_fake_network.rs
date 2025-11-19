@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use multisig::{Keypair, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 
 use crate::prelude::*;
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;

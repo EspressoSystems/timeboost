@@ -13,7 +13,7 @@ use sailfish::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost::config::{CommitteeContract, NodeConfig};
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
 
