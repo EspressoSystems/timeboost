@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use rand::seq::IndexedRandom;
 use test_utils::net::Config;
@@ -233,15 +233,15 @@ async fn main() -> Result<()> {
         }
     } else {
         for (node, cmd) in commands {
-            tasks.spawn(async move {
-                if args.verbose {
-                    eprintln!("spawning timeboost node {node}: \"{cmd}\"");
-                }
-                let mut cmd = Command::from(cmd);
-                cmd.kill_on_drop(true);
-                let mut child = cmd.spawn()?;
-                child.wait().await
-            });
+            if args.verbose {
+                eprintln!("spawning timeboost node {node}: \"{cmd}\"");
+            }
+            let mut command = Command::from(&cmd);
+            command.kill_on_drop(true);
+            let mut child = command
+                .spawn()
+                .with_context(|| format!("failed to spawn \"{cmd}\""))?;
+            tasks.spawn(async move { child.wait().await });
         }
     }
 
