@@ -31,8 +31,6 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -67,8 +65,6 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
       run: just test-ci
 
@@ -93,8 +89,6 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
     - name: Check packages individually
       run: just check-individually
     - name: Run lint
@@ -134,8 +128,6 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
     - name: Run sailfish demo
       run: just run-sailfish-demo
     - name: Test with block-maker
@@ -167,8 +159,6 @@ jobs:
     - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
     - name: Run network simulation
       run: just forward-ipv4 true create-net netsim 5
 

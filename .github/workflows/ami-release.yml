@@ -28,9 +28,6 @@ jobs:
       - name: Install nightly rustfmt
         run: rustup component add --toolchain nightly rustfmt
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-    
       - name: Install protobuf compiler
         run: |
           sudo apt-get update
