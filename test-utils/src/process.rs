@@ -94,10 +94,26 @@ impl From<Cmd> for std::process::Command {
     }
 }
 
+impl From<&Cmd> for std::process::Command {
+    fn from(c: &Cmd) -> Self {
+        let mut cmd = std::process::Command::new(c.exe());
+        cmd.args(c.args());
+        cmd
+    }
+}
+
 impl From<Cmd> for tokio::process::Command {
     fn from(c: Cmd) -> Self {
         let mut cmd = tokio::process::Command::new(c.exe);
         cmd.args(c.args);
+        cmd
+    }
+}
+
+impl From<&Cmd> for tokio::process::Command {
+    fn from(c: &Cmd) -> Self {
+        let mut cmd = tokio::process::Command::new(c.exe());
+        cmd.args(c.args());
         cmd
     }
 }

@@ -17,7 +17,7 @@ use timeboost::proto::block::Block;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost::proto::inclusion::InclusionList;
 use timeboost::proto::internal::internal_api_client::InternalApiClient;
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::sync::Mutex;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::{Channel, Endpoint, Uri};

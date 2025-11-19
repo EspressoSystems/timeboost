@@ -70,7 +70,7 @@ mod tests {
         },
         inclusion::{InclusionList, Transaction},
     };
-    use timeboost_utils::types::logging::init_logging;
+    use timeboost_utils::logging::init_logging;
     use tokio::{
         sync::mpsc::channel,
         time::{sleep, timeout},

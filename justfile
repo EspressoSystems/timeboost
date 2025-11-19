@@ -9,9 +9,6 @@ build *ARGS:
 build-release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
-build-release-until:
-  cargo build --release --workspace --all-targets --features "until"
-
 build-docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
@@ -106,11 +103,11 @@ run *ARGS:
   cargo run {{ARGS}}
 
 bench *ARGS:
-  cargo bench --benches {{ARGS}} -- --nocapture
+    cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig nodes seed="42":
+mkconfig nodes seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
-        cargo run --release --bin configure -- \
+        target/release/configure \
             --seed "$(({{seed}} + $i))" \
             --bind "127.0.0.1:$((8000 + 10 * $i))" \
             --nitro "127.0.0.1:55000" \
@@ -128,9 +125,9 @@ mkconfig nodes seed="42":
             --output "test-configs/nodes"; \
     done
 
-mkconfig-linux nodes seed="42":
+mkconfig-linux nodes seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
-        cargo run --release --bin configure -- \
+        target/release/configure \
             --seed "$(({{seed}} + $i))" \
             --bind "11.0.0.$((1 + $i)):8000" \
             --nitro "11.0.1.0:55000" \
@@ -148,8 +145,8 @@ mkconfig-linux nodes seed="42":
             --output "test-configs/linux"; \
     done
 
-verify-blocks *ARGS:
-  cargo run --release --bin block-verifier {{ARGS}}
+verify-blocks *ARGS: build-test-utils
+    target/release/block-verifier {{ARGS}}
 
 deploy-contract host:
     cast send --value 1ether \
@@ -212,7 +209,7 @@ test-all: build-release build-test-utils
         --nodes test-configs/nodes/ \
         --blocks 300
 
-test-dyn-comm: build-release-until build-test-utils
+test-dyn-comm: build-release build-test-utils
     env RUST_LOG=info,timeboost_utils=debug \
     target/release/run \
         --verbose \
@@ -225,7 +222,7 @@ test-dyn-comm: build-release-until build-test-utils
             --committee test-configs/nodes/committees/committee-0.toml \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
-            --until 2000 \
+            --until-round 2000 \
             --verbose" \
         --spawn "6|target/release/yapper \
             --committee test-configs/nodes/committees/committee-0.toml \
@@ -236,8 +233,8 @@ test-dyn-comm: build-release-until build-test-utils
             --committee test-configs/nodes/committees/committee-1.toml \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
-            --required-decrypt-rounds 10 \
-            --until 500 \
+            --until-round 500 \
+            --until-decrypt-round 10 \
             --verbose
 
 [linux]

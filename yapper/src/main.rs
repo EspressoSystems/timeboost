@@ -12,7 +12,7 @@ use multisig::rand::seq::IndexedRandom;
 use reqwest::Url;
 use timeboost::config::{CommitteeDefinition, HTTP_API_PORT_OFFSET, NodeConfig};
 
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::signal::{
     ctrl_c,
     unix::{SignalKind, signal},

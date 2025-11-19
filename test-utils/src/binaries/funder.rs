@@ -13,7 +13,7 @@ use alloy::{
 use anyhow::Result;
 use clap::Parser;
 use timeboost::config::CommitteeDefinition;
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 use tracing::info;
 use url::Url;
 

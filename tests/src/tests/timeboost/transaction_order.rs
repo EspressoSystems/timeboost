@@ -6,7 +6,7 @@ use alloy::primitives::B256;
 use metrics::NoMetrics;
 use sailfish_types::RoundNumber;
 use timeboost::sequencer::{Output, Sequencer};
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};

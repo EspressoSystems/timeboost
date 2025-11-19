@@ -14,7 +14,7 @@ use tracing::{error, info};
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
-use timeboost_utils::types::logging;
+use timeboost_utils::logging;
 use tracing::warn;
 
 #[derive(Parser, Debug)]
@@ -33,24 +33,6 @@ struct Cli {
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
-
-    /// The until value to use for the committee config.
-    #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 1000)]
-    until: u64,
-
-    /// The watchdog timeout.
-    #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 60)]
-    watchdog_timeout: u64,
-
-    #[cfg(feature = "until")]
-    #[clap(long)]
-    start_delay: Option<u64>,
-
-    #[cfg(feature = "until")]
-    #[clap(long)]
-    required_decrypt_rounds: Option<u64>,
 
     #[cfg(feature = "times")]
     #[clap(long)]
@@ -172,76 +154,6 @@ async fn main() -> Result<()> {
         ),
     );
 
-    #[cfg(feature = "until")]
-    {
-        use std::time::Duration;
-        use timeboost_utils::until::Until;
-        use tokio::time::sleep;
-        use url::Url;
-
-        let handle = {
-            let Some(member) = committee
-                .members
-                .iter()
-                .find(|m| m.signing_key == node_config.keys.signing.public)
-            else {
-                bail!("failed to find node in committee")
-            };
-
-            let host: Url = format!(
-                "http://{}",
-                member.address.clone().with_offset(HTTP_API_PORT_OFFSET)
-            )
-            .parse()
-            .context("invalid http api address")?;
-
-            if let Some(s) = cli.start_delay {
-                warn!("delaying start by {s}s");
-                sleep(Duration::from_secs(s)).await;
-            }
-
-            let mut until = Until::new(cli.until, Duration::from_secs(cli.watchdog_timeout), host);
-            until.require_decrypted(cli.required_decrypt_rounds);
-
-            spawn(until.run())
-        };
-
-        select! {
-            res = handle => {
-                tracing::info!("watchdog completed");
-                return match res {
-                    Ok(Ok(_))  => Ok(()),
-                    Ok(Err(e)) => Err(e),
-                    Err(e)     => Err(e.into())
-                };
-            },
-            r = timeboost.go() => {
-                if let Err(err) = r {
-                    error!(%err, "fatal timeboost error")
-                }
-                bail!("timeboost shutdown unexpectedly")
-            }
-            r = &mut grpc => {
-                if let Err(err) = r {
-                    error!(%err, "fatal grpc error")
-                }
-                bail!("grpc api shutdown unexpectedly")
-            }
-            r = &mut api => {
-                if let Err(err) = r {
-                    error!(%err, "fatal api error")
-                }
-                bail!("api service shutdown unexpectedly")
-            }
-            _ = signal::ctrl_c() => {
-                warn!("received ctrl-c; shutting down");
-                api.abort();
-                grpc.abort();
-            }
-        }
-    }
-
-    #[cfg(not(feature = "until"))]
     select! {
         r = timeboost.go() => {
             if let Err(err) = r {

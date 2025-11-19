@@ -11,7 +11,7 @@ use crate::tests::consensus::helpers::shaping::{
 /// No timeouts are expected to occur.
 #[test]
 fn immediate_delivery_to_all() {
-    timeboost_utils::types::logging::init_logging();
+    timeboost_utils::logging::init_logging();
 
     let all = ["A", "B", "C", "D", "E"];
 
@@ -40,7 +40,7 @@ fn immediate_delivery_to_all() {
 /// parties except D have buffered vertex proposals.
 #[test]
 fn delayed_delivery() {
-    timeboost_utils::types::logging::init_logging();
+    timeboost_utils::logging::init_logging();
 
     let all = ["A", "B", "C", "D", "E"];
 
@@ -80,7 +80,7 @@ fn delayed_delivery() {
 /// Show that any prefix of edge delays is followed by deliver events.
 #[test]
 fn progress_after_random_prefix() {
-    timeboost_utils::types::logging::init_logging();
+    timeboost_utils::logging::init_logging();
 
     let all = ["A", "B", "C", "D", "E"];
     let mut rgen = RuleGen::new(all)
@@ -125,7 +125,7 @@ fn progress_after_random_prefix() {
 /// advance to round 2.
 #[test]
 fn delay_vertices_to_leader() {
-    timeboost_utils::types::logging::init_logging();
+    timeboost_utils::logging::init_logging();
 
     let all = ["A", "B", "C", "D", "E"];
 

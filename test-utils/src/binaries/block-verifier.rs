@@ -7,7 +7,7 @@ use alloy::{
 use anyhow::{Context, Result};
 use clap::Parser;
 use futures::future::join_all;
-use timeboost_utils::types::logging::init_logging;
+use timeboost_utils::logging::init_logging;
 use tracing::{error, info};
 
 /// Max. Difference between l2 block heights for potential race conditions when heights are fetched
