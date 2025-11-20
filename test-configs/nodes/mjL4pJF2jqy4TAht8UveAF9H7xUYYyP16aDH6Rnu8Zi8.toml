@@ -16,6 +16,13 @@ public = "EJ3ZpDXbmD9Ma1rRLY8LVGuNGjiskuGmnyzNZWXyQvRa"
 secret = "9aVdLRQM4sYKeXHqt6kNALFQyvAUQ9tXDnwMtwtzHie2"
 public = "5kA6kUeAuqVYRcUugGkngV2DJSpDDJTxzGmZdiNEsWonp5yW9oYLNJQB3n6Niyw6PW"
 
+[chain]
+id = 31337
+rpc-url = "http://127.0.0.1:8545/"
+websocket-url = "ws://127.0.0.1:8545/"
+key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+
 [espresso]
 namespace = 10101
 base-url = "https://query.decaf.testnet.espresso.network/v1/"

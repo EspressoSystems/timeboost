@@ -1,7 +1,7 @@
 use core::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::{ConfigError, read_toml};
+use crate::{ChainConfig, ConfigError, read_toml};
 use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
@@ -20,6 +20,7 @@ pub struct NodeConfig {
     pub stamp: PathBuf,
     pub net: Net,
     pub keys: NodeKeys,
+    pub chain: ChainConfig,
     pub espresso: Espresso,
 }
 

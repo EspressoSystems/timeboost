@@ -7,7 +7,9 @@ use clap::Parser;
 use cliquenet::Address;
 use multisig::x25519;
 use rand::SeedableRng;
-use timeboost_config::{CommitteeMember, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
+use timeboost_config::{
+    ChainConfig, CommitteeMember, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys,
+};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
 
@@ -32,6 +34,26 @@ struct Args {
     /// The public batch poster address.
     #[clap(long, short)]
     batchposter: Address,
+
+    /// Chain rpc url
+    #[clap(long)]
+    chain_rpc_url: Url,
+
+    /// Chain websocket url
+    #[clap(long)]
+    chain_websocket_url: Url,
+
+    /// Parent chain id
+    #[clap(long)]
+    chain_id: u64,
+
+    /// Inbox contract address
+    #[clap(long)]
+    inbox_contract: alloy::primitives::Address,
+
+    /// Committee contract address
+    #[clap(long)]
+    committee_contract: alloy::primitives::Address,
 
     /// Espresso namespace ID.
     #[clap(long)]
@@ -107,6 +129,13 @@ impl Args {
                     secret: dkg_dec_key.clone(),
                     public: DkgEncKey::from(&dkg_dec_key),
                 },
+            },
+            chain: ChainConfig {
+                id: self.chain_id,
+                rpc_url: self.chain_rpc_url,
+                websocket_url: self.chain_websocket_url,
+                inbox_contract: self.inbox_contract,
+                key_management_contract: self.committee_contract,
             },
             espresso: Espresso {
                 namespace: self.espresso_namespace,
