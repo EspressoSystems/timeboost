@@ -9,7 +9,7 @@ use alloy::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use reqwest::Client;
-use timeboost_config::{CommitteeDefinition, CommitteeMember, HTTP_API_PORT_OFFSET};
+use timeboost_config::{CommitteeContract, CommitteeDefinition};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
@@ -49,8 +49,6 @@ enum Command {
         contract: alloy::primitives::Address,
         #[arg(long)]
         mnemonic: String,
-        #[arg(long)]
-        committee: PathBuf,
     },
 }
 
@@ -105,25 +103,26 @@ async fn main() -> Result<()> {
                 .get_receipt()
                 .await?;
 
-            println!("registered new committee");
+            println!("registered new committee with id {}", committee.id);
         }
         Command::RegisterKey {
             index,
             rpc_url,
             contract,
             mnemonic,
-            committee,
         } => {
-            let committee = CommitteeDefinition::read(&committee).await?;
+            let mut committee_contract = CommitteeContract::new(
+                &rpc_url, &rpc_url, // unused
+                contract,
+            );
+            let Some(committee) = committee_contract.current().await? else {
+                bail!("no current config on contract")
+            };
             let provider = build_provider(mnemonic, index, rpc_url)?;
-            if provider.get_code_at(contract).await?.is_empty() {
-                bail!("invalid key manager contract address: {contract}");
-            }
+
             let manager = KeyManager::new(contract, provider);
             let mut urls = Vec::new();
-            for m in committee.member {
-                let member = CommitteeMember::read(&m.config).await?;
-                let addr = member.address.with_offset(HTTP_API_PORT_OFFSET);
+            for (_, _, addr) in committee.http_api().entries() {
                 let url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
                     .with_context(|| format!("parsing {addr} into a url"))?;
                 urls.push(url)

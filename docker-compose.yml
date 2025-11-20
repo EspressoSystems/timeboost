@@ -85,9 +85,15 @@ services:
       - "config:/config"
     entrypoint: |
       bash -c '
-        mkdir /config/docker
-        mkdir /config/docker/committees
+        mkdir /config/committees
         set -euo pipefail
+        cat <<EOF > /config/chain.toml
+      id = 1337
+      rpc-url = "http://demo-l1-network:8545/"
+      websocket-url = "ws://demo-l1-network:8546/"
+      key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+      inbox-contract = "$$(jq -r ".inbox" /config/deployment.json)"
+      EOF
         for i in $$(seq 0 3); do
           batch_poster_port=$$((8547 + i * 10))
           echo "Running configure for node $$i with seed $$((42 + i)) and batch poster port $${batch_poster_port}"
@@ -100,19 +106,14 @@ services:
             --espresso-namespace 412346 \
             --espresso-base-url "http://espresso-dev-node:41000/v1/" \
             --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
-            --chain-rpc-url "http://demo-l1-network:8545" \
-            --chain-websocket-url "ws://demo-l1-network:8546" \
-            --chain-id 1337 \
-            --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
-            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
-            --output "/config/docker"
+            --output "/config"
         done
         /app/assemble \
           --committee 0 \
           --start 2025-10-01T00:00:00Z \
-          --output /config/docker/committees/docker.toml \
-          /config/docker/*.public.toml
+          --output /config/committees/docker.toml \
+          /config/*.public.toml
       '
     networks:
       - timeboost
@@ -134,13 +135,13 @@ services:
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" \
           --rpc-url "http://demo-l1-network:8545" && \
         /app/contract register-committee \
-          --committee /config/docker/committees/docker.toml \
+          --committee /config/committees/docker.toml \
           --index 0 \
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
         /app/funder \
-          --committee "/config/docker/committees/docker.toml" \
+          --committee "/config/committees/docker.toml" \
           --parent-rpc-url "http://demo-l1-network:8545"
     networks:
       - timeboost
@@ -332,7 +333,9 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml",
+        "--chain",
+        "/config/chain.toml"
       ]
     volumes:
       - "config:/config"
@@ -367,7 +370,9 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/docker/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
+        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml",
+        "--chain",
+        "/config/chain.toml"
       ]
     volumes:
       - "config:/config"
@@ -402,7 +407,9 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
+        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml",
+        "--chain",
+        "/config/chain.toml"        
       ]
     volumes:
       - "config:/config"
@@ -437,7 +444,9 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
+        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml",
+        "--chain",
+        "/config/chain.toml"
       ]
     volumes:
       - "config:/config"
@@ -478,7 +487,6 @@ services:
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" \
           --rpc-url "http://demo-l1-network:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-          --committee "/config/docker/committees/docker.toml" \
           --index 0
     depends_on:
       nitro0:
@@ -497,10 +505,14 @@ services:
     command:
       [
         "/app/block-checker",
-        "--committee",
-        "/config/docker/committees/docker.toml",
-        "--nodes",
-        "/config/docker/",
+        "--chain",
+        "/config/chain.toml",
+        "--namespace", 
+        "412346",
+        "--espresso-base-url", 
+        "http://espresso-dev-node:41000/v1/",
+        "--espresso-websocket-base-url",
+        "ws://espresso-dev-node:41000/v1/",
         "--https-only",
         "false",
         "--blocks",
@@ -513,7 +525,7 @@ services:
     networks:
       - timeboost
     depends_on:
-      config-producer:
+      contract-deployer:
         condition: service_completed_successfully
     restart: on-failure
   block-verifier:
@@ -531,17 +543,17 @@ services:
     depends_on:
       block-checker:
         condition: service_completed_successfully
-  yapper:
+  tx-generator:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     command:
       [
-        "/app/yapper",
-        "--committee",
-        "/config/docker/committees/docker.toml",
+        "/app/tx-generator",
+        "--chain",
+        "/config/chain.toml",
         "--nitro-url",
         "http://nitro0:8547",
-        "--nodes",
-        "/config/docker/",
+        "--namespace",
+        "412346",
         "--tps",
         "10"
       ]

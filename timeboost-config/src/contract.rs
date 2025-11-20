@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{CommitteeConfig, CommitteeMember, NodeConfig};
+use crate::{ChainConfig, CommitteeConfig, CommitteeMember};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
@@ -95,11 +95,20 @@ impl CommitteeContract {
     }
 }
 
-impl From<&NodeConfig> for CommitteeContract {
-    fn from(cfg: &NodeConfig) -> Self {
-        let contract = &cfg.committee.contract;
-        Self::new(&contract.rpc_url, &contract.websocket_url, contract.address)
+impl From<&ChainConfig> for CommitteeContract {
+    fn from(cfg: &ChainConfig) -> Self {
+        Self::new(
+            &cfg.rpc_url,
+            &cfg.websocket_url,
+            cfg.key_management_contract,
+        )
     }
+}
+
+async fn fetch_current(provider: &HttpProvider, addr: &Address) -> Result<Option<CommitteeConfig>> {
+    let contract = KeyManager::new(*addr, provider);
+    let committee = contract.currentCommitteeId().call().await?;
+    fetch(provider, addr, committee.into()).await
 }
 
 async fn fetch(

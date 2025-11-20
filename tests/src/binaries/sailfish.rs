@@ -12,7 +12,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::config::{CommitteeContract, NodeConfig};
+use timeboost::config::{ChainConfig, CommitteeContract, NodeConfig};
 use timeboost_utils::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
@@ -24,6 +24,9 @@ struct Cli {
     /// Path to node configuration.
     #[clap(long, short)]
     node: PathBuf,
+
+    #[clap(long)]
+    committee: CommitteeId,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -68,9 +71,9 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.node)
+    let node = NodeConfig::read(&cli.node)
         .await
-        .context("Failed to read node config")?;
+        .context("failed to read node config")?;
 
     let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
     let sign_pubkey = signing_keypair.public_key();
@@ -93,7 +96,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        config.net.bind.clone(),
+        node.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         committee.sailfish().entries(),
@@ -105,7 +108,7 @@ async fn main() -> Result<()> {
     let recover = if cli.ignore_stamp {
         false
     } else {
-        tokio::fs::try_exists(&config.stamp).await?
+        tokio::fs::try_exists(&node.stamp).await?
     };
 
     let committee = committee.committee();
@@ -127,7 +130,7 @@ async fn main() -> Result<()> {
     let mut writer = timeboost::times::TimesWriter::new(config.keys.signing.public);
 
     // Create proof of execution.
-    tokio::fs::File::create(config.stamp)
+    tokio::fs::File::create(node.stamp)
         .await?
         .sync_all()
         .await?;

@@ -1,22 +1,31 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use either::Either;
-use multisig::rand::{self, seq::IndexedRandom};
+use reqwest::Url;
 use robusta::{Client, Config, Watcher, espresso_types::NamespaceId};
 use sailfish::types::CommitteeVec;
-use timeboost::config::{CommitteeDefinition, NodeConfig};
+use timeboost::config::{ChainConfig, CommitteeContract};
 use timeboost_utils::logging::init_logging;
 use tracing::info;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    nodes: PathBuf,
+    chain: PathBuf,
 
-    #[clap(long)]
-    committee: PathBuf,
+    #[clap(long, short)]
+    namespace: u64,
+
+    #[clap(long, short)]
+    espresso_base_url: Url,
+
+    #[clap(long, short)]
+    espresso_websocket_base_url: Url,
+
+    #[clap(long, short)]
+    espresso_builder_base_url: Option<Url>,
 
     #[clap(long, short)]
     blocks: usize,
@@ -31,26 +40,27 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let definition = CommitteeDefinition::read(&args.committee).await?;
-    let committee = definition.to_config().await?;
-    let committees = CommitteeVec::<1>::new(committee.sailfish().committee().clone());
-    let Some(member) = committee.members.choose(&mut rand::rng()) else {
-        bail!("committee {:?} has no members", args.committee)
-    };
+    let chain_config = ChainConfig::read(&args.chain)
+        .await
+        .with_context(|| format!("could not read chain config {:?}", args.chain))?;
+    let mut contract = CommitteeContract::from(&chain_config);
 
-    let node = NodeConfig::read(args.nodes.join(format!("{}.toml", member.signing_key))).await?;
+    let Some(committee_config) = contract.current().await? else {
+        bail!("no current committee");
+    };
+    let committees = CommitteeVec::<1>::new(committee_config.committee());
 
     let conf = Config::builder()
         .https_only(args.https_only)
-        .base_url(node.espresso.base_url)
-        .maybe_builder_base_url(node.espresso.builder_base_url)
-        .wss_base_url(node.espresso.websockets_base_url)
+        .base_url(args.espresso_base_url)
+        .maybe_builder_base_url(args.espresso_builder_base_url)
+        .wss_base_url(args.espresso_websocket_base_url)
         .label("block-checker")
         .build();
 
     let client = Client::new(conf.clone());
     let height = client.height().await?;
-    let nspace = NamespaceId::from(node.espresso.namespace);
+    let nspace = NamespaceId::from(args.namespace);
 
     let mut watcher = Watcher::new(conf, height, nspace);
     let mut set = BTreeSet::new();
