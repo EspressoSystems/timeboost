@@ -338,9 +338,7 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml",
-        "--chain",
-        "/config/chain.toml"
+        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
       ]
     volumes:
       - "config:/config"
@@ -375,9 +373,7 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml",
-        "--chain",
-        "/config/chain.toml"
+        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
       ]
     volumes:
       - "config:/config"
@@ -412,9 +408,7 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml",
-        "--chain",
-        "/config/chain.toml"        
+        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
       ]
     volumes:
       - "config:/config"
@@ -449,9 +443,7 @@ services:
         "--https-only",
         "false",
         "--node",
-        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml",
-        "--chain",
-        "/config/chain.toml"
+        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
       ]
     volumes:
       - "config:/config"
