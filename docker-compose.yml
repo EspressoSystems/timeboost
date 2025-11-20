@@ -331,8 +331,6 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--committee",
-        "0",
         "--node",
         "/config/docker/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
       ]
@@ -366,8 +364,6 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee",
-        "0",
         "--https-only",
         "false",
         "--node",
@@ -405,8 +401,6 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--committee",
-        "0",
         "--node",
         "/config/docker/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
       ]
@@ -442,8 +436,6 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--committee",
-        "0",
         "--node",
         "/config/docker/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
       ]

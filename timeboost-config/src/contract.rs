@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use crate::{CommitteeConfig, CommitteeMember, NodeConfig};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use futures::StreamExt;
-use futures::stream::BoxStream;
+use futures::stream::{self, BoxStream};
 use multisig::{CommitteeId, x25519};
-use timeboost_contract::KeyManager::{self, CommitteeCreated};
+use timeboost_contract::KeyManager::{self, CommitteeCreated, CommitteeIdDoesNotExist};
 use timeboost_contract::provider::{HttpProvider, PubSubProvider};
 use timeboost_crypto::prelude::DkgEncKey;
 use tracing::error;
@@ -29,6 +29,15 @@ impl CommitteeContract {
         }
     }
 
+    pub async fn active(&mut self) -> Result<CommitteeConfig> {
+        let km = KeyManager::new(self.contract, &self.provider);
+        let id = km.currentCommitteeId().call().await?;
+        let Some(cfg) = fetch(&self.provider, &self.contract, id.into()).await? else {
+            bail!("no committee for id {id} at address {}", self.contract)
+        };
+        Ok(cfg)
+    }
+
     pub async fn get(&mut self, id: CommitteeId) -> Result<Option<CommitteeConfig>> {
         fetch(&self.provider, &self.contract, id).await
     }
@@ -47,6 +56,15 @@ impl CommitteeContract {
     ) -> Result<BoxStream<'static, CommitteeConfig>> {
         let contract = KeyManager::new(self.contract, &self.provider);
         let committee = contract.getCommitteeById(start.into()).call().await?;
+
+        // Collect all committees already available after `start`:
+        let mut cursor = start;
+        let mut available = Vec::new();
+        while let Some(c) = self.next(cursor).await? {
+            cursor = c.id;
+            available.push(c)
+        }
+
         let provider = Arc::new(PubSubProvider::new(self.websocket_url.clone()).await?);
         let address = self.contract;
         let stream = provider
@@ -71,10 +89,9 @@ impl CommitteeContract {
                         }
                     }
                 }
-            })
-            .boxed();
+            });
 
-        Ok(stream)
+        Ok(stream::iter(available).chain(stream).boxed())
     }
 }
 
@@ -91,7 +108,16 @@ async fn fetch(
     id: CommitteeId,
 ) -> Result<Option<CommitteeConfig>> {
     let contract = KeyManager::new(*addr, provider);
-    let committee = contract.getCommitteeById(id.into()).call().await?;
+    let committee = match contract.getCommitteeById(id.into()).call().await {
+        Ok(c) => c,
+        Err(err) => {
+            if err.as_decoded_error::<CommitteeIdDoesNotExist>().is_some() {
+                return Ok(None);
+            } else {
+                return Err(err.into());
+            }
+        }
+    };
 
     let mut cfg = CommitteeConfig {
         id,
