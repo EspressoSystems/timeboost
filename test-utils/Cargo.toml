@@ -32,7 +32,6 @@ scenario = ["dep:jiff", "dep:serde"]
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-rand = { workspace = true }
 rustix = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -40,13 +39,16 @@ url = { workspace = true }
 # optional
 alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
+bon = { workspace = true }
 bytes = { workspace = true, optional = true }
+cliquenet = { path = "../cliquenet", optional = true }
 either = { workspace = true, optional = true }
 ipnet = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 multisig = { path = "../multisig", optional = true }
 prost = { workspace = true, optional = true }
 quick_cache = { workspace = true, optional = true }
+reqwest = { workspace = true }
 robusta = { path = "../robusta", optional = true }
 sailfish = { path = "../sailfish", optional = true }
 serde = { workspace = true, optional = true }
@@ -54,6 +56,7 @@ tokio-util = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost = { path = "../timeboost", optional = true }
+timeboost-contract = { workspace = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
 
 [[bin]]
@@ -94,3 +97,7 @@ path = "src/binaries/funder.rs"
 [[bin]]
 name = "assemble"
 path = "src/binaries/assemble.rs"
+
+[[bin]]
+name = "tx-generator"
+path = "src/binaries/tx-generator.rs"

@@ -4,13 +4,13 @@ use anyhow::{Context, Result, bail};
 use multisig::{CommitteeId, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_config::CommitteeContract;
+use timeboost_config::{ChainConfig, CommitteeContract};
 use timeboost_config::{GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
-use timeboost_types::{ThresholdKeyCell, Timestamp};
+use timeboost_types::ThresholdKeyCell;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::{error, info};
+use tracing::error;
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
@@ -23,8 +23,13 @@ struct Cli {
     #[clap(long, short)]
     node: PathBuf,
 
+    /// This node's initial committee.
     #[clap(long)]
     committee: CommitteeId,
+
+    /// Parent chain config file.
+    #[clap(long, short)]
+    chain: PathBuf,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
@@ -63,6 +68,10 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    let chain_config = ChainConfig::read(&cli.chain)
+        .await
+        .with_context(|| format!("could not read chain config {:?}", cli.chain))?;
+
     let node_config = NodeConfig::read(&cli.node)
         .await
         .with_context(|| format!("could not read node config {:?}", cli.node))?;
@@ -70,26 +79,13 @@ async fn main() -> Result<()> {
     let sign_keypair = Keypair::from(node_config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&node_config);
+    let mut contract = CommitteeContract::from(&chain_config);
 
     let Some(committee) = contract.get(cli.committee).await? else {
-        bail!("no config for committee id {}", cli.committee)
+        bail!("contract error");
     };
 
-    let prev_committee = if committee.effective > Timestamp::now() {
-        let Some(prev) = contract.prev(committee.id).await? else {
-            bail!("no committee before {}", committee.id)
-        };
-        info!(
-            node      = %sign_keypair.public_key(),
-            committee = %committee.id,
-            previous  = %prev.id,
-            "awaiting previous committee"
-        );
-        Some(prev)
-    } else {
-        None
-    };
+    let prev_committee = contract.prev(cli.committee).await?;
 
     let is_recover = !cli.ignore_stamp && node_config.stamp.is_file();
 
@@ -141,7 +137,7 @@ async fn main() -> Result<()> {
         ))
         .namespace(node_config.espresso.namespace)
         .max_transaction_size(node_config.espresso.max_transaction_size)
-        .chain_config(node_config.chain.clone());
+        .chain_config(chain_config.clone());
 
     #[cfg(feature = "times")]
     let config = config.times_until(cli.times_until).build();

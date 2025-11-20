@@ -12,7 +12,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::config::{CommitteeContract, NodeConfig};
+use timeboost::config::{ChainConfig, CommitteeContract, NodeConfig};
 use timeboost_utils::types::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
@@ -27,6 +27,9 @@ struct Cli {
 
     #[clap(long)]
     committee: CommitteeId,
+
+    #[clap(long, short)]
+    chain: PathBuf,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -71,18 +74,21 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.node)
+    let chain = ChainConfig::read(&cli.chain)
         .await
-        .context("Failed to read node config")?;
+        .context("failed to read node config")?;
+    let node = NodeConfig::read(&cli.node)
+        .await
+        .context("failed to read node config")?;
 
-    let mut contract = CommitteeContract::from(&config);
+    let mut contract = CommitteeContract::from(&chain);
 
     let Some(committee) = contract.get(cli.committee).await? else {
-        bail!("no config for committee id {}", cli.committee)
+        bail!("failed to read committee")
     };
 
-    let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
-    let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
+    let signing_keypair = Keypair::from(node.keys.signing.secret.clone());
+    let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
@@ -94,7 +100,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        config.net.bind.clone(),
+        node.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         committee.sailfish().entries(),
@@ -106,7 +112,7 @@ async fn main() -> Result<()> {
     let recover = if cli.ignore_stamp {
         false
     } else {
-        tokio::fs::try_exists(&config.stamp).await?
+        tokio::fs::try_exists(&node.stamp).await?
     };
 
     let committee = committee.committee();
@@ -128,7 +134,7 @@ async fn main() -> Result<()> {
     let mut writer = timeboost::times::TimesWriter::new(config.keys.signing.public);
 
     // Create proof of execution.
-    tokio::fs::File::create(config.stamp)
+    tokio::fs::File::create(node.stamp)
         .await?
         .sync_all()
         .await?;

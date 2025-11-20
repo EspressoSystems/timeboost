@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
 
-use crate::{CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET, read_toml};
+use crate::{
+    CERTIFIER_PORT_OFFSET, ConfigError, DECRYPTER_PORT_OFFSET, HTTP_API_PORT_OFFSET, read_toml,
+};
 
 pub use definition::{CommitteeDefinition, MemberFile};
 
@@ -69,6 +71,17 @@ impl CommitteeConfig {
                 m.signing_key,
                 m.dh_key,
                 m.address.clone().with_offset(CERTIFIER_PORT_OFFSET),
+            )
+        });
+        AddressableCommittee::new(self.committee(), addrs)
+    }
+
+    pub fn http_api(&self) -> AddressableCommittee {
+        let addrs = self.members.iter().map(|m| {
+            (
+                m.signing_key,
+                m.dh_key,
+                m.address.clone().with_offset(HTTP_API_PORT_OFFSET),
             )
         });
         AddressableCommittee::new(self.committee(), addrs)

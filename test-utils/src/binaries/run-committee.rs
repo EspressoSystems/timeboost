@@ -1,22 +1,28 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
-use rand::seq::IndexedRandom;
-use test_utils::net::Config;
+use multisig::CommitteeId;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
-use timeboost::config::{CommitteeContract, CommitteeDefinition, NodeConfig};
+use timeboost::config::{ChainConfig, CommitteeContract};
 use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};
 use tokio_util::task::TaskTracker;
 
+#[cfg(target_os = "linux")]
+use test_utils::net::Config;
+
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long)]
-    committee: PathBuf,
+    chain: PathBuf,
+
+    #[clap(long)]
+    committee: CommitteeId,
 
     #[clap(long)]
     nodes: PathBuf,
@@ -67,28 +73,19 @@ async fn main() -> Result<()> {
         bail!("{:?} is not a file", args.timeboost)
     }
 
-    let definition = CommitteeDefinition::read(&args.committee).await?;
-    let committee = definition.to_config().await?;
-    let Some(member) = committee.members.choose(&mut rand::rng()) else {
-        bail!("committee {:?} has no members", args.committee)
+    let chain_config = ChainConfig::read(&args.chain)
+        .await
+        .with_context(|| format!("could not read chain config {:?}", args.chain))?;
+
+    let mut contract = CommitteeContract::from(&chain_config);
+
+    let Some(committee) = contract.get(args.committee).await? else {
+        bail!("committee not found",);
     };
 
-    let node = NodeConfig::read(args.nodes.join(format!("{}.toml", member.signing_key))).await?;
-    let mut service = CommitteeContract::from(&node);
+    let prev_committee = contract.prev(args.committee).await?;
 
-    let Some(committee) = service.get(committee.id).await? else {
-        bail!("committee not found: {}", committee.id)
-    };
-
-    let prev_committee = if committee.effective > Timestamp::now() {
-        let Some(prev) = service.prev(committee.id).await? else {
-            bail!("no committee before {}", committee.id)
-        };
-        Some(prev)
-    } else {
-        None
-    };
-
+    #[cfg(target_os = "linux")]
     let netconf: Option<Config> = if let Some(net) = &args.net {
         let bytes = fs::read(net).await?;
         Some(toml::from_slice(&bytes)?)
@@ -110,7 +107,9 @@ async fn main() -> Result<()> {
         cmd.with_arg("--node")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)))
             .with_arg("--committee")
-            .with_arg(committee.id.to_string());
+            .with_arg(args.committee.to_string())
+            .with_arg("--chain")
+            .with_arg(&args.chain);
         if let Some(until) = args.until {
             cmd.with_args(["--until", &until.to_string()]);
         }

@@ -21,7 +21,7 @@ RUN apt update && apt-get install -y libcurl4 openssl jq
 RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
 COPY --from=builder /app/target/release/timeboost .
-COPY --from=builder /app/target/release/yapper .
+COPY --from=builder /app/target/release/tx-generator .
 COPY --from=builder /app/target/release/contract .
 COPY --from=builder /app/target/release/block-maker .
 COPY --from=builder /app/target/release/block-checker .
@@ -36,7 +36,7 @@ RUN chmod +x /usr/local/bin/forge /usr/local/bin/cast
 
 RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/timeboost \
-    /app/yapper \
+    /app/tx-generator \
     /app/contract \
     /app/block-maker \
     /app/block-checker \

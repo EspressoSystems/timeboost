@@ -5,14 +5,14 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use clap::Parser;
 use multisig::PublicKey;
 use prost::Message;
 use quick_cache::sync::Cache;
 use sailfish::types::RoundNumber;
-use timeboost::config::{CommitteeDefinition, GRPC_API_PORT_OFFSET};
+use timeboost::config::{ChainConfig, CommitteeContract, GRPC_API_PORT_OFFSET};
 use timeboost::proto::block::Block;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost::proto::inclusion::InclusionList;
@@ -30,7 +30,7 @@ struct Args {
     bind: SocketAddr,
 
     #[clap(long)]
-    committee: PathBuf,
+    chain: PathBuf,
 
     #[clap(long, default_value_t = 10_000)]
     capacity: usize,
@@ -133,8 +133,14 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let definition = CommitteeDefinition::read(&args.committee).await?;
-    let committee = definition.to_config().await?;
+    let chain_config = ChainConfig::read(&args.chain)
+        .await
+        .with_context(|| format!("could not read chain config {:?}", args.chain))?;
+    let mut contract = CommitteeContract::from(&chain_config);
+
+    let Some(committee) = contract.current().await? else {
+        bail!("no current committee");
+    };
 
     let mut srv = Service::new();
     for member in committee.members {

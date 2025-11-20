@@ -16,17 +16,6 @@ public = "B65CLdoYGSRtXRR4YU2wqzpqrwcd4KHiQqgaW5ShnoY6"
 secret = "5Fwo9VHphxfWK3vT5zTWsKaZRzXSgHYn3XZL5rQdRU4s"
 public = "7KgCqy1taizFPX2v5CvZit8HDnNPQF2M7EbHHy24a3banaKkqeqye6kM4apnbjZMhd"
 
-[committee.contract]
-rpc-url = "http://127.0.0.1:8545/"
-websocket-url = "ws://127.0.0.1:8545/"
-address = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
-
-[chain]
-id = 31337
-rpc-url = "http://127.0.0.1:8545/"
-inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
-inbox-block-tag = "finalized"
-
 [espresso]
 namespace = 10101
 base-url = "https://query.decaf.testnet.espresso.network/v1/"
