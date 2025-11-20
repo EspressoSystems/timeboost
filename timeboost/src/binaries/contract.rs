@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
         } => {
             let p = ProviderBuilder::new().connect_http(rpc_url.clone());
             let Some(committee) = CommitteeContract::fetch_current(&p, &contract).await? else {
-                bail!("no current config on contract")
+                bail!("no active committee on contract")
             };
             let provider = build_provider(mnemonic, index, rpc_url)?;
 

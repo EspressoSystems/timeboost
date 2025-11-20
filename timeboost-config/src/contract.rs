@@ -30,10 +30,8 @@ impl CommitteeContract {
     }
 
     pub async fn active(&mut self) -> Result<CommitteeConfig> {
-        let km = KeyManager::new(self.contract, &self.provider);
-        let id = km.currentCommitteeId().call().await?;
-        let Some(cfg) = fetch(&self.provider, &self.contract, id.into()).await? else {
-            bail!("no committee for id {id} at address {}", self.contract)
+        let Some(cfg) = Self::fetch_current(&self.provider, &self.contract).await? else {
+            bail!("no active committee on contract {}", self.contract)
         };
         Ok(cfg)
     }
@@ -94,13 +92,13 @@ impl CommitteeContract {
         Ok(stream::iter(available).chain(stream).boxed())
     }
 
-    async fn fetch_current(
+    pub async fn fetch_current(
         provider: &HttpProvider,
         addr: &Address,
     ) -> Result<Option<CommitteeConfig>> {
         let contract = KeyManager::new(*addr, provider);
         let committee = contract.currentCommitteeId().call().await?;
-        fetch(provider, addr, committee.into()).await
+        Self::fetch(provider, addr, committee.into()).await
     }
 
     async fn fetch(

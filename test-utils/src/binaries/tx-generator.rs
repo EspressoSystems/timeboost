@@ -427,8 +427,8 @@ async fn main() -> Result<()> {
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
 
     let mut contract = CommitteeContract::from(&chain_config);
-    let Some(committee) = contract.current().await? else {
-        bail!("no current config on contract")
+    let Ok(committee) = contract.active().await else {
+        bail!("no active committee on contract")
     };
 
     let mut urls = Vec::new();

@@ -138,8 +138,8 @@ async fn main() -> Result<()> {
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
     let mut contract = CommitteeContract::from(&chain_config);
 
-    let Some(committee) = contract.current().await? else {
-        bail!("no current committee");
+    let Ok(committee) = contract.active().await else {
+        bail!("no active committee");
     };
 
     let mut srv = Service::new();

@@ -12,7 +12,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::config::{ChainConfig, CommitteeContract, NodeConfig};
+use timeboost::config::{CommitteeContract, NodeConfig};
 use timeboost_utils::logging;
 use tokio::{select, signal};
 use tracing::{error, info};
@@ -24,9 +24,6 @@ struct Cli {
     /// Path to node configuration.
     #[clap(long, short)]
     node: PathBuf,
-
-    #[clap(long)]
-    committee: CommitteeId,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -75,11 +72,11 @@ async fn main() -> Result<()> {
         .await
         .context("failed to read node config")?;
 
-    let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
+    let signing_keypair = Keypair::from(node.keys.signing.secret.clone());
     let sign_pubkey = signing_keypair.public_key();
-    let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
+    let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&config);
+    let mut contract = CommitteeContract::from(&node.chain);
     let committee = contract.active().await?;
 
     if committee.member(&sign_pubkey).is_none() {

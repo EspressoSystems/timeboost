@@ -45,8 +45,8 @@ async fn main() -> Result<()> {
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
     let mut contract = CommitteeContract::from(&chain_config);
 
-    let Some(committee_config) = contract.current().await? else {
-        bail!("no current committee");
+    let Ok(committee_config) = contract.active().await else {
+        bail!("no active committee");
     };
     let committees = CommitteeVec::<1>::new(committee_config.committee());
 

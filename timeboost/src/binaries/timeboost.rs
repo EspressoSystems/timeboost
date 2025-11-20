@@ -6,7 +6,7 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_config::CommitteeContract;
 use timeboost_config::{GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
-use timeboost_types::{ThresholdKeyCell, Timestamp};
+use timeboost_types::ThresholdKeyCell;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
