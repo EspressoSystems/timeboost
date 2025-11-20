@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
                 .get_receipt()
                 .await?;
 
-            println!("registered new committee with id {}", committee.id);
+            println!("registered new committee");
         }
         Command::RegisterKey {
             index,

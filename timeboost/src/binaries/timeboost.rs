@@ -6,11 +6,11 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_config::{ChainConfig, CommitteeContract};
 use timeboost_config::{GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET};
-use timeboost_types::ThresholdKeyCell;
+use timeboost_types::{ThresholdKeyCell, Timestamp};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::error;
+use tracing::{error, info};
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let node_config = NodeConfig::read(&cli.node)
+    let node = NodeConfig::read(&cli.node)
         .await
         .with_context(|| format!("could not read node config {:?}", cli.node))?;
 
@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let sign_pubkey = sign_keypair.public_key();
     let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&node);
+    let mut contract = CommitteeContract::from(&node.chain);
     let mut committee = contract.active().await?;
     let mut prev_committee = None;
 
