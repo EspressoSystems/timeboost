@@ -4,7 +4,7 @@ use core::fmt;
 use std::path::Path;
 
 use cliquenet::{Address, AddressableCommittee};
-use multisig::{Committee, CommitteeId, x25519};
+use multisig::{Committee, CommitteeId, PublicKey, x25519};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
@@ -22,7 +22,7 @@ pub struct CommitteeConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitteeMember {
-    pub signing_key: multisig::PublicKey,
+    pub signing_key: PublicKey,
     pub dh_key: x25519::PublicKey,
     pub dkg_enc_key: DkgEncKey,
     pub address: Address,
@@ -81,6 +81,10 @@ impl CommitteeConfig {
             .enumerate()
             .map(|(i, m)| (i as u8, m.dkg_enc_key.clone()));
         KeyStore::new(self.committee(), keys)
+    }
+
+    pub fn member(&self, key: &PublicKey) -> Option<&CommitteeMember> {
+        self.members.iter().find(|m| m.signing_key == *key)
     }
 }
 

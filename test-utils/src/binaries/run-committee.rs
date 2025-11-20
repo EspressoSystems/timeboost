@@ -121,9 +121,7 @@ async fn main() -> Result<()> {
         }
         let mut cmd = Cmd::new(&args.timeboost);
         cmd.with_arg("--node")
-            .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)))
-            .with_arg("--committee")
-            .with_arg(committee.id.to_string());
+            .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
         if let Some(t) = args.times_until {
             cmd.with_args(["--times-until", &t.to_string()]);
         }

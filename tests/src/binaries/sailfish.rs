@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use metrics::prometheus::PrometheusMetrics;
-use multisig::{CommitteeId, Keypair, x25519};
+use multisig::{Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
@@ -24,9 +24,6 @@ struct Cli {
     /// Path to node configuration.
     #[clap(long, short)]
     node: PathBuf,
-
-    #[clap(long)]
-    committee: CommitteeId,
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -75,14 +72,16 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to read node config")?;
 
-    let mut contract = CommitteeContract::from(&config);
-
-    let Some(committee) = contract.get(cli.committee).await? else {
-        bail!("no config for committee id {}", cli.committee)
-    };
-
     let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
+    let sign_pubkey = signing_keypair.public_key();
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
+
+    let mut contract = CommitteeContract::from(&config);
+    let committee = contract.active().await?;
+
+    if committee.member(&sign_pubkey).is_none() {
+        bail!("{sign_pubkey} not a member of the active committee")
+    }
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
