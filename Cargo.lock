@@ -210,7 +210,7 @@ dependencies = [
 [[package]]
 name = "alloy-compat"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "ethers-core",
@@ -3005,7 +3005,7 @@ checksum = "8030735ecb0d128428b64cd379809817e620a40e5001c54465b99ec5feec2857"
 dependencies = [
  "futures-core",
  "prost 0.13.5",
- "prost-types 0.13.5",
+ "prost-types",
  "tonic 0.12.3",
  "tracing-core",
 ]
@@ -3024,7 +3024,7 @@ dependencies = [
  "humantime",
  "hyper-util",
  "prost 0.13.5",
- "prost-types 0.13.5",
+ "prost-types",
  "serde",
  "serde_json",
  "thread_local",
@@ -4088,7 +4088,7 @@ source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4
 [[package]]
 name = "espresso-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "alloy-compat",
@@ -5035,7 +5035,7 @@ dependencies = [
 [[package]]
 name = "hotshot"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5078,7 +5078,7 @@ dependencies = [
 [[package]]
 name = "hotshot-builder-api"
 version = "0.1.7"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "async-trait",
  "clap",
@@ -5097,7 +5097,7 @@ dependencies = [
 [[package]]
 name = "hotshot-contract-adapter"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5126,7 +5126,7 @@ dependencies = [
 [[package]]
 name = "hotshot-events-service"
 version = "0.1.57"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "async-broadcast",
@@ -5151,7 +5151,7 @@ dependencies = [
 [[package]]
 name = "hotshot-example-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5181,7 +5181,7 @@ dependencies = [
 [[package]]
 name = "hotshot-libp2p-networking"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5212,7 +5212,7 @@ dependencies = [
 [[package]]
 name = "hotshot-macros"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "derive_builder",
  "proc-macro2",
@@ -5223,7 +5223,7 @@ dependencies = [
 [[package]]
 name = "hotshot-query-service"
 version = "0.1.76"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5276,7 +5276,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "async-broadcast",
  "async-trait",
@@ -5289,7 +5289,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task-impls"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5327,7 +5327,7 @@ dependencies = [
 [[package]]
 name = "hotshot-testing"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5369,7 +5369,7 @@ dependencies = [
 [[package]]
 name = "hotshot-types"
 version = "0.1.11"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5428,7 +5428,7 @@ dependencies = [
 [[package]]
 name = "hotshot-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "tracing",
 ]
@@ -5955,9 +5955,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.43.2"
+version = "1.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46fdb647ebde000f43b5b53f773c30cf9b0cb4300453208713fa38b2c70935a0"
+checksum = "b246c455fbf8e7bdda56a226b525b24b601c0bbe15458beb72412678319cda5a"
 dependencies = [
  "console",
  "once_cell",
@@ -7362,12 +7362,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multimap"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
-
-[[package]]
 name = "multisig"
 version = "0.1.0"
 dependencies = [
@@ -7984,16 +7978,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "petgraph"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
-dependencies = [
- "fixedbitset",
- "indexmap 2.12.0",
-]
-
-[[package]]
 name = "pharos"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8490,28 +8474,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prost-build"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
-dependencies = [
- "heck 0.5.0",
- "itertools 0.14.0",
- "log",
- "multimap",
- "once_cell",
- "petgraph",
- "prettyplease",
- "prost 0.14.1",
- "prost-types 0.14.1",
- "pulldown-cmark",
- "pulldown-cmark-to-cmark",
- "regex",
- "syn 2.0.110",
- "tempfile",
-]
-
-[[package]]
 name = "prost-derive"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8544,15 +8506,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost 0.13.5",
-]
-
-[[package]]
-name = "prost-types"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
-dependencies = [
- "prost 0.14.1",
 ]
 
 [[package]]
@@ -8593,26 +8546,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "pulldown-cmark"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e8bbe1a966bd2f362681a44f6edce3c2310ac21e4d5067a6e7ec396297a6ea0"
-dependencies = [
- "bitflags 2.10.0",
- "memchr",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark-to-cmark"
-version = "21.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8246feae3db61428fd0bb94285c690b460e4517d83152377543ca802357785f1"
-dependencies = [
- "pulldown-cmark",
 ]
 
 [[package]]
@@ -9817,7 +9750,7 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 [[package]]
 name = "sequencer-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -11395,12 +11328,11 @@ dependencies = [
 [[package]]
 name = "timeboost-proto"
 version = "0.0.0"
-source = "git+https://github.com/EspressoSystems/timeboost-proto?branch=li%2Frust-gen#6ea8538c1d1996143cd2cd5072b059e8dbb53eea"
+source = "git+https://github.com/EspressoSystems/timeboost-proto#a0c1a69d61cc88a42bb255e82e95d91f173dae5c"
 dependencies = [
  "prost 0.14.1",
  "tonic 0.14.2",
  "tonic-prost",
- "tonic-prost-build",
 ]
 
 [[package]]
@@ -11819,18 +11751,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic-build"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c40aaccc9f9eccf2cd82ebc111adc13030d23e887244bc9cfa5d1d636049de3"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
 name = "tonic-prost"
 version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11839,22 +11759,6 @@ dependencies = [
  "bytes 1.11.0",
  "prost 0.14.1",
  "tonic 0.14.2",
-]
-
-[[package]]
-name = "tonic-prost-build"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4a16cba4043dc3ff43fcb3f96b4c5c154c64cbd18ca8dce2ab2c6a451d058a2"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build",
- "prost-types 0.14.1",
- "quote",
- "syn 2.0.110",
- "tempfile",
- "tonic-build",
 ]
 
 [[package]]
@@ -12355,9 +12259,9 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-bag"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "943ce29a8a743eb10d6082545d861b24f9d1b160b7d741e0f2cdf726bec909c5"
+checksum = "7ba6f5989077681266825251a52748b8c1d8a4ad098cc37e440103d0ea717fc0"
 dependencies = [
  "value-bag-serde1",
  "value-bag-sval2",
@@ -12365,20 +12269,20 @@ dependencies = [
 
 [[package]]
 name = "value-bag-serde1"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35540706617d373b118d550d41f5dfe0b78a0c195dc13c6815e92e2638432306"
+checksum = "16530907bfe2999a1773ca5900a65101e092c70f642f25cc23ca0c43573262c5"
 dependencies = [
  "erased-serde",
- "serde",
+ "serde_core",
  "serde_fmt",
 ]
 
 [[package]]
 name = "value-bag-sval2"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe7e140a2658cc16f7ee7a86e413e803fc8f9b5127adc8755c19f9fefa63a52"
+checksum = "d00ae130edd690eaa877e4f40605d534790d1cf1d651e7685bd6a144521b251f"
 dependencies = [
  "sval",
  "sval_buffer",
@@ -12425,7 +12329,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vid"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#772053d01a35ec9f23fffbaa23186a413bb14a23"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#c1e065960e35ff65e5de8cecd24a8a369bc8522b"
 dependencies = [
  "anyhow",
  "ark-bn254",
