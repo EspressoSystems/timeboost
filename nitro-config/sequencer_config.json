@@ -63,7 +63,7 @@
         },
         "batch-poster": {
             "enable": true,
-            "max-delay": "4m",
+            "max-delay": "1m",
             "l1-block-bound": "ignore",
             "data-poster": {
                 "redis-signer": {
@@ -71,20 +71,22 @@
                 },
                 "wait-for-l1-finality": false,
                 "replacement-times": [
-                    "30s",
-                    "1m",
-                    "2m"
+                    "5s",
+                    "10s",
+                    "20s"
                 ]
             },
             "hotshot-urls": [
                 "http://espresso-dev-node:41000",
                 "http://espresso-dev-node:41000"
             ],
-            "poll-interval": "15s",
+            "poll-interval": "2s",
+            "poll-interval-after-batch-post": "2s",
+            "error-delay": "2s",
             "is-decentralized-timeboost": true,
             "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35",
             "decentralized-timeboost-batch-verifier": {
-                "wait-for-leader-delay": "5m"
+                "wait-for-leader-delay": "1m20s"
             },
             "wait-for-max-delay": false
         },
