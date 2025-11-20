@@ -165,20 +165,6 @@ jobs:
       run: |
         just run-integration-ci
         timeout 20m docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
-    - name: Verify batch posted
-      run: |
-        BLOCKS_POSTED=$(cast call 0xcc24eB88C75b9426C0f7B3aDeF854AEf63e6eE65 "sequencerReportedSubMessageCount() external view returns (uint256)" --rpc-url http://localhost:8545)
-        BATCHES_POSTED=$(cast call 0x436dB44f1C81c41eF843C3b046eb14E308736aAD "batchCount() external view returns (uint256)" --rpc-url http://localhost:8545)
-    
-        echo "Sequencer block count: $BLOCKS_POSTED"
-        echo "Batch count: $BATCHES_POSTED"
-        
-        if [ $((BLOCKS_POSTED)) -gt 0 ] && [ $((BATCHES_POSTED)) -gt 1 ]; then
-          echo "✅ Batches posted and blocks posted!"
-        else
-          echo "❌ Batch or block not posted"
-          exit 1
-        fi
     - name: Docker logs - timeboost-node0-1
       if: always()
       run: docker logs timeboost-node0-1 || echo "(no logs or container not found)"

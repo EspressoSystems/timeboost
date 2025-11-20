@@ -27,7 +27,6 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-types`: Contains essential type definitions of Timeboost.
 - `timeboost-crypto`: Contains the threshold encryption scheme used by timeboost.
 - `timeboost-utils`: Contains some utility functions.
-- `timeboost-proto`: Contains protobuf schema and protobuf generated code for inlusion list
 - `yapper`: Transaction submission test tool.
 
 ## Pre-requisites
@@ -48,11 +47,6 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
   ```
 
 - **Docker** (for integration tests, if needed): [Install Docker](https://docs.docker.com/get-docker/)
-
-- **Initialize Submodules:**
-   ```sh
-   git submodule update --init --recursive
-   ```
 
 ## Build
 
