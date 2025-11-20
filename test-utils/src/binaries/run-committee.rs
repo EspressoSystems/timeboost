@@ -7,6 +7,7 @@ use multisig::CommitteeId;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
 use timeboost::config::{ChainConfig, CommitteeContract, HTTP_API_PORT_OFFSET};
+use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};
 use tokio_util::task::TaskTracker;
@@ -94,7 +95,14 @@ async fn main() -> Result<()> {
         bail!("committee not found: {}", args.committee);
     };
 
-    let prev_committee = contract.prev(args.committee).await?;
+    let prev_committee = if committee.effective > Timestamp::now() {
+        let Some(prev) = contract.prev(committee.id).await? else {
+            bail!("no committee before {}", committee.id)
+        };
+        Some(prev)
+    } else {
+        None
+    };
 
     #[cfg(target_os = "linux")]
     let netconf: Option<Config> = if let Some(net) = &args.net {
