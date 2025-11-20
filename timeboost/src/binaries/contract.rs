@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use alloy::{
     consensus::crypto::secp256k1::public_key_to_address,
-    providers::{Provider, WalletProvider},
+    providers::{Provider, ProviderBuilder, WalletProvider},
     signers::k256::ecdsa::VerifyingKey,
 };
 use anyhow::{Context, Result, bail};
@@ -111,11 +111,8 @@ async fn main() -> Result<()> {
             contract,
             mnemonic,
         } => {
-            let mut committee_contract = CommitteeContract::new(
-                &rpc_url, &rpc_url, // unused
-                contract,
-            );
-            let Some(committee) = committee_contract.current().await? else {
+            let p = ProviderBuilder::new().connect_http(rpc_url.clone());
+            let Some(committee) = CommitteeContract::fetch_current(&p, &contract).await? else {
                 bail!("no current config on contract")
             };
             let provider = build_provider(mnemonic, index, rpc_url)?;
