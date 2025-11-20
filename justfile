@@ -111,6 +111,11 @@ mkconfig nodes seed="42": build-release
             --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
             --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
             --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
+            --chain-rpc-url "http://127.0.0.1:8545" \
+            --chain-websocket-url "ws://127.0.0.1:8545" \
+            --chain-id 31337 \
+            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
             --output "test-configs/nodes"; \
     done
@@ -126,6 +131,11 @@ mkconfig-linux nodes seed="42": build-release
             --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
             --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
             --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
+            --chain-rpc-url "http://11.0.1.0:8545" \
+            --chain-websocket-url "ws://11.0.1.0:8545" \
+            --chain-id 31337 \
+            --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+            --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
