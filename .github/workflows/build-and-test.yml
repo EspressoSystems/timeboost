@@ -172,8 +172,7 @@ jobs:
     
         echo "Sequencer block count: $BLOCKS_POSTED"
         echo "Batch count: $BATCHES_POSTED"
-    
-        # Convert from hex to decimal and compare
+        
         if [ $((BLOCKS_POSTED)) -gt 0 ] && [ $((BATCHES_POSTED)) -gt 1 ]; then
           echo "✅ Batches posted and blocks posted!"
         else
