@@ -9,14 +9,6 @@ build *ARGS:
 build-release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
-build-docker:
-  docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
-
-clean-docker:
-  docker ps -q | xargs -r docker stop
-  docker compose down --rmi all --volumes --remove-orphans
-  docker system prune -a --volumes --force
-
 [private]
 build-port-alloc:
   cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
@@ -48,6 +40,9 @@ lint: clippy fmt-check
 fix:
   cargo fix --allow-dirty --allow-staged
 
+docker *args:
+  just -f docker/justfile {{args}}
+
 ci-local:
   just build
   just lint
@@ -56,19 +51,7 @@ ci-local:
   just test-all
   just test-dyn-comm
   just run-integration
-  docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
-
-run-integration: build-docker
-  -docker network create timeboost
-  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
-
-run-integration-ci: build-docker
-  -docker network create timeboost
-  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml up -d
-
-run-integration-main:
-  -docker network create timeboost
-  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+  just docker ci-local
 
 run-sailfish-demo: build-test-utils build-release
   env RUST_LOG=sailfish=info,warn \

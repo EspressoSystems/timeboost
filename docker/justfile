@@ -1,0 +1,25 @@
+build:
+  docker build .. -f timeboost.Dockerfile -t timeboost:latest
+
+clean:
+  docker ps -q | xargs -r docker stop
+  docker compose down --rmi all --volumes --remove-orphans
+  docker system prune -a --volumes --force
+
+ci-local:
+  docker wait $(docker compose -f docker-compose.yml ps -q block-verifier)
+
+run-integration: build
+  docker network create timeboost
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.metrics.yml \
+    up -d
+
+run-integration-ci: build
+  docker network create timeboost
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose.yml up -d
+
+run-integration-main:
+  docker network create timeboost
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
