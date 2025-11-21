@@ -3,12 +3,11 @@ SHELL ["/bin/bash", "-c"]
 
 WORKDIR /app
 
-COPY . .
+COPY .. .
 RUN apt update && apt-get install -y protobuf-compiler libssl-dev jq
 RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 ENV PATH="/root/.foundry/bin:${PATH}"
 RUN forge --version
-RUN rustup component add rustfmt --toolchain nightly
 
 RUN cargo build --release --bins
 
