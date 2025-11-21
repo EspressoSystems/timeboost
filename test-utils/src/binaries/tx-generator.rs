@@ -16,7 +16,7 @@ use bytes::BytesMut;
 use clap::Parser;
 use futures::future::join_all;
 use reqwest::{Client, Url};
-use timeboost::config::ChainConfig;
+use timeboost::config::{ChainConfig, HTTP_API_PORT_OFFSET};
 use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
 };
@@ -432,7 +432,8 @@ async fn main() -> Result<()> {
     };
 
     let mut urls = Vec::new();
-    for (_, _, addr) in committee.http_api().entries() {
+    for m in committee.members {
+        let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
         let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
         let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
 

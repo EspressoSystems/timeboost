@@ -9,7 +9,7 @@ use alloy::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use reqwest::Client;
-use timeboost_config::{CommitteeContract, CommitteeDefinition};
+use timeboost_config::{CommitteeDefinition, HTTP_API_PORT_OFFSET, fetch_current};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
@@ -112,14 +112,15 @@ async fn main() -> Result<()> {
             mnemonic,
         } => {
             let p = ProviderBuilder::new().connect_http(rpc_url.clone());
-            let Some(committee) = CommitteeContract::fetch_current(&p, &contract).await? else {
+            let Some(committee) = fetch_current(&p, &contract).await? else {
                 bail!("no active committee on contract")
             };
             let provider = build_provider(mnemonic, index, rpc_url)?;
 
             let manager = KeyManager::new(contract, provider);
             let mut urls = Vec::new();
-            for (_, _, addr) in committee.http_api().entries() {
+            for m in committee.members {
+                let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
                 let url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
                     .with_context(|| format!("parsing {addr} into a url"))?;
                 urls.push(url)

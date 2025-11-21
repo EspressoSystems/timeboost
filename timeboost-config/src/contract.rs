@@ -30,22 +30,22 @@ impl CommitteeContract {
     }
 
     pub async fn active(&mut self) -> Result<CommitteeConfig> {
-        let Some(cfg) = Self::fetch_current(&self.provider, &self.contract).await? else {
+        let Some(cfg) = fetch_current(&self.provider, &self.contract).await? else {
             bail!("no active committee on contract {}", self.contract)
         };
         Ok(cfg)
     }
 
     pub async fn get(&mut self, id: CommitteeId) -> Result<Option<CommitteeConfig>> {
-        Self::fetch(&self.provider, &self.contract, id).await
+        fetch(&self.provider, &self.contract, id).await
     }
 
     pub async fn next(&mut self, id: CommitteeId) -> Result<Option<CommitteeConfig>> {
-        Self::fetch(&self.provider, &self.contract, id + 1).await
+        fetch(&self.provider, &self.contract, id + 1).await
     }
 
     pub async fn prev(&mut self, id: CommitteeId) -> Result<Option<CommitteeConfig>> {
-        Self::fetch(&self.provider, &self.contract, id - 1).await
+        fetch(&self.provider, &self.contract, id - 1).await
     }
 
     pub async fn subscribe(
@@ -75,7 +75,7 @@ impl CommitteeContract {
                 let provider = provider.clone();
                 async move {
                     let id = log.data().id;
-                    match Self::fetch(&provider, &address, id.into()).await {
+                    match fetch(&provider, &address, id.into()).await {
                         Ok(Some(c)) => Some(c),
                         Ok(None) => {
                             error!(committee = %id, "no committee for id");
@@ -91,62 +91,8 @@ impl CommitteeContract {
 
         Ok(stream::iter(available).chain(stream).boxed())
     }
-
-    pub async fn fetch_current(
-        provider: &HttpProvider,
-        addr: &Address,
-    ) -> Result<Option<CommitteeConfig>> {
-        let contract = KeyManager::new(*addr, provider);
-        let committee = contract.currentCommitteeId().call().await?;
-        Self::fetch(provider, addr, committee.into()).await
-    }
-
-    async fn fetch(
-        provider: &HttpProvider,
-        addr: &Address,
-        id: CommitteeId,
-    ) -> Result<Option<CommitteeConfig>> {
-        let contract = KeyManager::new(*addr, provider);
-        let committee = match contract.getCommitteeById(id.into()).call().await {
-            Ok(c) => c,
-            Err(err) => {
-                if err.as_decoded_error::<CommitteeIdDoesNotExist>().is_some() {
-                    return Ok(None);
-                } else {
-                    return Err(err.into());
-                }
-            }
-        };
-
-        let mut cfg = CommitteeConfig {
-            id,
-            effective: committee.effectiveTimestamp.into(),
-            members: Vec::new(),
-        };
-
-        for m in committee.members {
-            let signing_key = multisig::PublicKey::try_from(m.sigKey.as_ref())
-                .context("failed to parse sigKey bytes")?;
-            let dh_key = x25519::PublicKey::try_from(m.dhKey.as_ref())
-                .context("failed to parse dhKey bytes")?;
-            let dkg_enc_key =
-                DkgEncKey::from_bytes(&m.dkgKey).context("failed to parse dkgKey bytes")?;
-            let address = cliquenet::Address::try_from(&*m.networkAddress)
-                .context("failed to parse networkAddress string")?;
-            let batchposter = cliquenet::Address::try_from(&*m.batchPosterAddress)
-                .context("failed to parse batchPosterAddress string")?;
-            cfg.members.push(CommitteeMember {
-                address,
-                signing_key,
-                dh_key,
-                dkg_enc_key,
-                batchposter,
-            })
-        }
-
-        Ok(Some(cfg))
-    }
 }
+
 impl From<&ChainConfig> for CommitteeContract {
     fn from(cfg: &ChainConfig) -> Self {
         Self::new(
@@ -155,4 +101,58 @@ impl From<&ChainConfig> for CommitteeContract {
             cfg.key_management_contract,
         )
     }
+}
+pub async fn fetch_current(
+    provider: &HttpProvider,
+    addr: &Address,
+) -> Result<Option<CommitteeConfig>> {
+    let contract = KeyManager::new(*addr, provider);
+    let committee = contract.currentCommitteeId().call().await?;
+    fetch(provider, addr, committee.into()).await
+}
+
+async fn fetch(
+    provider: &HttpProvider,
+    addr: &Address,
+    id: CommitteeId,
+) -> Result<Option<CommitteeConfig>> {
+    let contract = KeyManager::new(*addr, provider);
+    let committee = match contract.getCommitteeById(id.into()).call().await {
+        Ok(c) => c,
+        Err(err) => {
+            if err.as_decoded_error::<CommitteeIdDoesNotExist>().is_some() {
+                return Ok(None);
+            } else {
+                return Err(err.into());
+            }
+        }
+    };
+
+    let mut cfg = CommitteeConfig {
+        id,
+        effective: committee.effectiveTimestamp.into(),
+        members: Vec::new(),
+    };
+
+    for m in committee.members {
+        let signing_key = multisig::PublicKey::try_from(m.sigKey.as_ref())
+            .context("failed to parse sigKey bytes")?;
+        let dh_key =
+            x25519::PublicKey::try_from(m.dhKey.as_ref()).context("failed to parse dhKey bytes")?;
+        let dkg_enc_key =
+            DkgEncKey::from_bytes(&m.dkgKey).context("failed to parse dkgKey bytes")?;
+        let address = cliquenet::Address::try_from(&*m.networkAddress)
+            .context("failed to parse networkAddress string")?;
+        let batchposter = cliquenet::Address::try_from(&*m.batchPosterAddress)
+            .context("failed to parse batchPosterAddress string")?;
+        cfg.members.push(CommitteeMember {
+            address,
+            signing_key,
+            dh_key,
+            dkg_enc_key,
+            batchposter,
+        })
+    }
+
+    Ok(Some(cfg))
 }

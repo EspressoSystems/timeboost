@@ -25,9 +25,6 @@ struct Args {
     espresso_websocket_base_url: Url,
 
     #[clap(long, short)]
-    espresso_builder_base_url: Option<Url>,
-
-    #[clap(long, short)]
     blocks: usize,
 
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
@@ -53,7 +50,6 @@ async fn main() -> Result<()> {
     let conf = Config::builder()
         .https_only(args.https_only)
         .base_url(args.espresso_base_url)
-        .maybe_builder_base_url(args.espresso_builder_base_url)
         .wss_base_url(args.espresso_websocket_base_url)
         .label("block-checker")
         .build();

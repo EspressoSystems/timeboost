@@ -214,7 +214,6 @@ test-all: build-release build-test-utils
         --namespace 10101 \
         --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-        --espresso-builder-base-url https://builder.decaf.testnet.espresso.network/v0/ \
         --blocks 300
 
 test-dyn-comm: build-release build-test-utils
@@ -255,7 +254,6 @@ test-dyn-comm: build-release build-test-utils
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --espresso-builder-base-url https://builder.decaf.testnet.espresso.network/v0/ \
             --blocks 300
 
 [linux]
@@ -317,5 +315,4 @@ netsim nodes: build-release build-test-utils
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --espresso-builder-base-url https://builder.decaf.testnet.espresso.network/v0/ \
             --blocks 300
