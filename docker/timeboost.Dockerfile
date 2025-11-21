@@ -4,11 +4,7 @@ SHELL ["/bin/bash", "-c"]
 WORKDIR /app
 
 COPY .. .
-RUN apt update && apt-get install -y protobuf-compiler libssl-dev jq
-RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
-ENV PATH="/root/.foundry/bin:${PATH}"
-RUN forge --version
-
+RUN apt update && apt-get install -y libssl-dev jq
 RUN cargo build --release --bins
 
 FROM debian:bookworm-slim
@@ -28,10 +24,6 @@ COPY --from=builder /app/target/release/block-verifier .
 COPY --from=builder /app/target/release/configure .
 COPY --from=builder /app/target/release/funder .
 COPY --from=builder /app/target/release/assemble .
-
-COPY --from=builder /root/.foundry/bin/forge /usr/local/bin/forge
-COPY --from=builder /root/.foundry/bin/cast /usr/local/bin/cast
-RUN chmod +x /usr/local/bin/forge /usr/local/bin/cast
 
 RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/timeboost \
