@@ -4,7 +4,6 @@ use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
@@ -165,8 +164,13 @@ where
                                 .parse::<Url>()
                                 .expect("valid url"),
                         )
+                        .websocket_url(
+                            "wss://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                .parse::<Url>()
+                                .expect("valid url"),
+                        )
                         .inbox_contract(alloy::primitives::Address::default())
-                        .inbox_block_tag(BlockNumberOrTag::Finalized)
+                        .key_management_contract(alloy::primitives::Address::default())
                         .build(),
                 )
                 .build()

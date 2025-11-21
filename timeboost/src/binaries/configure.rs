@@ -2,15 +2,13 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use alloy::eips::BlockNumberOrTag;
 use anyhow::Result;
 use clap::Parser;
 use cliquenet::Address;
 use multisig::x25519;
 use rand::SeedableRng;
 use timeboost_config::{
-    ChainConfig, Committee, CommitteeMember, Contract, Espresso, Net, NodeConfig, NodeKeypair,
-    NodeKeys,
+    ChainConfig, CommitteeMember, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -56,10 +54,6 @@ struct Args {
     /// Committee contract address
     #[clap(long)]
     committee_contract: alloy::primitives::Address,
-
-    /// Inbox block tag
-    #[clap(long, default_value = "finalized")]
-    inbox_block_tag: BlockNumberOrTag,
 
     /// Espresso namespace ID.
     #[clap(long)]
@@ -136,18 +130,12 @@ impl Args {
                     public: DkgEncKey::from(&dkg_dec_key),
                 },
             },
-            committee: Committee {
-                contract: Contract {
-                    rpc_url: self.chain_rpc_url.clone(),
-                    websocket_url: self.chain_websocket_url,
-                    address: self.committee_contract,
-                },
-            },
             chain: ChainConfig {
                 id: self.chain_id,
                 rpc_url: self.chain_rpc_url,
+                websocket_url: self.chain_websocket_url,
                 inbox_contract: self.inbox_contract,
-                inbox_block_tag: self.inbox_block_tag,
+                key_management_contract: self.committee_contract,
             },
             espresso: Espresso {
                 namespace: self.espresso_namespace,

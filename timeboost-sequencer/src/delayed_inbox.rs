@@ -62,7 +62,7 @@ impl DelayedInbox {
             provider,
             queue,
             url: url.to_string(),
-            tag: cfg.inbox_block_tag,
+            tag: BlockNumberOrTag::Finalized,
         })
     }
 

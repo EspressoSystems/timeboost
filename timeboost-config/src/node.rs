@@ -20,7 +20,6 @@ pub struct NodeConfig {
     pub stamp: PathBuf,
     pub net: Net,
     pub keys: NodeKeys,
-    pub committee: Committee,
     pub chain: ChainConfig,
     pub espresso: Espresso,
 }
@@ -42,20 +41,6 @@ pub struct NodeKeys {
 pub struct NodeKeypair<SK, PK> {
     pub secret: SK,
     pub public: PK,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Committee {
-    pub contract: Contract,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Contract {
-    pub rpc_url: Url,
-    pub websocket_url: Url,
-    pub address: alloy::primitives::Address,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
