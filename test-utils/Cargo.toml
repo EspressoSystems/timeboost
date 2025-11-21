@@ -41,7 +41,6 @@ alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bon = { workspace = true }
 bytes = { workspace = true, optional = true }
-cliquenet = { path = "../cliquenet", optional = true }
 either = { workspace = true, optional = true }
 ipnet = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
