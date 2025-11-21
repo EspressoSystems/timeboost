@@ -143,7 +143,7 @@ jobs:
     - name: Run Timeboost integration
       run: |
         just docker run-integration-ci
-        timeout 20m docker wait $(docker compose -f docker/docker-compose.yml ps -q block-verifier)
+        timeout 20m docker wait $(cd docker && docker compose -f docker-compose.yml ps -q block-verifier)
     - name: Docker logs - timeboost-node0-1
       if: always()
       run: docker logs timeboost-node0-1 || echo "(no logs or container not found)"
