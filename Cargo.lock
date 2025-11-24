@@ -4225,9 +4225,9 @@ dependencies = [
 
 [[package]]
 name = "ethereum_ssz"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dcddb2554d19cde19b099fadddde576929d7a4d0c1cd3512d1fd95cf174375c"
+checksum = "7e8cd8c4f47dfb947dbfe3cdf2945ae1da808dbedc592668658e827a12659ba1"
 dependencies = [
  "alloy-primitives",
  "ethereum_serde_utils",

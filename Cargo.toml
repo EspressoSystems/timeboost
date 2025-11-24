@@ -62,7 +62,7 @@ derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
 ed25519-compact = "2.2.0"
 either = { version = "1.13.0", features = ["serde"] }
-ethereum_ssz = "0.9.0"
+ethereum_ssz = "0.10.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
 http = "1.3.1"
