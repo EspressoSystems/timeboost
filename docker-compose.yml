@@ -338,7 +338,7 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--node",
+        "--config",
         "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
       ]
     volumes:
@@ -373,7 +373,7 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--node",
+        "--config",
         "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
       ]
     volumes:
@@ -408,7 +408,7 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--node",
+        "--config",
         "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
       ]
     volumes:
@@ -443,7 +443,7 @@ services:
         "/app/timeboost",
         "--https-only",
         "false",
-        "--node",
+        "--config",
         "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
       ]
     volumes:
@@ -505,9 +505,9 @@ services:
         "/app/block-checker",
         "--chain",
         "/config/chain.toml",
-        "--namespace", 
+        "--namespace",
         "412346",
-        "--espresso-base-url", 
+        "--espresso-base-url",
         "http://espresso-dev-node:41000/v1/",
         "--espresso-websocket-base-url",
         "ws://espresso-dev-node:41000/v1/",

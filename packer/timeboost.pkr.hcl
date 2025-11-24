@@ -1,7 +1,7 @@
 packer {
   required_plugins {
     amazon = {
-      version = ">= 1.2.0"
+      version = ">= 1.8.0"
       source  = "github.com/hashicorp/amazon"
     }
   }
@@ -41,7 +41,7 @@ source "amazon-ebs" "al2" {
     delete_on_termination = true
   }
 
-  ssh_username         = "ec2-user"
+  ssh_username = "ec2-user"
 }
 
 build {
@@ -64,16 +64,8 @@ build {
     inline = [
       "echo extracting overlay ...",
       "sudo tar xzf /tmp/${var.overlay-archive} -C /",
-      "sudo chown -R ec2-user:ec2-user /usr/local/bin/timeboost",
+      "sudo chown -R ec2-user:ec2-user /usr/local/bin/*",
       "sudo rm /tmp/${var.overlay-archive}"
-    ]
-  }
-
-  provisioner "shell" {
-    inline = [
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable vector",
-      "sudo systemctl enable timeboost"
     ]
   }
 }

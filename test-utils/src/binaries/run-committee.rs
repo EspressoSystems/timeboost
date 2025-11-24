@@ -123,7 +123,7 @@ async fn main() -> Result<()> {
             continue;
         }
         let mut cmd = Cmd::new(&args.timeboost);
-        cmd.with_arg("--node")
+        cmd.with_arg("--config")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
         if let Some(t) = args.times_until {
             cmd.with_args(["--times-until", &t.to_string()]);

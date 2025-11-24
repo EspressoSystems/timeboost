@@ -1,0 +1,11 @@
+format:
+    terraform fmt
+
+check:
+    terraform validate
+
+allocate-ips num:
+    terraform apply -target=aws_eip.allocated_ips
+
+apply *args: check
+    terraform apply {{args}}

@@ -19,9 +19,9 @@ use tracing::warn;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Timeboost node config file.
+    /// Timeboost config file.
     #[clap(long, short)]
-    node: PathBuf,
+    config: PathBuf,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
@@ -42,15 +42,15 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let node = NodeConfig::read(&cli.node)
+    let config = NodeConfig::read(&cli.config)
         .await
-        .with_context(|| format!("could not read node config {:?}", cli.node))?;
+        .with_context(|| format!("could not read config {:?}", cli.config))?;
 
-    let sign_keypair = Keypair::from(node.keys.signing.secret.clone());
+    let sign_keypair = Keypair::from(config.keys.signing.secret.clone());
     let sign_pubkey = sign_keypair.public_key();
-    let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
+    let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&node.chain);
+    let mut contract = CommitteeContract::from(&config.chain);
     let mut committee = contract.active().await?;
     let mut prev_committee = None;
 
@@ -71,56 +71,59 @@ async fn main() -> Result<()> {
         committee = next;
     }
 
-    let is_recover = !cli.ignore_stamp && node.stamp.is_file();
+    let is_recover = !cli.ignore_stamp && config.stamp.is_file();
 
-    tokio::fs::File::create(&node.stamp)
+    tokio::fs::File::create(&config.stamp)
         .await
-        .with_context(|| format!("Failed to create stamp file: {:?}", node.stamp))?
+        .with_context(|| format!("Failed to create stamp file: {:?}", config.stamp))?
         .sync_all()
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
 
     let pubkey = sign_keypair.public_key();
 
-    let config = TimeboostConfig::builder()
+    let builder = TimeboostConfig::builder()
         .sailfish_committee(committee.sailfish())
         .maybe_prev_committee(prev_committee)
         .decrypt_committee(committee.decrypt())
         .certifier_committee(committee.certify())
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .dkg_key(node.keys.dkg.secret)
+        .dkg_key(config.keys.dkg.secret)
         .key_store(committee.dkg_key_store())
-        .sailfish_addr(node.net.bind.clone())
-        .decrypt_addr(node.net.bind.clone().with_offset(DECRYPTER_PORT_OFFSET))
-        .certifier_addr(node.net.bind.clone().with_offset(CERTIFIER_PORT_OFFSET))
-        .nitro_addr(node.net.nitro.clone())
+        .sailfish_addr(config.net.bind.clone())
+        .decrypt_addr(config.net.bind.clone().with_offset(DECRYPTER_PORT_OFFSET))
+        .certifier_addr(config.net.bind.clone().with_offset(CERTIFIER_PORT_OFFSET))
+        .nitro_addr(config.net.nitro.clone())
         .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
             robusta::Config::builder()
-                .base_url(node.espresso.base_url)
-                .maybe_builder_base_url(node.espresso.builder_base_url)
-                .wss_base_url(node.espresso.websockets_base_url)
+                .base_url(config.espresso.base_url)
+                .maybe_builder_base_url(config.espresso.builder_base_url)
+                .wss_base_url(config.espresso.websockets_base_url)
                 .label(pubkey.to_string())
                 .https_only(cli.https_only)
                 .build(),
             Vec::new(),
         ))
-        .namespace(node.espresso.namespace)
-        .max_transaction_size(node.espresso.max_transaction_size)
-        .chain_config(node.chain.clone());
+        .namespace(config.espresso.namespace)
+        .max_transaction_size(config.espresso.max_transaction_size)
+        .chain_config(config.chain.clone());
 
-    #[cfg(feature = "times")]
-    let config = config.times_until(cli.times_until).build();
-    #[cfg(not(feature = "times"))]
-    let config = config.build();
+    let timeboost = {
+        let committees = contract.subscribe(committee.id).await?;
 
-    let committees = contract.subscribe(committee.id).await?;
-    let timeboost = Timeboost::new(config, committees).await?;
+        #[cfg(feature = "times")]
+        let config = builder.times_until(cli.times_until).build();
+        #[cfg(not(feature = "times"))]
+        let config = builder.build();
+
+        Timeboost::new(config, committees).await?
+    };
 
     let mut grpc = {
-        let addr = node
+        let addr = config
             .net
             .bind
             .clone()
@@ -131,7 +134,8 @@ async fn main() -> Result<()> {
 
     let mut api = spawn(
         timeboost.api().serve(
-            node.net
+            config
+                .net
                 .bind
                 .clone()
                 .with_offset(HTTP_API_PORT_OFFSET)
