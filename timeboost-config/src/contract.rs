@@ -30,7 +30,7 @@ impl CommitteeContract {
     }
 
     pub async fn active(&mut self) -> Result<CommitteeConfig> {
-        let Some(cfg) = fetch_current(&self.provider, &self.contract).await? else {
+        let Some(cfg) = active_committee(&self.provider, &self.contract).await? else {
             bail!("no active committee on contract {}", self.contract)
         };
         Ok(cfg)
@@ -102,7 +102,7 @@ impl From<&ChainConfig> for CommitteeContract {
         )
     }
 }
-pub async fn fetch_current(
+pub async fn active_committee(
     provider: &HttpProvider,
     addr: &Address,
 ) -> Result<Option<CommitteeConfig>> {

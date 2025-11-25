@@ -9,7 +9,7 @@ use alloy::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use reqwest::Client;
-use timeboost_config::{CommitteeDefinition, HTTP_API_PORT_OFFSET, fetch_current};
+use timeboost_config::{CommitteeDefinition, HTTP_API_PORT_OFFSET, active_committee};
 use timeboost_contract::{
     CommitteeMemberSol, KeyManager, deployer::deploy_key_manager_contract, provider::build_provider,
 };
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
             mnemonic,
         } => {
             let p = ProviderBuilder::new().connect_http(rpc_url.clone());
-            let Some(committee) = fetch_current(&p, &contract).await? else {
+            let Some(committee) = active_committee(&p, &contract).await? else {
                 bail!("no active committee on contract")
             };
             let provider = build_provider(mnemonic, index, rpc_url)?;
