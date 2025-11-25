@@ -5,7 +5,6 @@ use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
@@ -417,8 +416,14 @@ async fn mk_configs(
                             .parse::<Url>()
                             .expect("valid url"),
                     )
+                    .websocket_url(
+                        "wss://theserversroom.com/ethereum/54cmzzhcj1o/"
+                            .parse::<Url>()
+                            .expect("valid url"),
+                    )
                     .inbox_contract(alloy::primitives::Address::default())
-                    .inbox_block_tag(BlockNumberOrTag::Finalized)
+                    .inbox_block_tag(alloy::eips::BlockNumberOrTag::Finalized)
+                    .key_management_contract(alloy::primitives::Address::default())
                     .build(),
             )
             .build();

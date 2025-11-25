@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 pub use chain::{ChainConfig, ChainConfigBuilder};
 pub use committee::{CommitteeConfig, CommitteeDefinition, CommitteeMember, MemberFile};
 pub use contract::CommitteeContract;
+pub use contract::active_committee;
 pub use node::{
     CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, GRPC_API_PORT_OFFSET, HTTP_API_PORT_OFFSET,
 };
-pub use node::{Committee, Contract, Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
+pub use node::{Espresso, Net, NodeConfig, NodeKeypair, NodeKeys};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
