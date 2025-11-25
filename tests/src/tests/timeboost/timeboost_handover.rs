@@ -422,6 +422,7 @@ async fn mk_configs(
                             .expect("valid url"),
                     )
                     .inbox_contract(alloy::primitives::Address::default())
+                    .inbox_block_tag(alloy::eips::BlockNumberOrTag::Finalized)
                     .key_management_contract(alloy::primitives::Address::default())
                     .build(),
             )

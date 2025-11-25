@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use alloy::eips::BlockNumberOrTag;
 use anyhow::Result;
 use clap::Parser;
 use cliquenet::Address;
@@ -50,6 +51,10 @@ struct Args {
     /// Inbox contract address
     #[clap(long)]
     inbox_contract: alloy::primitives::Address,
+
+    /// Inbox block tag
+    #[clap(long, default_value = "finalized")]
+    inbox_block_tag: BlockNumberOrTag,
 
     /// Committee contract address
     #[clap(long)]
@@ -135,6 +140,7 @@ impl Args {
                 rpc_url: self.chain_rpc_url,
                 websocket_url: self.chain_websocket_url,
                 inbox_contract: self.inbox_contract,
+                inbox_block_tag: self.inbox_block_tag,
                 key_management_contract: self.committee_contract,
             },
             espresso: Espresso {

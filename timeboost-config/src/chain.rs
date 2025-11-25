@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::Address;
 use bon::Builder;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ pub struct ChainConfig {
     pub websocket_url: Url,
     pub key_management_contract: Address,
     pub inbox_contract: Address,
+    pub inbox_block_tag: BlockNumberOrTag,
 }
 
 impl ChainConfig {
