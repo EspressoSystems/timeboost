@@ -6,6 +6,7 @@ Wants=nitro.service
 
 [Service]
 ExecStart=/usr/local/bin/timeboost -c /etc/timeboost/timeboost.toml
+Environment="RUST_LOG_FORMAT=json"
 Restart=always
 RestartSec=5
 
