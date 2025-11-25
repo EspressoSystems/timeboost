@@ -6,13 +6,13 @@ terraform {
     }
   }
 
-  # backend "s3" {
-  #   bucket         = var.terraform_bucket
-  #   key            = "ec2-instance/terraform.tfstate"
-  #   region         = aws.region
-  #   dynamodb_table = "Terraform"
-  #   encrypt        = true
-  # }
+  backend "s3" {
+    bucket         = var.terraform_bucket
+    key            = "timeboost-tf/terraform.tfstate"
+    region         = aws.region
+    dynamodb_table = "Timeboost-TF"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
