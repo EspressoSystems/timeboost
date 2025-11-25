@@ -44,6 +44,7 @@ resource "aws_instance" "timeboost" {
   user_data = templatefile("cloud-init.tpl", {
     timeboost_config = base64gzip(each.value.timeboost)
     nitro_config     = base64gzip(each.value.nitro)
+    chain_config     = base64gzip(each.value.chain) # TODO: Remove when removing block-maker
   })
 }
 

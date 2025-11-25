@@ -14,3 +14,11 @@ write_files:
    owner: ec2-user:ec2-user
    permissions: "0400"
    defer: true
+  # TODO: Remove when removing block-maker
+  -encoding: gz+b64
+   content: !!binary |
+     ${chain_config}
+   path: /etc/nitromeboost/chain.toml
+   owner: ec2-user:ec2-user
+   permissions: "0400"
+   defer: true

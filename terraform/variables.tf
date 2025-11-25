@@ -18,7 +18,8 @@ variable "configs" {
   type = list(object({
     ip : string,
     timeboost : string,
-    nitro : string
+    nitro : string,
+    chain : string # TODO: remove when removing block-maker
   }))
 }
 

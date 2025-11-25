@@ -13,7 +13,8 @@ format:
 	packer fmt .
 
 build:
-	cargo build --release --bin timeboost
+	# TODO: remove block-maker
+	cargo build --release --bin timeboost --bin block-maker
 
 [private]
 extract-nitro target:
@@ -33,8 +34,10 @@ make-overlay:
 	dir=$(mktemp -d)
 	cp -R overlay $dir/
 	mkdir -p $dir/overlay/usr/local/bin
-	cp ../target/release/timeboost $dir/overlay/usr/local/bin/timeboost
-	run0 just extract-nitro $dir/overlay/usr/local/bin/
+	cp ../target/release/timeboost $dir/overlay/usr/local/bin/
+	# TODO: remove block-maker and use nitro instead
+	cp ../target/release/block-maker $dir/overlay/usr/local/bin/
+	# run0 just extract-nitro $dir/overlay/usr/local/bin/
 	tar --owner 0 --group 0 -caf {{overlay-archive}} -C $dir/overlay/ .
 
 validate:
