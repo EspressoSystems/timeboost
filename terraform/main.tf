@@ -30,7 +30,7 @@ data "aws_ami" "timeboost_ami" {
 
 resource "aws_instance" "timeboost" {
   for_each = {
-    for _, config in var.configs : config.ip => config
+    for i, config in var.configs : i => config
   }
 
   tags                        = { Name = "Timeboost" }
@@ -40,6 +40,7 @@ resource "aws_instance" "timeboost" {
   iam_instance_profile        = aws_iam_instance_profile.instance_profile.name
   security_groups             = [aws_security_group.timeboost.id]
   associate_public_ip_address = each.value.ip
+  subnet_id                   = aws_subnet.timeboost_public[each.key % length(aws_subnet.timeboost_public)].id
 
   user_data = templatefile("cloud-init.tpl", {
     timeboost_config = base64gzip(each.value.timeboost)
