@@ -7,11 +7,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = var.terraform_bucket
-    key            = "timeboost-tf/terraform.tfstate"
-    region         = aws.region
-    dynamodb_table = "Timeboost-TF"
-    encrypt        = true
+    bucket       = "xmxxsdnjvltzwxf2wikwvgo"
+    key          = "timeboost-tf/terraform.tfstate"
+    region       = "eu-central-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 

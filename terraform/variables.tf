@@ -1,13 +1,3 @@
-variable "terraform_bucket" {
-  description = "The S3 bucket name for terraform state storage"
-  type        = string
-}
-
-variable "owner" {
-  description = "AWS account owner"
-  type        = string
-}
-
 variable "keypair" {
   description = "SSH keypair name"
   type        = string
