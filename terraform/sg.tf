@@ -6,10 +6,11 @@ resource "aws_security_group" "timeboost" {
 
 # Allow access to ports:
 #
-# - 8000 = Sailfish (in/out)
-# - 8001 = Decrypt  (in/out)
-# - 8002 = Certify  (in/out)
-# - 8003 = HTTP     (in)
+# - 8000 = Sailfish    (in/out)
+# - 8001 = Decrypt     (in/out)
+# - 8002 = Certify     (in/out)
+# - 8003 = HTTP        (in)
+# - 8005 = Batchposter (in/out)
 
 resource "aws_vpc_security_group_ingress_rule" "timeboost" {
   security_group_id = aws_security_group.timeboost.id
@@ -27,11 +28,27 @@ resource "aws_vpc_security_group_ingress_rule" "http" {
   ip_protocol       = "http"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "batchposter" {
+  security_group_id = aws_security_group.timeboost.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 8005
+  to_port           = 8005
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "timeboost" {
   security_group_id = aws_security_group.timeboost.id
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = 8000
   to_port           = 8002
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "batchposter" {
+  security_group_id = aws_security_group.timeboost.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 8005
+  to_port           = 8005
   ip_protocol       = "tcp"
 }
 

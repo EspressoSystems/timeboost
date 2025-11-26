@@ -13,11 +13,6 @@ variable "configs" {
   }))
 }
 
-variable "number_of_public_ips" {
-  description = "How many public IPs to allocate"
-  type        = number
-}
-
 # variables with defaults:
 
 variable "region" {

@@ -1,3 +1,26 @@
+[private]
+build:
+    cargo build --release --bin configure
+
+[working-directory: ".."]
+configure ip output: build
+    target/release/configure \
+        --bind "0.0.0.0:8000" \
+        --external "{{ip}}:8000" \
+        --nitro "127.0.0.1:55000" \
+        --batchposter "{{ip}}:8005" \
+        --espresso-namespace 10107 \
+        --espresso-base-url "https://query.decaf.testnet.espresso.network/v1/" \
+        --espresso-websocket-url "wss://query.decaf.testnet.espresso.network/v1/" \
+        --espresso-builder-base-url "https://builder.decaf.testnet.espresso.network/v0/" \
+        --chain-rpc-url "http://127.0.0.1:8545" \
+        --chain-websocket-url "ws://127.0.0.1:8545" \
+        --chain-id 31337 \
+        --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+        --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+        --stamp-dir "/home/ec2-user/" \
+        --output "{{output}}" \
+
 format:
     terraform fmt
 
@@ -7,8 +30,6 @@ check:
 plan:
     terraform plan
 
-allocate-ips num:
-    terraform apply -target=aws_eip.allocated_ips
-
 apply *args: check
     terraform apply {{args}}
+
