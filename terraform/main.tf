@@ -30,10 +30,6 @@ data "aws_ami" "timeboost_ami" {
   }
 }
 
-locals {
-  public_subnet_ids = values(aws_subnet.timeboost_public)[*].id
-}
-
 resource "aws_instance" "timeboost" {
   for_each = {
     for i, config in var.configs : i => config

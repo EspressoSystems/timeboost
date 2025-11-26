@@ -20,13 +20,6 @@ data "aws_availability_zones" "available" {
   }
 }
 
-locals {
-  az_indices = { # AZ-Name : Index
-    for az in data.aws_availability_zones.available.names : az =>
-    index(data.aws_availability_zones.available.names, az)
-  }
-}
-
 # Public subnets get an even octet, e.g. if the CIDR block is 10.0.0.0/16, they
 # get 10.0.i.0/24 with i in 0, 2, 4, 6, ...
 resource "aws_subnet" "timeboost_public" {
