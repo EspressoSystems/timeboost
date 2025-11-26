@@ -25,7 +25,7 @@ extract-nitro target:
 	cp $MNT/usr/local/bin/* {{target}}
 	podman image unmount {{nitro-image}}
 
-make-overlay:
+make-overlay: build
 	#!/usr/bin/env bash
 	set -e
 	if [[ -f {{overlay-archive}} ]]; then

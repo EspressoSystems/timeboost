@@ -4,6 +4,9 @@ format:
 check:
     terraform validate
 
+plan:
+    terraform plan
+
 allocate-ips num:
     terraform apply -target=aws_eip.allocated_ips
 
