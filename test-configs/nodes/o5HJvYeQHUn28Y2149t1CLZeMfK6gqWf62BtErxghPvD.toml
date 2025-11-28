@@ -16,14 +16,11 @@ public = "3iJpaEKb3Zuo3mRgFYXayytr22TmroANnx98UfmrPNG7"
 secret = "6eB7gVuwt3WgNewWrMLmpuhcG9qzF1cDE95UevBCgoXx"
 public = "7MQbJw5poGYjx3QE1c6tXpNcKGErJWCJXga9aqeE3iNcKb8tu6jaQZ4P8b7NHAe7pd"
 
-[committee.contract]
-rpc-url = "http://127.0.0.1:8545/"
-websocket-url = "ws://127.0.0.1:8545/"
-address = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
-
 [chain]
 id = 31337
 rpc-url = "http://127.0.0.1:8545/"
+websocket-url = "ws://127.0.0.1:8545/"
+key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 inbox-block-tag = "finalized"
 

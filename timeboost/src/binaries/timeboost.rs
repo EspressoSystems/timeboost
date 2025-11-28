@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let sign_pubkey = sign_keypair.public_key();
     let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&node);
+    let mut contract = CommitteeContract::from(&node.chain);
     let mut committee = contract.active().await?;
     let mut prev_committee = None;
 
