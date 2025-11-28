@@ -165,8 +165,14 @@ where
                                 .parse::<Url>()
                                 .expect("valid url"),
                         )
+                        .websocket_url(
+                            "wss://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                .parse::<Url>()
+                                .expect("valid url"),
+                        )
                         .inbox_contract(alloy::primitives::Address::default())
                         .inbox_block_tag(BlockNumberOrTag::Finalized)
+                        .key_management_contract(alloy::primitives::Address::default())
                         .build(),
                 )
                 .build()

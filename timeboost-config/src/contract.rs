@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{CommitteeConfig, CommitteeMember, NodeConfig};
+use crate::{ChainConfig, CommitteeConfig, CommitteeMember};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
@@ -30,10 +30,8 @@ impl CommitteeContract {
     }
 
     pub async fn active(&mut self) -> Result<CommitteeConfig> {
-        let km = KeyManager::new(self.contract, &self.provider);
-        let id = km.currentCommitteeId().call().await?;
-        let Some(cfg) = fetch(&self.provider, &self.contract, id.into()).await? else {
-            bail!("no committee for id {id} at address {}", self.contract)
+        let Some(cfg) = active_committee(&self.provider, &self.contract).await? else {
+            bail!("no active committee on contract {}", self.contract)
         };
         Ok(cfg)
     }
@@ -95,11 +93,22 @@ impl CommitteeContract {
     }
 }
 
-impl From<&NodeConfig> for CommitteeContract {
-    fn from(cfg: &NodeConfig) -> Self {
-        let contract = &cfg.committee.contract;
-        Self::new(&contract.rpc_url, &contract.websocket_url, contract.address)
+impl From<&ChainConfig> for CommitteeContract {
+    fn from(cfg: &ChainConfig) -> Self {
+        Self::new(
+            &cfg.rpc_url,
+            &cfg.websocket_url,
+            cfg.key_management_contract,
+        )
     }
+}
+pub async fn active_committee(
+    provider: &HttpProvider,
+    addr: &Address,
+) -> Result<Option<CommitteeConfig>> {
+    let contract = KeyManager::new(*addr, provider);
+    let committee = contract.currentCommitteeId().call().await?;
+    fetch(provider, addr, committee.into()).await
 }
 
 async fn fetch(
