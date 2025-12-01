@@ -214,12 +214,11 @@ impl SignedPriorityBundle {
     }
 
     // https://github.com/OffchainLabs/nitro/blob/1e16dc408d24a7784f19acd1e76a71daac528a22/execution/gethexec/express_lane_service.go#L309
-    pub fn validate(&self, epoch: Epoch, plc: Option<Address>) -> Result<(), ValidationError> {
+    pub fn validate(&self, epoch: Epoch, plc: Address) -> Result<(), ValidationError> {
         if self.bundle().chain != ChainId::default() {
             return Err(ValidationError::WrongChainId(self.bundle().chain));
         }
 
-        // TODO: validate auction contract address
         if self.auction != Address::default() {
             return Err(ValidationError::WrongAuctionContract(self.auction));
         }
@@ -227,10 +226,6 @@ impl SignedPriorityBundle {
         if !(self.bundle().epoch == epoch || self.bundle().epoch == epoch + 1) {
             return Err(ValidationError::BadRoundNumber(self.bundle().epoch));
         }
-
-        let Some(plc) = plc else {
-            return Err(ValidationError::NoOnchainPLC);
-        };
 
         let sender = self.sender()?;
         if sender.0 != plc.0 {
@@ -618,7 +613,7 @@ mod tests {
         let plc = PrivateKeySigner::from_signing_key(private_key);
         let bundle = sample_bundle(plc.clone()).unwrap();
         let plc_address = plc.address();
-        let result = bundle.validate(epoch, Some(Address(plc_address)));
+        let result = bundle.validate(epoch, plc_address.into());
         assert_eq!(result, Ok(()));
         Ok(())
     }

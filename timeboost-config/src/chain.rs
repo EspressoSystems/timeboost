@@ -17,6 +17,7 @@ pub struct ChainConfig {
     pub key_management_contract: Address,
     pub inbox_contract: Address,
     pub inbox_block_tag: BlockNumberOrTag,
+    pub auction_contract: Option<Address>,
 }
 
 impl ChainConfig {

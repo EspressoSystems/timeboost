@@ -11222,6 +11222,7 @@ dependencies = [
  "clap",
  "cliquenet",
  "csv",
+ "ethereum_ssz",
  "futures",
  "http 1.3.1",
  "metrics",
