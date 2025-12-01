@@ -1,3 +1,4 @@
+mod auction;
 mod config;
 mod decrypt;
 mod delayed_inbox;
@@ -28,14 +29,15 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
 use tracing::{debug, error, info, warn};
 
+use auction::Auction;
 use decrypt::{Decrypter, DecrypterError};
+use delayed_inbox::DelayedInbox;
 use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
 
-pub use config::{SequencerConfig, SequencerConfigBuilder};
-
 use crate::delayed_inbox::DelayedInbox;
+pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 #[cfg(feature = "times")]
 pub mod time_series {
@@ -117,8 +119,9 @@ impl Sequencer {
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let public_key = cfg.sign_keypair.public_key();
+        let express_lane_auction = cfg.chain_config.auction_contract.map(|a| Auction::new(a));
 
-        let queue = BundleQueue::new(cfg.priority_addr, seq_metrics.clone());
+        let queue = BundleQueue::new(express_lane_auction, seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);

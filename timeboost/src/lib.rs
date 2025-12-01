@@ -83,6 +83,7 @@ impl Timeboost {
         ApiServer::builder()
             .bundles(self.sender.clone())
             .enc_key(self.config.threshold_dec_key.clone())
+            .express_lane(self.config.chain_config.auction_contract.is_some())
             .metrics(self.prometheus.clone())
             .build()
     }

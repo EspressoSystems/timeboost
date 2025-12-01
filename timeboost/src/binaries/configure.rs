@@ -48,6 +48,11 @@ struct Args {
     #[clap(long)]
     chain_id: u64,
 
+    /// Express Lane Auction Contract.
+    /// https://docs.arbitrum.io/intro/glossary#auction-contract
+    #[clap(long)]
+    auction_contract: Option<alloy::primitives::Address>,
+
     /// Inbox contract address
     #[clap(long)]
     inbox_contract: alloy::primitives::Address,
@@ -142,6 +147,7 @@ impl Args {
                 inbox_contract: self.inbox_contract,
                 inbox_block_tag: self.inbox_block_tag,
                 key_management_contract: self.committee_contract,
+                auction_contract: self.auction_contract,
             },
             espresso: Espresso {
                 namespace: self.espresso_namespace,
