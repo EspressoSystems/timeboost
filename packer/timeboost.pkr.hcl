@@ -23,10 +23,11 @@ source "amazon-ebs" "al2" {
   ami_name      = "timeboost-${var.version}"
   instance_type = "t3a.micro"
   region        = "eu-central-1"
+  profile       = "timeboost-dev"
 
   source_ami_filter {
     filters = {
-      name                = "amzn2-ami-hvm-*-x86_64-gp2"
+      name                = "al2023-ami-*-x86_64"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
@@ -36,7 +37,7 @@ source "amazon-ebs" "al2" {
 
   launch_block_device_mappings {
     device_name           = "/dev/xvda"
-    volume_size           = 16
+    volume_size           = 64
     volume_type           = "gp3"
     delete_on_termination = true
   }
