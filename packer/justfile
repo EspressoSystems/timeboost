@@ -1,6 +1,7 @@
-version 			:= env("VERSION", "0.1.0")
-vector-version  	:= "0.50.0"
-overlay-archive 	:= "timeboost-overlay.tar.gz"
+version         := env("VERSION", "0.1.0")
+vector-version  := "0.50.0"
+nitro-image     := "nitro-node:li-sequencer-catchup"
+overlay-archive := "timeboost-overlay.tar.gz"
 
 init:
 	packer init .
@@ -12,19 +13,32 @@ format:
 	packer fmt .
 
 build:
-    cargo build --release --bin timeboost
+	# TODO: remove block-maker
+	cargo build --release --bin timeboost --bin block-maker
 
-make-overlay:
-    #!/usr/bin/env bash
-    set -e
-    if [[ -f {{overlay-archive}} ]]; then
-        rm {{overlay-archive}}
-    fi
-    dir=$(mktemp -d)
-    cp -R overlay $dir/
-    mkdir -p $dir/overlay/usr/local/bin
-    cp ../target/release/timeboost $dir/overlay/usr/local/bin/timeboost
-    tar czf {{overlay-archive}} -C $dir/overlay/ .
+[private]
+extract-nitro target:
+	#!/usr/bin/env bash
+	set -e
+	podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
+	MNT=$(podman image mount {{nitro-image}})
+	cp $MNT/usr/local/bin/* {{target}}
+	podman image unmount {{nitro-image}}
+
+make-overlay: build
+	#!/usr/bin/env bash
+	set -e
+	if [[ -f {{overlay-archive}} ]]; then
+		rm {{overlay-archive}}
+	fi
+	dir=$(mktemp -d)
+	cp -R overlay $dir/
+	mkdir -p $dir/overlay/usr/local/bin
+	cp ../target/release/timeboost $dir/overlay/usr/local/bin/
+	# TODO: remove block-maker and use nitro instead
+	cp ../target/release/block-maker $dir/overlay/usr/local/bin/
+	# run0 just extract-nitro $dir/overlay/usr/local/bin/
+	tar --owner 0 --group 0 -caf {{overlay-archive}} -C $dir/overlay/ .
 
 validate:
 	packer validate \

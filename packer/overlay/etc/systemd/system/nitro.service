@@ -1,0 +1,14 @@
+[Unit]
+Description=Nitro
+After=network.target
+Requires=network-online.target
+
+[Service]
+# TODO: Remove block-maker and use nitro instead
+ExecStart=/usr/local/bin/block-maker --bind 127.0.0.1:55000 --chain /etc/timeboost/chain.toml
+# ExecStart=/usr/local/bin/nitro --conf.file=/etc/nitro/sequencer_config.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
