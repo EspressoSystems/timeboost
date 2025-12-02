@@ -71,7 +71,6 @@ impl Sorter {
     }
 }
 
-#[rustfmt::skip]
 fn compare(seed: &[u8], x: &(Address, Transaction), y: &(Address, Transaction)) -> Ordering {
     use alloy::consensus::transaction::Transaction;
 
@@ -80,11 +79,13 @@ fn compare(seed: &[u8], x: &(Address, Transaction), y: &(Address, Transaction)) 
 
     hx.update(seed);
     hy.update(seed);
-    
+
     hx.update(x.0.as_slice());
     hy.update(y.0.as_slice());
 
-    hx.finalize().as_bytes().cmp(hy.finalize().as_bytes())
+    hx.finalize()
+        .as_bytes()
+        .cmp(hy.finalize().as_bytes())
         .then_with(|| x.1.nonce().cmp(&y.1.nonce()))
         .then_with(|| x.1.hash().cmp(y.1.hash()))
 }
