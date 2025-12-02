@@ -5,6 +5,7 @@ Requires=network-online.target
 
 [Service]
 ExecStart=/usr/local/bin/nitro --conf.file=/etc/nitro/sequencer_config.json
+Environment=HOME=/home/ec2-user
 Restart=always
 RestartSec=5
 
