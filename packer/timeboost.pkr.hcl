@@ -56,17 +56,25 @@ build {
     ]
   }
 
+  provisioner "shell" {
+    inline = [
+      "echo preparing upload directory ...",
+      "sudo mkdir /upload",
+      "sudo chmod 0777 /upload"
+    ]
+  }
+
   provisioner "file" {
     source      = "${var.overlay-archive}"
-    destination = "/tmp/${var.overlay-archive}"
+    destination = "/upload/${var.overlay-archive}"
   }
 
   provisioner "shell" {
     inline = [
       "echo extracting overlay ...",
-      "sudo tar xzf /tmp/${var.overlay-archive} -C /",
+      "sudo tar xzf /upload/${var.overlay-archive} -C /",
       "sudo chown -R ec2-user:ec2-user /usr/local/bin/*",
-      "sudo rm /tmp/${var.overlay-archive}"
+      "sudo rm -rf /upload"
     ]
   }
 }
