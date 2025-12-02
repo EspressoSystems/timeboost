@@ -1,39 +1,15 @@
+# Logs
+
 [sources.vector]
 type = "internal_logs"
 
-# Host
-
-[sources.host]
-type = "host_metrics"
-collectors = ["memory"]
-scrape_interval_secs = 30
-
-[transforms.filtered-host]
-type = "filter"
-inputs = ["host"]
-condition = { type = "vrl", source = ".name == \"memory_used_bytes\"" }
-
-# Service
-
-[sources.timeboost]
+[sources.journal]
 type = "journald"
-include_units = ["timeboost"]
+include_units = ["timeboost", "nitro"]
 
-[transforms.to-json]
-type = "remap"
-inputs = ["timeboost"]
-source = '''
-    .message = object!(parse_json!(string!(.message)))
-
-    if exists(.message.span) {
-         span    = object!(del(.message.span))
-        .message = merge!(.message, span)
-    }
-'''
-
-[transforms.with-metadata]
+[transforms.logs-with-metadata]
 type = "aws_ec2_metadata"
-inputs = ["to-json"]
+inputs = ["journal"]
 fields = [
     "ami-id",
     "availability-zone",
@@ -46,8 +22,6 @@ fields = [
     "role-name",
 ]
 
-# Outputs
-
 [sinks.console]
 type = "console"
 inputs = ["vector"]
@@ -55,14 +29,30 @@ encoding.codec = "text"
 
 [sinks.aws-cloudwatch]
 type = "aws_cloudwatch_logs"
-inputs = ["with-metadata"]
+inputs = ["logs-with-metadata"]
 region = "eu-central-1"
 group_name = "timeboost"
 encoding.codec = "json"
-stream_name = "{{{{raw}}}}{{ host }}{{{{/raw}}}}"
+stream_name = "{{ host }}"
+
+# Metrics
+
+[sources.host]
+type = "host_metrics"
+collectors = ["memory"]
+scrape_interval_secs = 30
+
+[sources.timeboost-metrics]
+type = "prometheus_scrape"
+endpoints = [ "http://127.0.0.1:8003/i/metrics" ]
+
+[transforms.filtered-host]
+type = "filter"
+inputs = ["host"]
+condition = { type = "vrl", source = ".name == \"memory_used_bytes\"" }
 
 [sinks.aws-cloudwatch-metrics]
 type = "aws_cloudwatch_metrics"
-inputs = ["filtered-host"]
+inputs = ["filtered-host", "timeboost-metrics"]
 region = "eu-central-1"
 default_namespace = "timeboost"
