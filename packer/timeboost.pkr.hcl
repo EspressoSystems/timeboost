@@ -19,7 +19,7 @@ variable "overlay-archive" {
   type = string
 }
 
-source "amazon-ebs" "al2" {
+source "amazon-ebs" "linux" {
   ami_name      = "timeboost-${var.version}"
   instance_type = "t3a.micro"
   region        = "eu-central-1"
@@ -37,7 +37,7 @@ source "amazon-ebs" "al2" {
 
   launch_block_device_mappings {
     device_name           = "/dev/xvda"
-    volume_size           = 64
+    volume_size           = 32
     volume_type           = "gp3"
     delete_on_termination = true
   }
@@ -46,7 +46,7 @@ source "amazon-ebs" "al2" {
 }
 
 build {
-  sources = ["source.amazon-ebs.al2"]
+  sources = ["source.amazon-ebs.linux"]
 
   provisioner "shell" {
     inline = [
