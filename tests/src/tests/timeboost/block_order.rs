@@ -7,7 +7,7 @@ use metrics::NoMetrics;
 use multisig::Certificate;
 use timeboost::builder::Certifier;
 use timeboost::sequencer::{Output, Sequencer};
-use timeboost::types::{Block, BlockInfo};
+use timeboost::types::{Auction, Block, BlockInfo};
 use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -31,7 +31,7 @@ async fn block_order() {
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
-
+    let auction_contract = cfg[0].0.chain().auction_contract.unwrap();
     let mut rxs = Vec::new();
     let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(3);
@@ -97,8 +97,8 @@ async fn block_order() {
     for enc_key in &enc_keys {
         enc_key.read().await;
     }
-
-    tasks.spawn(gen_bundles(enc_keys[0].clone(), bcast.clone()));
+    let auction = Auction::new(auction_contract);
+    tasks.spawn(gen_bundles(bcast.clone(), enc_keys[0].clone(), auction));
 
     let mut map: HashMap<BlockInfo, usize> = HashMap::new();
 

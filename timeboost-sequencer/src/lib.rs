@@ -1,4 +1,3 @@
-mod auction;
 mod config;
 mod decrypt;
 mod delayed_inbox;
@@ -21,7 +20,7 @@ use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, CoordinatorEvent};
 use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
-    BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
+    Auction, BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
 };
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
@@ -29,7 +28,6 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
 use tracing::{debug, error, info, warn};
 
-use auction::Auction;
 use decrypt::{Decrypter, DecrypterError};
 use delayed_inbox::DelayedInbox;
 use include::Includer;
@@ -119,7 +117,7 @@ impl Sequencer {
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let public_key = cfg.sign_keypair.public_key();
-        let express_lane_auction = cfg.chain_config.auction_contract.map(|a| Auction::new(a));
+        let express_lane_auction = cfg.chain_config.auction_contract.map(Auction::new);
 
         let queue = BundleQueue::new(express_lane_auction, seq_metrics.clone());
 

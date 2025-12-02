@@ -10957,6 +10957,7 @@ dependencies = [
  "serde",
  "timeboost",
  "timeboost-contract",
+ "timeboost-types",
  "timeboost-utils",
  "tokio",
  "tokio-util",

@@ -1,3 +1,4 @@
+mod auction;
 mod block;
 mod bundle;
 mod bytes;
@@ -12,6 +13,8 @@ mod time;
 pub use sailfish_types as sailfish;
 pub use sailfish_types::UNKNOWN_COMMITTEE_ID;
 pub use sailfish_types::math;
+
+pub use auction::Auction;
 
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{

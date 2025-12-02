@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
-    Bundle, BundleVariant, DkgBundle, Epoch, RetryList, SeqNo, SignedPriorityBundle,
+    Auction, Bundle, BundleVariant, DkgBundle, Epoch, RetryList, SeqNo, SignedPriorityBundle,
 };
 use timeboost_types::{
     CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
@@ -14,7 +14,6 @@ use timeboost_types::{
 use tracing::{error, trace, warn};
 
 use super::Mode;
-use crate::auction::Auction;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -85,10 +84,7 @@ impl BundleQueue {
         inner.set_time(time);
         let epoch_now = inner.time.into();
 
-        let priority_addr = inner
-            .auction
-            .as_ref()
-            .map(|a| a.express_lane_controller(epoch_now));
+        let priority_addr = inner.auction.as_ref().map(|a| a.controller(epoch_now));
 
         match b {
             BundleVariant::Dkg(b) => inner.dkg = Some(b),
@@ -102,7 +98,7 @@ impl BundleQueue {
                     warn!("no priority address for bundle");
                     return;
                 };
-                match b.validate(epoch_now, prio.into()) {
+                match b.validate(epoch_now, prio) {
                     Ok(_) => {
                         let epoch = b.bundle().epoch();
                         inner

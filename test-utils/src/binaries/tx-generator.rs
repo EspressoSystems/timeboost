@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
 
+use alloy::hex::ToHexExt;
 use alloy::{
     consensus::{SignableTransaction, TxEnvelope, TxLegacy},
     network::{Ethereum, TransactionBuilder, TxSignerSync},
@@ -21,7 +22,11 @@ use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
 };
 use timeboost_contract::KeyManager;
-use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
+use timeboost_types::Auction;
+use timeboost_utils::load_generation::{
+    TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, make_txn,
+    tps_to_millis,
+};
 use timeboost_utils::logging::init_logging;
 use tokio::{
     signal::{
@@ -68,6 +73,8 @@ struct Args {
 struct ApiUrl {
     regular_url: Url,
     priority_url: Url,
+    eth_raw_url: Url,
+    eth_enc_url: Url,
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -79,6 +86,7 @@ struct TxGeneratorConfig {
     chain_id: u64,
     parent_id: u64,
     parent_url: Url,
+    auction_contract: Option<alloy::primitives::Address>,
     enc_key: ThresholdEncKey,
     nitro_cfg: Option<NitroConfig>,
 }
@@ -99,6 +107,7 @@ struct TxGenerator {
     enc_ratio: f64,
     prio_ratio: f64,
     enc_key: ThresholdEncKey,
+    auction: Option<Auction>,
     nitro: Option<(RootProvider, Vec<PrivateKeySigner>)>,
 }
 
@@ -139,6 +148,8 @@ impl TxGenerator {
             None
         };
 
+        let auction = cfg.auction_contract.map(Auction::new);
+
         Ok(Self {
             node_urls: cfg.node_urls,
             interval: Duration::from_millis(tps_to_millis(cfg.tps)),
@@ -147,15 +158,25 @@ impl TxGenerator {
             enc_ratio: cfg.enc_ratio,
             prio_ratio: cfg.prio_ratio,
             nitro,
+            auction,
             enc_key: cfg.enc_key,
         })
     }
 
     pub(crate) async fn generate(&self) -> Result<()> {
-        info!("starting tx-generator");
-        let mut interval = interval(self.interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        if self.auction.is_some() {
+            // priority bundle support
+            self.generate_bundles().await
+        } else {
+            self.generate_raw_txs().await
+        }
+    }
 
+    pub(crate) async fn generate_bundles(&self) -> Result<()> {
+        info!("starting bundle generator");
+        let mut interval = interval(self.interval);
+        let auction = self.auction.as_ref().expect("auction is present");
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
             let bundle = match &self.nitro {
@@ -174,11 +195,17 @@ impl TxGenerator {
                         }
                     };
 
-                    make_dev_acct_bundle(&self.enc_key, txn, self.enc_ratio, self.prio_ratio)
-                        .map_err(|_| warn!("failed to generate dev account bundle"))
-                        .ok()
+                    make_dev_acct_bundle(
+                        &self.enc_key,
+                        auction,
+                        txn,
+                        self.enc_ratio,
+                        self.prio_ratio,
+                    )
+                    .map_err(|_| warn!("failed to generate dev account bundle"))
+                    .ok()
                 }
-                None => make_bundle(&self.enc_key)
+                None => make_bundle(&self.enc_key, auction)
                     .map_err(|_| warn!("failed to generate bundle"))
                     .ok(),
             };
@@ -186,6 +213,52 @@ impl TxGenerator {
 
             join_all(self.node_urls.iter().map(|urls| async {
                 self.send_bundle(&b, &urls.regular_url, &urls.priority_url)
+                    .await
+            }))
+            .await;
+
+            if count % 100 == 0 {
+                debug!("submitted: {} bundles", count);
+            }
+            count += 1;
+            interval.tick().await;
+        }
+    }
+
+    pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
+        info!("starting tx-generator");
+        let mut interval = interval(self.interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut count = 0;
+        loop {
+            let tx = match &self.nitro {
+                Some((p, senders)) => {
+                    let len = senders.len();
+                    let sender = senders[count % len].clone();
+                    let receiver = senders[(count + 1) % len].clone();
+
+                    let txn = match Self::prepare_txn(p, self.chain_id, sender, receiver.address())
+                        .await
+                    {
+                        Ok(txn) => txn,
+                        Err(_) => {
+                            warn!("failed to prepare txn");
+                            continue;
+                        }
+                    };
+
+                    make_dev_acct_txn(&self.enc_key, txn, self.enc_ratio)
+                        .map_err(|_| warn!("failed to generate dev account bundle"))
+                        .ok()
+                }
+                None => make_txn(&self.enc_key)
+                    .map_err(|_| warn!("failed to generate bundle"))
+                    .ok(),
+            };
+            let Some(tx) = tx else { continue };
+
+            join_all(self.node_urls.iter().map(|urls| async {
+                self.send_txn(tx.clone(), &urls.eth_raw_url, &urls.eth_enc_url)
                     .await
             }))
             .await;
@@ -230,6 +303,36 @@ impl TxGenerator {
             base_fee,
             signer: from,
         })
+    }
+
+    async fn send_txn(&self, txn: TransactionVariant, raw_url: &Url, enc_url: &Url) {
+        let result = match txn {
+            TransactionVariant::PlainText(t) => {
+                self.client
+                    .post(raw_url.clone())
+                    .json(&t.encode_hex())
+                    .send()
+                    .await
+            }
+            TransactionVariant::Encrypted(t) => {
+                self.client
+                    .post(enc_url.clone())
+                    .json(&t.encode_hex())
+                    .send()
+                    .await
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    warn!("response status: {}", response.status());
+                }
+            }
+            Err(err) => {
+                warn!(%err, "failed to send bundle");
+            }
+        }
     }
 
     async fn send_bundle(&self, bundle: &BundleVariant, regular_url: &Url, priority_url: &Url) {
@@ -436,10 +539,13 @@ async fn main() -> Result<()> {
         let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
         let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
         let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
-
+        let eth_raw_url = format!("http://{addr}/v1/eth_sendRawTransaction").parse()?;
+        let eth_enc_url = format!("http://{addr}/v1/eth_sendEncTransaction").parse()?;
         urls.push(ApiUrl {
             regular_url,
             priority_url,
+            eth_raw_url,
+            eth_enc_url,
         });
     }
 
@@ -463,6 +569,7 @@ async fn main() -> Result<()> {
         .prio_ratio(args.prio_ratio)
         .parent_url(chain_config.rpc_url)
         .parent_id(chain_config.id)
+        .maybe_auction_contract(chain_config.auction_contract)
         .chain_id(args.namespace)
         .enc_key(enc_key)
         .maybe_nitro_cfg(nitro_cfg)

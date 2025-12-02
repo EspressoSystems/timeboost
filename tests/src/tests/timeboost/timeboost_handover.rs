@@ -133,6 +133,7 @@ async fn run_handover(
     for (key, _, _) in &curr {
         key.read().await;
     }
+    let auction = Auction::new(curr[0].1.chain().auction_contract.unwrap());
 
     // generate bundles
     tasks.spawn({
@@ -141,7 +142,7 @@ async fn run_handover(
         let bcast = bcast.clone();
         async move {
             let (tx, mut rx) = tokio::sync::broadcast::channel(200);
-            tokio::spawn(gen_bundles(key, tx));
+            tokio::spawn(gen_bundles(tx, key, auction));
             while let Ok(bundle) = rx.recv().await {
                 if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
                     warn!("Failed to send bundle: {}", e);
@@ -421,9 +422,10 @@ async fn mk_configs(
                             .parse::<Url>()
                             .expect("valid url"),
                     )
+                    .key_management_contract(alloy::primitives::Address::default())
                     .inbox_contract(alloy::primitives::Address::default())
                     .inbox_block_tag(alloy::eips::BlockNumberOrTag::Finalized)
-                    .key_management_contract(alloy::primitives::Address::default())
+                    .auction_contract(alloy::primitives::Address::default())
                     .build(),
             )
             .build();

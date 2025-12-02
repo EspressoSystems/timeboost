@@ -1,13 +1,9 @@
 use std::ops::{Deref, DerefMut};
 
-use alloy::consensus::transaction::SignerRecoverable;
-use alloy::consensus::{Sealed, TxEnvelope};
-use alloy::eips::{Encodable2718, Typed2718};
-use alloy::primitives::B256;
-use alloy::rlp::Decodable;
+use alloy::consensus::TxEnvelope;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Error, SignerSync, k256::ecdsa::SigningKey};
-use bytes::BufMut;
+use alloy_rlp::Decodable;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{CommitteeId, KeyId, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -16,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use arbitrary::{Arbitrary, Result, Unstructured};
 use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
-use crate::{Bytes, Epoch, SeqNo, Timestamp};
+use crate::{Bytes, Epoch, SeqNo};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
@@ -96,9 +92,9 @@ impl Bundle {
     pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
         use alloy::rlp::Encodable;
 
-        let t: Transaction = loop {
-            let candidate = Transaction::arbitrary(u)?;
-            if let TxEnvelope::Eip4844(ref eip4844) = candidate.tx {
+        let t = loop {
+            let candidate = TxEnvelope::arbitrary(u)?;
+            if let TxEnvelope::Eip4844(ref eip4844) = candidate {
                 if eip4844.tx().clone().try_into_4844_with_sidecar().is_ok() {
                     // Avoid generating 4844 Tx with blobs of size 131 KB
                     continue;
@@ -377,86 +373,6 @@ impl Committable for ChainId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Transaction {
     tx: TxEnvelope,
-    addr: Address,
-    time: Timestamp,
-}
-
-// Boilerplate for ensuring trait compatibility
-impl Typed2718 for Transaction {
-    fn ty(&self) -> u8 {
-        self.tx.ty()
-    }
-}
-
-impl Encodable2718 for Transaction {
-    fn encode_2718_len(&self) -> usize {
-        self.tx.encode_2718_len()
-    }
-
-    fn encode_2718(&self, out: &mut dyn BufMut) {
-        self.tx.encode_2718(out);
-    }
-
-    fn type_flag(&self) -> Option<u8> {
-        self.tx.type_flag()
-    }
-
-    fn encoded_2718(&self) -> Vec<u8> {
-        self.tx.encoded_2718()
-    }
-
-    fn trie_hash(&self) -> B256 {
-        self.tx.trie_hash()
-    }
-
-    fn seal(self) -> Sealed<Self> {
-        let hash = self.tx.trie_hash();
-        Sealed::new_unchecked(self, hash)
-    }
-
-    fn network_len(&self) -> usize {
-        self.tx.network_len()
-    }
-
-    fn network_encode(&self, out: &mut dyn BufMut) {
-        self.tx.network_encode(out);
-    }
-}
-
-impl Transaction {
-    pub fn decode(t: Timestamp, bytes: &[u8]) -> Result<Self, InvalidTransaction> {
-        let mut buf = bytes;
-        let tx = TxEnvelope::decode(&mut buf)?;
-        Self::try_from((t, tx))
-    }
-
-    pub fn address(&self) -> &Address {
-        &self.addr
-    }
-
-    pub fn time(&self) -> &Timestamp {
-        &self.time
-    }
-
-    #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
-        let tx = TxEnvelope::arbitrary(u)?;
-        let tm = Timestamp::arbitrary(u)?;
-        Self::try_from((tm, tx))
-    }
-}
-
-impl TryFrom<(Timestamp, TxEnvelope)> for Transaction {
-    type Error = InvalidTransaction;
-
-    fn try_from(val: (Timestamp, TxEnvelope)) -> Result<Self, Self::Error> {
-        let addr = val.1.recover_signer()?;
-        Ok(Self {
-            tx: val.1,
-            addr: addr.into(),
-            time: val.0,
-        })
-    }
 }
 
 impl std::ops::Deref for Transaction {
@@ -464,6 +380,14 @@ impl std::ops::Deref for Transaction {
 
     fn deref(&self) -> &Self::Target {
         &self.tx
+    }
+}
+
+impl Transaction {
+    pub fn decode(bytes: &[u8]) -> Result<Self, InvalidTransaction> {
+        let mut buf = bytes;
+        let tx = TxEnvelope::decode(&mut buf)?;
+        Ok(Self { tx })
     }
 }
 
@@ -538,6 +462,12 @@ impl Committable for Signature {
 
 // Signer wrapper
 pub struct Signer(alloy::signers::local::PrivateKeySigner);
+
+impl Signer {
+    pub fn address(&self) -> alloy::primitives::Address {
+        self.0.address()
+    }
+}
 
 impl Default for Signer {
     fn default() -> Self {

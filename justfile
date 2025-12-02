@@ -99,7 +99,7 @@ mkconfig nodes seed="42": build-release
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-            --auction-contract "0x5fcb496a31b7AE91e7c9078Ec662bd7A55cd3079" \
+            --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
             --output "test-configs/nodes"; \
     done
@@ -120,7 +120,7 @@ mkconfig-linux nodes seed="42": build-release
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-            --auction-contract "0x5fcb496a31b7AE91e7c9078Ec662bd7A55cd3079" \
+            --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
