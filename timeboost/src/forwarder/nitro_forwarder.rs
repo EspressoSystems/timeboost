@@ -52,8 +52,8 @@ impl NitroForwarder {
                 .iter()
                 .map(|tx| timeboost_proto::inclusion::Transaction {
                     encoded_txn: tx.encoded_2718().into(),
-                    address: tx.address().as_slice().to_vec(),
-                    timestamp: **tx.time(),
+                    address: vec![],
+                    timestamp: 0,
                 })
                 .collect(),
             consensus_timestamp: timestamp.into(),
