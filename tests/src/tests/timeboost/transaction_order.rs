@@ -34,7 +34,7 @@ async fn transaction_order() {
     let quorum = 4;
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
 
-    let chain_id = cfg[0].0.chain_config.id;
+    let chain_id = cfg[0].0.namespace();
     let auction = Auction::new(cfg[0].0.chain_config.auction_contract.unwrap());
 
     let mut rxs = Vec::new();
