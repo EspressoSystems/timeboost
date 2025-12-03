@@ -341,7 +341,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml",
       ]
     volumes:
       - "config:/config"
@@ -376,7 +376,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
+        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml",
       ]
     volumes:
       - "config:/config"
@@ -411,7 +411,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
+        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml",
       ]
     volumes:
       - "config:/config"
@@ -446,7 +446,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
+        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml",
       ]
     volumes:
       - "config:/config"
@@ -516,7 +516,7 @@ services:
         "--https-only",
         "false",
         "--blocks",
-        "100"
+        "100",
       ]
     volumes:
       - "config:/config"
@@ -555,7 +555,7 @@ services:
         "--namespace",
         "412346",
         "--tps",
-        "10"
+        "10",
       ]
     volumes:
       - "config:/config"

@@ -89,6 +89,7 @@ impl TimeboostConfig {
             .leash_len(self.leash_len)
             .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())
+            .namespace(self.namespace.into())
             .build()
     }
 

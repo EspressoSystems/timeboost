@@ -141,7 +141,7 @@ impl Args {
                 },
             },
             chain: ChainConfig {
-                id: self.chain_id,
+                id: self.chain_id.into(),
                 rpc_url: self.chain_rpc_url,
                 websocket_url: self.chain_websocket_url,
                 inbox_contract: self.inbox_contract,

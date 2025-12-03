@@ -117,9 +117,9 @@ impl Sequencer {
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let public_key = cfg.sign_keypair.public_key();
-        let express_lane_auction = cfg.chain_config.auction_contract.map(Auction::new);
+        let auction = cfg.chain_config.auction_contract.map(Auction::new);
 
-        let queue = BundleQueue::new(express_lane_auction, seq_metrics.clone());
+        let queue = BundleQueue::new(public_key, cfg.namespace, auction, seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
