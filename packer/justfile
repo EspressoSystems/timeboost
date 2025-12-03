@@ -1,5 +1,5 @@
-version         := env("VERSION", "0.1.0")
-vector-version  := "0.50.0"
+version         := "0.2.0"
+vector-version  := "0.51.1"
 nitro-image     := "nitro-node:li-sequencer-catchup"
 overlay-archive := "timeboost-overlay.tar.gz"
 

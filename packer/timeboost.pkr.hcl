@@ -73,7 +73,6 @@ build {
     inline = [
       "echo extracting overlay ...",
       "sudo tar xzf /upload/${var.overlay-archive} -C /",
-      "sudo chown -R ec2-user:ec2-user /usr/local/bin/*",
       "sudo rm -rf /upload"
     ]
   }
