@@ -101,7 +101,7 @@ tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
 tower = "0.5.2"
-tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
+tower-http = { version = "0.6.7", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.7.0"
