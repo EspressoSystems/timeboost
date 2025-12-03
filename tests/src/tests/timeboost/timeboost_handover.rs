@@ -414,7 +414,7 @@ async fn mk_configs(
             .namespace(ChainId::default())
             .chain_config(
                 ChainConfig::builder()
-                    .id(ChainId::default())
+                    .id(ChainId::from(1))
                     .rpc_url(
                         "https://theserversroom.com/ethereum/54cmzzhcj1o/"
                             .parse::<Url>()
