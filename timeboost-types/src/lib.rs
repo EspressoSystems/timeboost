@@ -19,7 +19,7 @@ pub use auction::Auction;
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
     Address, Bundle, BundleVariant, ChainId, DkgBundle, PriorityBundle, SignedPriorityBundle,
-    Signer, Transaction,
+    Signer, Transaction, ValidationError,
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};

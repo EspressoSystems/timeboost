@@ -11,7 +11,9 @@ use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
 use timeboost_crypto::prelude::{Plaintext, ThresholdEncKey, ThresholdEncScheme, ThresholdScheme};
-use timeboost_types::{Auction, Bundle, BundleVariant, Epoch, PriorityBundle, SeqNo, Signer};
+use timeboost_types::{
+    Auction, Bundle, BundleVariant, ChainId, Epoch, PriorityBundle, SeqNo, Signer,
+};
 use tracing::warn;
 
 pub struct TxInfo {
@@ -55,7 +57,11 @@ pub fn make_txn(key: &ThresholdEncKey) -> anyhow::Result<TransactionVariant> {
     Ok(TransactionVariant::PlainText(d))
 }
 
-pub fn make_bundle(key: &ThresholdEncKey, auction: &Auction) -> anyhow::Result<BundleVariant> {
+pub fn make_bundle(
+    chain_id: ChainId,
+    key: &ThresholdEncKey,
+    auction: &Auction,
+) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
     rng.fill(&mut v);
@@ -63,6 +69,7 @@ pub fn make_bundle(key: &ThresholdEncKey, auction: &Auction) -> anyhow::Result<B
 
     let max_seqno = 10;
     let mut bundle = Bundle::arbitrary(&mut u)?;
+    bundle.set_chain_id(chain_id);
 
     if rng.gen_bool(0.5) {
         // encrypt bundle

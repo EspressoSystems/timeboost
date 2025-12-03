@@ -22,7 +22,7 @@ use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
 };
 use timeboost_contract::KeyManager;
-use timeboost_types::Auction;
+use timeboost_types::{Auction, ChainId};
 use timeboost_utils::load_generation::{
     TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, make_txn,
     tps_to_millis,
@@ -83,8 +83,8 @@ struct TxGeneratorConfig {
     tps: u32,
     enc_ratio: f64,
     prio_ratio: f64,
-    chain_id: u64,
-    parent_id: u64,
+    chain_id: ChainId,
+    parent_id: ChainId,
     parent_url: Url,
     auction_contract: Option<alloy::primitives::Address>,
     enc_key: ThresholdEncKey,
@@ -103,7 +103,7 @@ struct TxGenerator {
     node_urls: Vec<ApiUrl>,
     client: Client,
     interval: Duration,
-    chain_id: u64,
+    chain_id: ChainId,
     enc_ratio: f64,
     prio_ratio: f64,
     enc_key: ThresholdEncKey,
@@ -205,7 +205,7 @@ impl TxGenerator {
                     .map_err(|_| warn!("failed to generate dev account bundle"))
                     .ok()
                 }
-                None => make_bundle(&self.enc_key, auction)
+                None => make_bundle(self.chain_id, &self.enc_key, auction)
                     .map_err(|_| warn!("failed to generate bundle"))
                     .ok(),
             };
@@ -273,13 +273,13 @@ impl TxGenerator {
 
     async fn prepare_txn(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         from: PrivateKeySigner,
         to: Address,
     ) -> Result<TxInfo> {
         let nonce = p.get_transaction_count(from.address()).await?;
         let tx = TransactionRequest::default()
-            .with_chain_id(chain_id)
+            .with_chain_id(chain_id.into())
             .with_nonce(nonce)
             .with_from(from.address())
             .with_to(to)
@@ -296,7 +296,7 @@ impl TxGenerator {
             .with_context(|| "failed to get gas price")?;
 
         Ok(TxInfo {
-            chain_id,
+            chain_id: chain_id.into(),
             nonce,
             to,
             gas_limit,
@@ -372,7 +372,7 @@ impl TxGenerator {
     async fn fund_addresses(
         parent: &RootProvider,
         nitro: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         dev_key: &PrivateKeySigner,
         keys: &[PrivateKeySigner],
         bridge_addr: alloy::primitives::Address,
@@ -431,14 +431,14 @@ impl TxGenerator {
 
     async fn fund_address(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         from: &PrivateKeySigner,
         to: &PrivateKeySigner,
         nonce: u64,
     ) -> Result<()> {
         let one_eth_plus = U256::from_str("1100000000000000000").expect("1.1 ETH");
         let mut tx = TxLegacy {
-            chain_id: Some(chain_id),
+            chain_id: Some(chain_id.into()),
             nonce,
             gas_price: 1_000_000_000,
             gas_limit: 21_000,
@@ -459,7 +459,7 @@ impl TxGenerator {
 
     async fn bridge_funds(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         key: &PrivateKeySigner,
         bridge_addr: Address,
     ) -> Result<()> {
@@ -470,7 +470,7 @@ impl TxGenerator {
         let calldata = alloy::primitives::Bytes::from(func_sig);
 
         let mut tx = TxLegacy {
-            chain_id: Some(chain_id),
+            chain_id: Some(chain_id.into()),
             nonce: 0,
             gas_price: 1_000_000_000,
             gas_limit: 100_000,
@@ -570,7 +570,7 @@ async fn main() -> Result<()> {
         .parent_url(chain_config.rpc_url)
         .parent_id(chain_config.id)
         .maybe_auction_contract(chain_config.auction_contract)
-        .chain_id(args.namespace)
+        .chain_id(args.namespace.into())
         .enc_key(enc_key)
         .maybe_nitro_cfg(nitro_cfg)
         .build();

@@ -1,3 +1,4 @@
+use core::fmt;
 use std::ops::{Deref, DerefMut};
 
 use alloy::consensus::TxEnvelope;
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use arbitrary::{Arbitrary, Result, Unstructured};
 use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
-use crate::{Bytes, Epoch, SeqNo};
+use crate::{Auction, Bytes, Epoch, SeqNo};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
@@ -26,7 +27,7 @@ pub enum BundleVariant {
 /// A bundle contains a list of transactions (encrypted or unencrypted, both encoded as `Bytes`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Bundle {
-    chain: ChainId,
+    chain_id: ChainId,
     epoch: Epoch,
     data: Bytes,
     encrypted: bool,
@@ -34,9 +35,9 @@ pub struct Bundle {
 }
 
 impl Bundle {
-    pub fn new(chain: ChainId, epoch: Epoch, data: Bytes, encrypted: bool) -> Self {
+    pub fn new(chain_id: ChainId, epoch: Epoch, data: Bytes, encrypted: bool) -> Self {
         let mut this = Self {
-            chain,
+            chain_id,
             epoch,
             data,
             encrypted,
@@ -54,7 +55,7 @@ impl Bundle {
 
 impl Bundle {
     pub fn chain_id(&self) -> ChainId {
-        self.chain
+        self.chain_id
     }
 
     pub fn epoch(&self) -> Epoch {
@@ -86,6 +87,11 @@ impl Bundle {
         self.data = d;
         self.encrypted = false;
         self.update_hash();
+    }
+
+    pub fn set_chain_id(&mut self, chain_id: ChainId) {
+        self.chain_id = chain_id;
+        self.update_hash()
     }
 
     #[cfg(feature = "arbitrary")]
@@ -165,7 +171,7 @@ impl PriorityBundle {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(DOMAIN.as_bytes());
-        buf.extend_from_slice(&self.bundle().chain.0.to_be_bytes());
+        buf.extend_from_slice(&self.bundle().chain_id.0.to_be_bytes());
         buf.extend_from_slice(self.auction.0.0.as_slice());
         buf.extend_from_slice(&self.bundle().epoch.to_be_bytes());
         buf.extend_from_slice(&self.seqno.to_be_bytes());
@@ -210,12 +216,8 @@ impl SignedPriorityBundle {
     }
 
     // https://github.com/OffchainLabs/nitro/blob/1e16dc408d24a7784f19acd1e76a71daac528a22/execution/gethexec/express_lane_service.go#L309
-    pub fn validate(&self, epoch: Epoch, plc: Address) -> Result<(), ValidationError> {
-        if self.bundle().chain != ChainId::default() {
-            return Err(ValidationError::WrongChainId(self.bundle().chain));
-        }
-
-        if self.auction != Address::default() {
+    pub fn validate(&self, epoch: Epoch, auction: &Auction) -> Result<(), ValidationError> {
+        if self.auction != auction.contract() {
             return Err(ValidationError::WrongAuctionContract(self.auction));
         }
 
@@ -223,8 +225,7 @@ impl SignedPriorityBundle {
             return Err(ValidationError::BadRoundNumber(self.bundle().epoch));
         }
 
-        let sender = self.sender()?;
-        if sender.0 != plc.0 {
+        if self.sender()? != auction.controller(self.bundle().epoch()) {
             return Err(ValidationError::NotPLC);
         }
         Ok(())
@@ -361,6 +362,18 @@ pub struct ChainId(alloy::primitives::ChainId);
 impl From<u64> for ChainId {
     fn from(value: u64) -> Self {
         ChainId(value)
+    }
+}
+
+impl From<ChainId> for u64 {
+    fn from(value: ChainId) -> Self {
+        value.0
+    }
+}
+
+impl fmt::Display for ChainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ChainId({})", self.0)
     }
 }
 
@@ -506,9 +519,6 @@ pub enum InvalidTransaction {
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ValidationError {
-    #[error("bundle chain ID {:?} does not match current chain ID: 0", .0)]
-    WrongChainId(ChainId),
-
     #[error("bundle auction address {:?} does not match current auction address", .0)]
     WrongAuctionContract(Address),
 
@@ -527,28 +537,25 @@ pub enum ValidationError {
 
 #[cfg(test)]
 mod tests {
-    use alloy::signers::k256::ecdsa::SigningKey;
-    use alloy::signers::local::PrivateKeySigner;
     use ark_std::rand;
     use ssz::ssz_encode;
 
-    use crate::{Epoch, SeqNo, bundle::Address};
+    use crate::{Auction, Epoch, SeqNo, bundle::Address};
 
-    use super::{Bundle, ChainId, PriorityBundle, SignedPriorityBundle};
+    use super::{Bundle, ChainId, PriorityBundle, SignedPriorityBundle, Signer};
 
     #[test]
     fn test_verify() -> Result<(), Box<dyn std::error::Error>> {
         let epoch = Epoch::from(0);
-        let private_key = SigningKey::random(&mut rand::thread_rng());
-        let plc = PrivateKeySigner::from_signing_key(private_key);
-        let bundle = sample_bundle(plc.clone()).unwrap();
-        let plc_address = plc.address();
-        let result = bundle.validate(epoch, plc_address.into());
+        let auction_contract = Address::default();
+        let auction = Auction::new(auction_contract);
+        let bundle = sample_bundle().unwrap();
+        let result = bundle.validate(epoch, &auction);
         assert_eq!(result, Ok(()));
         Ok(())
     }
 
-    fn sample_bundle(plc: PrivateKeySigner) -> anyhow::Result<SignedPriorityBundle> {
+    fn sample_bundle() -> anyhow::Result<SignedPriorityBundle> {
         let mut rlp_encoded_txns = Vec::new();
         for _ in 0..5 {
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -557,13 +564,13 @@ mod tests {
         let ssz_encoded_txns = ssz_encode(&rlp_encoded_txns);
         let bundle = Bundle::new(
             ChainId::default(),
-            Epoch::default(),
+            Epoch::from(0),
             ssz_encoded_txns.into(),
             false,
         );
         let unsigned_priority = PriorityBundle::new(bundle, Address::default(), SeqNo::zero());
 
-        let signed_priority = unsigned_priority.sign((plc).into());
+        let signed_priority = unsigned_priority.sign(Signer::default());
         signed_priority.map_err(anyhow::Error::from)
     }
 }

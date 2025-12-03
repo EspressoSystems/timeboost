@@ -31,7 +31,10 @@ async fn block_order() {
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
-    let auction_contract = cfg[0].0.chain().auction_contract.unwrap();
+
+    let chain_id = cfg[0].0.namespace();
+    let auction = Auction::new(cfg[0].0.chain_config.auction_contract.unwrap());
+
     let mut rxs = Vec::new();
     let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(3);
@@ -97,8 +100,13 @@ async fn block_order() {
     for enc_key in &enc_keys {
         enc_key.read().await;
     }
-    let auction = Auction::new(auction_contract);
-    tasks.spawn(gen_bundles(bcast.clone(), enc_keys[0].clone(), auction));
+
+    tasks.spawn(gen_bundles(
+        bcast.clone(),
+        chain_id,
+        enc_keys[0].clone(),
+        auction,
+    ));
 
     let mut map: HashMap<BlockInfo, usize> = HashMap::new();
 

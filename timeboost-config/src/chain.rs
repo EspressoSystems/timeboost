@@ -4,6 +4,7 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::Address;
 use bon::Builder;
 use serde::{Deserialize, Serialize};
+use timeboost_types::ChainId;
 use url::Url;
 
 use crate::{ConfigError, read_toml};
@@ -11,7 +12,7 @@ use crate::{ConfigError, read_toml};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[serde(rename_all = "kebab-case")]
 pub struct ChainConfig {
-    pub id: u64,
+    pub id: ChainId,
     pub rpc_url: Url,
     pub websocket_url: Url,
     pub key_management_contract: Address,

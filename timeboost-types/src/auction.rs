@@ -8,7 +8,10 @@ pub struct Auction {
 }
 
 impl Auction {
-    pub fn new(contract: alloy::primitives::Address) -> Self {
+    pub fn new<C>(contract: C) -> Self
+    where
+        C: Into<Address>,
+    {
         Self {
             contract: contract.into(),
         }

@@ -3,10 +3,12 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use multisig::PublicKey;
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
-    Auction, Bundle, BundleVariant, DkgBundle, Epoch, RetryList, SeqNo, SignedPriorityBundle,
+    Auction, Bundle, BundleVariant, ChainId, DkgBundle, Epoch, RetryList, SeqNo,
+    SignedPriorityBundle,
 };
 use timeboost_types::{
     CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
@@ -23,6 +25,8 @@ pub struct BundleQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
+    label: PublicKey,
+    chain_id: ChainId,
     auction: Option<Auction>,
     time: Timestamp,
     index: DelayedInboxIndex,
@@ -48,8 +52,15 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(auction: Option<Auction>, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(
+        label: PublicKey,
+        chain_id: ChainId,
+        auction: Option<Auction>,
+        metrics: Arc<SequencerMetrics>,
+    ) -> Self {
         Self(Arc::new(Mutex::new(Inner {
+            label,
+            chain_id,
             auction,
             time: Timestamp::now(),
             index: 0.into(),
@@ -84,21 +95,24 @@ impl BundleQueue {
         inner.set_time(time);
         let epoch_now = inner.time.into();
 
-        let priority_addr = inner.auction.as_ref().map(|a| a.controller(epoch_now));
-
         match b {
             BundleVariant::Dkg(b) => inner.dkg = Some(b),
             BundleVariant::Regular(b) => {
+                if b.chain_id() != inner.chain_id {
+                    warn!(node = %inner.label, chain = %inner.chain_id, "wrong chain id: {}", b.chain_id());
+                    return;
+                }
+
                 if inner.cache.insert(*b.digest()) {
                     inner.regular.push_back((now, b))
                 }
             }
             BundleVariant::Priority(b) => {
-                let Some(prio) = priority_addr else {
+                let Some(auction) = inner.auction.as_ref() else {
                     warn!("no priority address for bundle");
                     return;
                 };
-                match b.validate(epoch_now, prio) {
+                match b.validate(epoch_now, auction) {
                     Ok(_) => {
                         let epoch = b.bundle().epoch();
                         inner
