@@ -1,10 +1,13 @@
 [Unit]
 Description=Timeboost
-After=network.target
+After=network.target nitro.service
 Requires=network-online.target
+Wants=nitro.service
 
 [Service]
-ExecStart=/usr/local/bin/timeboost --config /etc/timeboost/timeboost.toml
+ExecStart=/usr/local/bin/timeboost -c /etc/timeboost/timeboost.toml
+Environment=RUST_LOG_FORMAT=json
+Environment=RUST_LOG={{LOG_DIRECTIVES}}
 Restart=always
 RestartSec=5
 
