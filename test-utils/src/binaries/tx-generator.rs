@@ -17,6 +17,7 @@ use bytes::BytesMut;
 use clap::Parser;
 use futures::future::join_all;
 use reqwest::{Client, Url};
+use serde::Serialize;
 use timeboost::config::{ChainConfig, HTTP_API_PORT_OFFSET};
 use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
@@ -24,8 +25,7 @@ use timeboost::{
 use timeboost_contract::KeyManager;
 use timeboost_types::{Auction, ChainId};
 use timeboost_utils::load_generation::{
-    TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, make_txn,
-    tps_to_millis,
+    TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, tps_to_millis,
 };
 use timeboost_utils::logging::init_logging;
 use tokio::{
@@ -48,6 +48,9 @@ struct Args {
 
     #[clap(long, default_value_t = 10101)]
     namespace: u64,
+
+    #[clap(long, short)]
+    express_lane: bool,
 
     #[clap(long, default_value_t = 100)]
     tps: u32,
@@ -248,13 +251,25 @@ impl TxGenerator {
                     };
 
                     make_dev_acct_txn(&self.enc_key, txn, self.enc_ratio)
-                        .map_err(|_| warn!("failed to generate dev account bundle"))
+                        .map_err(|_| warn!("failed to generate dev account txn"))
                         .ok()
                 }
-                None => make_txn(&self.enc_key)
-                    .map_err(|_| warn!("failed to generate bundle"))
-                    .ok(),
+                None => {
+                    let dev_account = PrivateKeySigner::from_str(DEV_ACCOUNT)?;
+                    let tx_info = TxInfo {
+                        chain_id: self.chain_id.into(),
+                        nonce: 0,
+                        to: dev_account.address(),
+                        base_fee: 5,
+                        gas_limit: 5,
+                        signer: dev_account,
+                    };
+                    make_dev_acct_txn(&self.enc_key, tx_info, self.enc_ratio)
+                        .map_err(|_| warn!("failed to generate txn"))
+                        .ok()
+                }
             };
+
             let Some(tx) = tx else { continue };
 
             join_all(self.node_urls.iter().map(|urls| async {
@@ -308,18 +323,15 @@ impl TxGenerator {
     async fn send_txn(&self, txn: TransactionVariant, raw_url: &Url, enc_url: &Url) {
         let result = match txn {
             TransactionVariant::PlainText(t) => {
-                self.client
-                    .post(raw_url.clone())
-                    .json(&t.encode_hex())
-                    .send()
-                    .await
+                let raw_tx = RawTx { tx: t.encode_hex() };
+                self.client.post(raw_url.clone()).json(&raw_tx).send().await
             }
             TransactionVariant::Encrypted(t) => {
-                self.client
-                    .post(enc_url.clone())
-                    .json(&t.encode_hex())
-                    .send()
-                    .await
+                let enc_tx = EncTx {
+                    chain_id: self.chain_id,
+                    tx: t.encode_hex(),
+                };
+                self.client.post(enc_url.clone()).json(&enc_tx).send().await
             }
         };
 
@@ -330,7 +342,7 @@ impl TxGenerator {
                 }
             }
             Err(err) => {
-                warn!(%err, "failed to send bundle");
+                warn!(%err, "failed to send transaction");
             }
         }
     }
@@ -511,6 +523,17 @@ impl TxGenerator {
     }
 }
 
+#[derive(Serialize, Clone)]
+struct RawTx {
+    tx: String,
+}
+
+#[derive(Serialize, Clone)]
+struct EncTx {
+    chain_id: ChainId,
+    tx: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging();
@@ -525,9 +548,17 @@ async fn main() -> Result<()> {
         "prio_ratio must be a fraction between 0 and 1"
     );
 
-    let chain_config = ChainConfig::read(&args.chain)
+    let mut chain_config = ChainConfig::read(&args.chain)
         .await
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
+
+    if args.express_lane {
+        if chain_config.auction_contract.is_none() {
+            bail!("Failed to initialize express lane mode; missing auction contract")
+        }
+    } else {
+        chain_config.auction_contract = None;
+    }
 
     let mut contract = CommitteeContract::from(&chain_config);
     let Ok(committee) = contract.active().await else {
@@ -569,7 +600,11 @@ async fn main() -> Result<()> {
         .prio_ratio(args.prio_ratio)
         .parent_url(chain_config.rpc_url)
         .parent_id(chain_config.id)
-        .maybe_auction_contract(chain_config.auction_contract)
+        .maybe_auction_contract(if args.express_lane {
+            chain_config.auction_contract
+        } else {
+            None
+        })
         .chain_id(args.namespace.into())
         .enc_key(enc_key)
         .maybe_nitro_cfg(nitro_cfg)
