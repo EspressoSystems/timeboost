@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.config)
+    let mut config = NodeConfig::read(&cli.config)
         .await
         .with_context(|| format!("could not read config {:?}", cli.config))?;
 
