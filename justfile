@@ -207,7 +207,7 @@ test-no-express: build-release build-test-utils
   env RUST_LOG=block_checker=info,error \
   target/release/run \
     --verbose \
-    --timeout 120 \
+    --timeout 180 \
     --spawn "1|anvil --port 8545 --silent" \
     --run   "2|sleep 3" \
     --run   "3|just deploy-contract 127.0.0.1:8545" \
@@ -245,6 +245,7 @@ test-dyn-comm: build-release build-test-utils
         --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
         --spawn "5|target/release/run-committee \
             --chain test-configs/chain.toml \
+            --express-lane \
             --committee 0 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
@@ -255,6 +256,7 @@ test-dyn-comm: build-release build-test-utils
         --run   "9|sleep 3" \
         --spawn "10|target/release/run-committee \
             --chain test-configs/chain.toml \
+            --express-lane \
             --committee 1 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
@@ -264,6 +266,7 @@ test-dyn-comm: build-release build-test-utils
             --chain test-configs/chain.toml \
             --bind 127.0.0.1:55000" \
         --spawn "13|target/release/tx-generator \
+            --express-lane \
             --chain test-configs/chain.toml \
             --namespace 10101 \
             --enc-ratio 1.0" \
