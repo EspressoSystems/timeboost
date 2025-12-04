@@ -52,6 +52,9 @@ struct Args {
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
+
+    #[clap(long, default_value_t = false)]
+    express_lane: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -125,6 +128,10 @@ async fn main() -> Result<()> {
         if args.scenario.is_none() || args.ignore_stamp {
             cmd.with_arg("--ignore-stamp");
         }
+        if args.express_lane {
+            cmd.with_arg("--express-lane");
+        }
+
         if let Some(until) = &args.until.until_round {
             let mut u = Cmd::new(args.until.until.clone());
             u.with_arg("--api")

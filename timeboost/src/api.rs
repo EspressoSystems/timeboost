@@ -104,20 +104,18 @@ async fn submit_regular(server: State<ApiServer>, json: Json<Bundle>) -> Result<
 }
 
 async fn submit_tx(server: State<ApiServer>, json: Json<RawTx>) -> Result<()> {
-    let tx_bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
-    let env: TxEnvelope = TxEnvelope::decode(&mut &tx_bytes[..]).expect("should decode tx");
+    let bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
+    let env: TxEnvelope = TxEnvelope::decode(&mut &bytes[..]).expect("should decode tx");
     let chain_id = env.chain_id().expect("tx has chain id");
-    let singleton = vec![tx_bytes];
+    let singleton = vec![bytes];
     let encoded = ssz::ssz_encode(&singleton);
     let b = Bundle::new(ChainId::from(chain_id), Epoch::now(), encoded.into(), false);
     server.submit_bundle(BundleVariant::Regular(b)).await
 }
 
 async fn submit_enc_tx(server: State<ApiServer>, json: Json<EncTx>) -> Result<()> {
-    let tx_bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
-    let singleton = vec![tx_bytes];
-    let encoded = ssz::ssz_encode(&singleton);
-    let b = Bundle::new(json.chain_id, Epoch::now(), encoded.into(), true);
+    let bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
+    let b = Bundle::new(json.chain_id, Epoch::now(), bytes.into(), true);
     server.submit_bundle(BundleVariant::Regular(b)).await
 }
 

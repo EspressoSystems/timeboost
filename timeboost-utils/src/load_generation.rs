@@ -5,7 +5,7 @@ use alloy::{
     rlp::Encodable,
     signers::local::PrivateKeySigner,
 };
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -23,38 +23,6 @@ pub struct TxInfo {
     pub base_fee: u128,
     pub gas_limit: u64,
     pub signer: PrivateKeySigner,
-}
-
-pub fn make_txn(key: &ThresholdEncKey) -> anyhow::Result<TransactionVariant> {
-    let mut rng = rand::thread_rng();
-    let mut v = [0; 256];
-    rng.fill(&mut v);
-    let mut u = Unstructured::new(&v);
-
-    let t = loop {
-        let candidate = TxEnvelope::arbitrary(&mut u)?;
-        if let TxEnvelope::Eip4844(ref eip4844) = candidate {
-            if eip4844.tx().clone().try_into_4844_with_sidecar().is_ok() {
-                // Avoid generating 4844 Tx with blobs of size 131 KB
-                continue;
-            }
-        }
-        break candidate;
-    };
-
-    let mut d = Vec::new();
-    t.encode(&mut d);
-
-    if rng.gen_bool(0.5) {
-        // encrypt bundle
-        let plaintext = Plaintext::new(d.clone());
-        let aad = b"threshold".to_vec();
-        let ciphertext = ThresholdScheme::encrypt(&mut rng, key, &plaintext, &aad)?;
-        let tx = TransactionVariant::Encrypted(serialize(&ciphertext)?.to_vec());
-        return Ok(tx);
-    }
-    // non-priority
-    Ok(TransactionVariant::PlainText(d))
 }
 
 pub fn make_bundle(
@@ -114,7 +82,8 @@ pub fn make_dev_acct_txn(
 
     if rng.gen_bool(enc_ratio) {
         // encrypt bundle
-        let plaintext = Plaintext::new(tx.to_vec());
+        let bytes = ssz::ssz_encode(&vec![tx]);
+        let plaintext = Plaintext::new(bytes);
         let aad = b"threshold".to_vec();
         let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
         let encoded = serialize(&ciphertext)?;
