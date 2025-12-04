@@ -1,4 +1,4 @@
-use metrics::{Gauge, Histogram, Metrics, NoMetrics};
+use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -12,7 +12,7 @@ pub struct ConsensusMetrics {
     pub novote_buffer: Box<dyn Gauge>,
     pub rounds_buffer: Box<dyn Gauge>,
     pub vertex_buffer: Box<dyn Gauge>,
-    pub rounds_timed_out: Box<dyn Gauge>,
+    pub rounds_timed_out: Box<dyn Counter>,
 }
 
 impl Default for ConsensusMetrics {
@@ -33,7 +33,7 @@ impl ConsensusMetrics {
             novote_buffer: m.create_gauge("novote_buffer", None),
             rounds_buffer: m.create_gauge("rounds_buffer", None),
             vertex_buffer: m.create_gauge("vertex_buffer", None),
-            rounds_timed_out: m.create_gauge("rounds_timed_out", None),
+            rounds_timed_out: m.create_counter("rounds_timed_out", None),
         }
     }
 }
