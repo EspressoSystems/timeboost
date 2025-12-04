@@ -76,8 +76,7 @@ struct Args {
 struct ApiUrl {
     regular_url: Url,
     priority_url: Url,
-    eth_raw_url: Url,
-    eth_enc_url: Url,
+    json_rpc_url: Url,
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -272,10 +271,11 @@ impl TxGenerator {
 
             let Some(tx) = tx else { continue };
 
-            join_all(self.node_urls.iter().map(|urls| async {
-                self.send_txn(tx.clone(), &urls.eth_raw_url, &urls.eth_enc_url)
-                    .await
-            }))
+            join_all(
+                self.node_urls
+                    .iter()
+                    .map(|urls| async { self.send_txn(tx.clone(), &urls.json_rpc_url).await }),
+            )
             .await;
 
             if count % 100 == 0 {
@@ -320,18 +320,26 @@ impl TxGenerator {
         })
     }
 
-    async fn send_txn(&self, txn: TransactionVariant, raw_url: &Url, enc_url: &Url) {
+    async fn send_txn(&self, txn: TransactionVariant, url: &Url) {
         let result = match txn {
             TransactionVariant::PlainText(t) => {
-                let raw_tx = RawTx { tx: t.encode_hex() };
-                self.client.post(raw_url.clone()).json(&raw_tx).send().await
+                let req = JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    method: "eth_sendRawTransaction".to_string(),
+                    params: vec![t.encode_hex_with_prefix()],
+                    id: 1,
+                };
+                self.client.post(url.clone()).json(&req).send().await
             }
             TransactionVariant::Encrypted(t) => {
-                let enc_tx = EncTx {
-                    chain_id: self.chain_id,
-                    tx: t.encode_hex(),
+                let chain_id: u64 = self.chain_id.into();
+                let req = JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    method: "eth_sendEncTransaction".to_string(),
+                    params: vec![t.encode_hex_with_prefix(), chain_id.to_string()],
+                    id: 1,
                 };
-                self.client.post(enc_url.clone()).json(&enc_tx).send().await
+                self.client.post(url.clone()).json(&req).send().await
             }
         };
 
@@ -524,14 +532,11 @@ impl TxGenerator {
 }
 
 #[derive(Serialize, Clone)]
-struct RawTx {
-    tx: String,
-}
-
-#[derive(Serialize, Clone)]
-struct EncTx {
-    chain_id: ChainId,
-    tx: String,
+struct JsonRpcRequest {
+    jsonrpc: String,
+    method: String,
+    params: Vec<String>,
+    id: u64,
 }
 
 #[tokio::main]
@@ -570,13 +575,11 @@ async fn main() -> Result<()> {
         let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
         let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
         let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
-        let eth_raw_url = format!("http://{addr}/v1/eth_sendRawTransaction").parse()?;
-        let eth_enc_url = format!("http://{addr}/v1/eth_sendEncTransaction").parse()?;
+        let json_rpc_url = format!("http://{addr}/v1/").parse()?;
         urls.push(ApiUrl {
             regular_url,
             priority_url,
-            eth_raw_url,
-            eth_enc_url,
+            json_rpc_url,
         });
     }
 

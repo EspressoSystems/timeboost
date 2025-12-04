@@ -4,6 +4,7 @@ use ::metrics::prometheus::PrometheusMetrics;
 use alloy::{
     consensus::{Transaction, TxEnvelope},
     hex,
+    primitives::Keccak256,
     rlp::Decodable,
 };
 use axum::{
@@ -15,7 +16,7 @@ use axum::{
 };
 use bon::Builder;
 use http::{Request, Response, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::ThresholdEncKey;
 use timeboost_types::{
     Bundle, BundleVariant, ChainId, Epoch, SignedPriorityBundle, ThresholdKeyCell,
@@ -47,9 +48,7 @@ impl ApiServer {
                 .route("/v1/submit/priority", post(submit_priority))
                 .route("/v1/submit/regular", post(submit_regular))
         } else {
-            router
-                .route("/v1/eth_sendRawTransaction", post(submit_tx))
-                .route("/v1/eth_sendEncTransaction", post(submit_enc_tx))
+            router.route("/v1/", post(rpc))
         };
         router.route("/v1/encryption-key", get(encryption_key))
         .route("/i/health", get(health))
@@ -103,20 +102,53 @@ async fn submit_regular(server: State<ApiServer>, json: Json<Bundle>) -> Result<
     server.submit_bundle(BundleVariant::Regular(json.0)).await
 }
 
-async fn submit_tx(server: State<ApiServer>, json: Json<RawTx>) -> Result<()> {
-    let bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
-    let env: TxEnvelope = TxEnvelope::decode(&mut &bytes[..]).expect("should decode tx");
-    let chain_id = env.chain_id().expect("tx has chain id");
-    let singleton = vec![bytes];
-    let encoded = ssz::ssz_encode(&singleton);
-    let b = Bundle::new(ChainId::from(chain_id), Epoch::now(), encoded.into(), false);
-    server.submit_bundle(BundleVariant::Regular(b)).await
-}
+async fn rpc(
+    server: State<ApiServer>,
+    Json(req): Json<JsonRpcRequest>,
+) -> Result<Json<JsonRpcResponse<String>>> {
+    if req.jsonrpc != "2.0" {
+        return Err(StatusCode::BAD_REQUEST.into());
+    }
 
-async fn submit_enc_tx(server: State<ApiServer>, json: Json<EncTx>) -> Result<()> {
-    let bytes = hex::decode(json.tx.trim_start_matches("0x")).expect("should decode hex");
-    let b = Bundle::new(json.chain_id, Epoch::now(), bytes.into(), true);
-    server.submit_bundle(BundleVariant::Regular(b)).await
+    let id = &req.id;
+    if req.method != "eth_sendRawTransaction" && req.method != "eth_sendEncTransaction" {
+        return Err(StatusCode::BAD_REQUEST.into());
+    }
+    let raw = req
+        .params
+        .first()
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .trim_start_matches("0x");
+    let bytes = hex::decode(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut hasher = Keccak256::new();
+    hasher.update(&bytes);
+
+    let tx_hash_bytes = hasher.finalize();
+    if req.method == "eth_sendRawTransaction" {
+        let env: TxEnvelope =
+            TxEnvelope::decode(&mut &bytes[..]).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let chain_id = env.chain_id().ok_or(StatusCode::BAD_REQUEST)?;
+        let singleton = vec![bytes];
+        let encoded = ssz::ssz_encode(&singleton);
+        let b = Bundle::new(ChainId::from(chain_id), Epoch::now(), encoded.into(), false);
+        server.submit_bundle(BundleVariant::Regular(b)).await?
+    } else {
+        let chain_params = req.params.get(1).ok_or(StatusCode::BAD_REQUEST)?;
+        let chain_id = chain_params
+            .parse::<u64>()
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let b = Bundle::new(chain_id.into(), Epoch::now(), bytes.into(), true);
+        server.submit_bundle(BundleVariant::Regular(b)).await?
+    }
+    let tx_hash = format!("0x{}", hex::encode(tx_hash_bytes));
+    let response = JsonRpcResponse {
+        jsonrpc: "2.0".to_string(),
+        id: id.to_string(),
+        result: tx_hash,
+    };
+    Ok(Json(response))
 }
 
 async fn encryption_key(server: State<ApiServer>) -> Json<ThresholdEncKey> {
@@ -142,12 +174,16 @@ async fn health(server: State<ApiServer>) -> Result<()> {
 }
 
 #[derive(Deserialize, Clone)]
-struct RawTx {
-    tx: String,
+struct JsonRpcRequest {
+    jsonrpc: String,
+    method: String,
+    params: Vec<String>,
+    id: u64,
 }
 
-#[derive(Deserialize, Clone)]
-struct EncTx {
-    chain_id: ChainId,
-    tx: String,
+#[derive(Serialize)]
+struct JsonRpcResponse<T> {
+    jsonrpc: String,
+    id: String,
+    result: T,
 }
