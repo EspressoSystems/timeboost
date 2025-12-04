@@ -172,6 +172,8 @@ impl Sequencer {
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
 
+        seq_metrics.committee.set(u64::from(cfg.sailfish_committee().committee().id()) as usize);
+
         let task = Task {
             kpair: cfg.sign_keypair,
             label: public_key,
