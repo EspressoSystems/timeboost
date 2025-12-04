@@ -1,4 +1,4 @@
-version         := "0.2.0"
+version         := "0.4.0"
 vector-version  := "0.51.1"
 nitro-image     := "nitro-node:li-sequencer-catchup"
 overlay-archive := "timeboost-overlay.tar.gz"
