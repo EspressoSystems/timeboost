@@ -22,7 +22,9 @@ use timeboost::builder::CertifierConfig;
 use timeboost::config::ChainConfig;
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
-use timeboost::types::{BlockNumber, BundleVariant, KeyStore, ThresholdKeyCell, Transaction};
+use timeboost::types::{
+    Auction, BlockNumber, BundleVariant, ChainId, KeyStore, ThresholdKeyCell, Transaction,
+};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -109,9 +111,10 @@ where
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .threshold_dec_key(enc_key.clone())
+            .namespace(ChainId::default())
             .chain_config(
                 ChainConfig::builder()
-                    .id(1)
+                    .id(ChainId::from(1))
                     .rpc_url(
                         "https://theserversroom.com/ethereum/54cmzzhcj1o/"
                             .parse::<Url>()
@@ -125,6 +128,7 @@ where
                     .key_management_contract(alloy::primitives::Address::default())
                     .inbox_contract(alloy::primitives::Address::default())
                     .inbox_block_tag(BlockNumberOrTag::Finalized)
+                    .auction_contract(alloy::primitives::Address::default())
                     .build(),
             )
             .build();
@@ -143,9 +147,14 @@ where
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(enc_key: ThresholdKeyCell, tx: broadcast::Sender<BundleVariant>) {
+async fn gen_bundles(
+    tx: broadcast::Sender<BundleVariant>,
+    chain_id: ChainId,
+    enc_key: ThresholdKeyCell,
+    auction: Auction,
+) {
     loop {
-        let Ok(b) = make_bundle(enc_key.read().await.pubkey()) else {
+        let Ok(b) = make_bundle(chain_id, enc_key.read().await.pubkey(), &auction) else {
             warn!("Failed to generate bundle");
             continue;
         };

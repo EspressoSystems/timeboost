@@ -116,6 +116,7 @@ mkconfig nodes seed="42": build-release
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+            --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
             --output "test-configs/nodes"; \
     done
@@ -136,6 +137,7 @@ mkconfig-linux nodes seed="42": build-release
             --chain-id 31337 \
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+            --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
@@ -200,6 +202,38 @@ test-all: build-release build-test-utils
         --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.toml \
+        --express-lane \
+        --committee 0 \
+        --nodes test-configs/nodes/ \
+        --scenario test-configs/scenarios/rolling-restart.toml \
+        --verbose" \
+    --run   "7|sleep 3" \
+    --run   "8|just register-key 127.0.0.1:8545" \
+    --spawn "9|target/release/tx-generator \
+        --chain test-configs/chain.toml \
+        --namespace 10101 \
+        --express-lane" \
+    target/release/block-checker -- \
+        --chain test-configs/chain.toml \
+        --namespace 10101 \
+        --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
+        --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
+        --blocks 300
+
+test-no-express: build-release build-test-utils
+  env RUST_LOG=block_checker=info,error \
+  target/release/run \
+    --verbose \
+    --timeout 180 \
+    --spawn "1|anvil --port 8545 --silent" \
+    --run   "2|sleep 3" \
+    --run   "3|just deploy-contract 127.0.0.1:8545" \
+    --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+    --spawn "5|target/release/block-maker \
+        --chain test-configs/chain.toml \
+        --bind 127.0.0.1:55000" \
+    --spawn "6|target/release/run-committee \
+        --chain test-configs/chain.toml \
         --committee 0 \
         --nodes test-configs/nodes/ \
         --scenario test-configs/scenarios/rolling-restart.toml \
@@ -227,6 +261,7 @@ test-dyn-comm: build-release build-test-utils
         --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
         --spawn "5|target/release/run-committee \
             --chain test-configs/chain.toml \
+            --express-lane \
             --committee 0 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
@@ -237,6 +272,7 @@ test-dyn-comm: build-release build-test-utils
         --run   "9|sleep 3" \
         --spawn "10|target/release/run-committee \
             --chain test-configs/chain.toml \
+            --express-lane \
             --committee 1 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
@@ -246,6 +282,7 @@ test-dyn-comm: build-release build-test-utils
             --chain test-configs/chain.toml \
             --bind 127.0.0.1:55000" \
         --spawn "13|target/release/tx-generator \
+            --express-lane \
             --chain test-configs/chain.toml \
             --namespace 10101 \
             --enc-ratio 1.0" \

@@ -18,7 +18,7 @@ use test_utils::ports::alloc_ports;
 use timeboost::config::ChainConfig;
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
-use timeboost::types::{KeyStore, ThresholdKeyCell};
+use timeboost::types::{ChainId, KeyStore, ThresholdKeyCell};
 use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -157,9 +157,10 @@ where
                 .recover(false)
                 .leash_len(100)
                 .threshold_dec_key(enc_key.clone())
+                .namespace(ChainId::default())
                 .chain_config(
                     ChainConfig::builder()
-                        .id(1)
+                        .id(ChainId::from(1))
                         .rpc_url(
                             "https://theserversroom.com/ethereum/54cmzzhcj1o/"
                                 .parse::<Url>()

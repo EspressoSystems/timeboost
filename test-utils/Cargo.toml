@@ -21,6 +21,7 @@ default = [
     "dep:toml",
     "dep:tonic",
     "dep:timeboost",
+    "dep:timeboost-types",
     "dep:timeboost-utils",
     "ports",
 ]
@@ -41,7 +42,6 @@ alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bon = { workspace = true }
 bytes = { workspace = true, optional = true }
-cliquenet = { path = "../cliquenet", optional = true }
 either = { workspace = true, optional = true }
 ipnet = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
@@ -57,6 +57,7 @@ toml = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost = { path = "../timeboost", optional = true }
 timeboost-contract = { workspace = true }
+timeboost-types = { path = "../timeboost-types", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
 
 [[bin]]
