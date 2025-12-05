@@ -342,6 +342,7 @@ where
         };
         let t = TimeoutMessage::new(self.committee.id(), e, &self.keypair);
         let e = Envelope::signed(t, &self.keypair);
+        self.metrics.rounds_timed_out.add(1);
         vec![Action::SendTimeout(e)]
     }
 
