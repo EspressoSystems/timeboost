@@ -48,11 +48,11 @@ async fn main() -> Result<()> {
 
     let sign_keypair = Keypair::from(config.keys.signing.secret.clone());
 
-    if cli.express_lane {
-        if config.chain.auction_contract.is_none() {
-            bail!("Failed to initialize express lane mode; missing auction contract")
-        }
-    } else {
+    if cli.express_lane && config.chain.auction_contract.is_none() {
+        bail!("Failed to initialize express lane mode; missing auction contract")
+    }
+
+    if !cli.express_lane {
         config.chain.auction_contract = None;
     }
 

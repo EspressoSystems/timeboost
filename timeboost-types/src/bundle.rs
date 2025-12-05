@@ -549,13 +549,14 @@ mod tests {
         let epoch = Epoch::from(0);
         let auction_contract = Address::default();
         let auction = Auction::new(auction_contract);
-        let bundle = sample_bundle().unwrap();
+        let express_lane_address = auction.controller(epoch);
+        let bundle = sample_bundle(express_lane_address).unwrap();
         let result = bundle.validate(epoch, &auction);
         assert_eq!(result, Ok(()));
         Ok(())
     }
 
-    fn sample_bundle() -> anyhow::Result<SignedPriorityBundle> {
+    fn sample_bundle(express_lane_address: Address) -> anyhow::Result<SignedPriorityBundle> {
         let mut rlp_encoded_txns = Vec::new();
         for _ in 0..5 {
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -568,7 +569,7 @@ mod tests {
             ssz_encoded_txns.into(),
             false,
         );
-        let unsigned_priority = PriorityBundle::new(bundle, Address::default(), SeqNo::zero());
+        let unsigned_priority = PriorityBundle::new(bundle, express_lane_address, SeqNo::zero());
 
         let signed_priority = unsigned_priority.sign(Signer::default());
         signed_priority.map_err(anyhow::Error::from)

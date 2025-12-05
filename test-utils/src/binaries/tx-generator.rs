@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
 
-use alloy::hex::ToHexExt;
 use alloy::{
     consensus::{SignableTransaction, TxEnvelope, TxLegacy},
+    hex::ToHexExt,
     network::{Ethereum, TransactionBuilder, TxSignerSync},
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder, RootProvider},
@@ -116,6 +116,8 @@ struct TxGenerator {
 impl TxGenerator {
     pub(crate) async fn new(cfg: TxGeneratorConfig) -> Result<Self> {
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
+        let auction = cfg.auction_contract.map(Auction::new);
+
         let nitro = if let Some(NitroConfig {
             rpc_url,
             dev_account,
@@ -150,8 +152,6 @@ impl TxGenerator {
             None
         };
 
-        let auction = cfg.auction_contract.map(Auction::new);
-
         Ok(Self {
             node_urls: cfg.node_urls,
             interval: Duration::from_millis(tps_to_millis(cfg.tps)),
@@ -167,7 +167,6 @@ impl TxGenerator {
 
     pub(crate) async fn generate(&self) -> Result<()> {
         if self.auction.is_some() {
-            // priority bundle support
             self.generate_bundles().await
         } else {
             self.generate_raw_txs().await
@@ -228,7 +227,7 @@ impl TxGenerator {
     }
 
     pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
-        info!("starting tx-generator");
+        info!("starting transaction generator");
         let mut interval = interval(self.interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
@@ -321,37 +320,36 @@ impl TxGenerator {
     }
 
     async fn send_txn(&self, txn: TransactionVariant, url: &Url) {
-        let result = match txn {
+        let (method, params) = match txn {
             TransactionVariant::PlainText(t) => {
-                let req = JsonRpcRequest {
-                    jsonrpc: "2.0".to_string(),
-                    method: "eth_sendRawTransaction".to_string(),
-                    params: vec![t.encode_hex_with_prefix()],
-                    id: 1,
-                };
-                self.client.post(url.clone()).json(&req).send().await
+                ("eth_sendRawTransaction", vec![t.encode_hex_with_prefix()])
             }
             TransactionVariant::Encrypted(t) => {
                 let chain_id: u64 = self.chain_id.into();
-                let req = JsonRpcRequest {
-                    jsonrpc: "2.0".to_string(),
-                    method: "eth_sendEncTransaction".to_string(),
-                    params: vec![t.encode_hex_with_prefix(), chain_id.to_string()],
-                    id: 1,
-                };
-                self.client.post(url.clone()).json(&req).send().await
+                (
+                    "eth_sendEncTransaction",
+                    vec![t.encode_hex_with_prefix(), chain_id.to_string()],
+                )
             }
         };
 
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params,
+            id: 1,
+        };
+
+        let result = self.client.post(url.clone()).json(&req).send().await;
+
         match result {
-            Ok(response) => {
-                if !response.status().is_success() {
-                    warn!("response status: {}", response.status());
-                }
+            Ok(response) if !response.status().is_success() => {
+                warn!("response status: {}", response.status());
             }
             Err(err) => {
                 warn!(%err, "failed to send transaction");
             }
+            _ => {}
         }
     }
 
@@ -557,11 +555,11 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
 
-    if args.express_lane {
-        if chain_config.auction_contract.is_none() {
-            bail!("Failed to initialize express lane mode; missing auction contract")
-        }
-    } else {
+    if args.express_lane && chain_config.auction_contract.is_none() {
+        bail!("Failed to initialize express lane mode; missing auction contract")
+    }
+
+    if !args.express_lane {
         chain_config.auction_contract = None;
     }
 
@@ -603,11 +601,7 @@ async fn main() -> Result<()> {
         .prio_ratio(args.prio_ratio)
         .parent_url(chain_config.rpc_url)
         .parent_id(chain_config.id)
-        .maybe_auction_contract(if args.express_lane {
-            chain_config.auction_contract
-        } else {
-            None
-        })
+        .maybe_auction_contract(chain_config.auction_contract)
         .chain_id(args.namespace.into())
         .enc_key(enc_key)
         .maybe_nitro_cfg(nitro_cfg)

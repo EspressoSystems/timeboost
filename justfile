@@ -233,7 +233,6 @@ test-no-express: build-release build-test-utils
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
         --blocks 300
 
-
 test-dyn-comm: build-release build-test-utils
     env RUST_LOG=block_checker=info,error \
     target/release/run \
