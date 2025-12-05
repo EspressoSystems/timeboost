@@ -15,7 +15,7 @@ use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex}
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::RbcError;
 use crate::digest::Digest;
@@ -986,7 +986,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(());
         }
 
-        warn!(node = %self.key, %src, %digest, "ignoring get request for data we do not have");
+        info!(node = %self.key, %src, %digest, "ignoring get request for data we do not have");
 
         Ok(())
     }
