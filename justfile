@@ -144,6 +144,13 @@ register-committee host path:
         --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
+register-key host:
+    target/release/contract register-key \
+        --index 0 \
+        --rpc-url http://{{host}} \
+        --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
@@ -163,57 +170,74 @@ test-individually: build-port-alloc
   done
 
 test-all: build-release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn,yapper=error \
+  env RUST_LOG=block_checker=info,error \
   target/release/run \
     --verbose \
     --timeout 120 \
-    --spawn "1|anvil --port 8545" \
+    --spawn "1|anvil --port 8545 --silent" \
     --run   "2|sleep 3" \
     --run   "3|just deploy-contract 127.0.0.1:8545" \
     --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
     --spawn "5|target/release/block-maker \
-        --committee test-configs/nodes/committees/committee-0.toml \
+        --chain test-configs/chain.toml \
         --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
-        --committee test-configs/nodes/committees/committee-0.toml \
+        --chain test-configs/chain.toml \
+        --committee 0 \
         --nodes test-configs/nodes/ \
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
-    --spawn "7|target/release/yapper \
-        --committee test-configs/nodes/committees/committee-0.toml \
-        --nodes test-configs/nodes/" \
+    --run   "7|sleep 3" \
+    --run   "8|just register-key 127.0.0.1:8545" \
+    --spawn "9|target/release/tx-generator \
+        --chain test-configs/chain.toml \
+        --namespace 10101" \
     target/release/block-checker -- \
-        --committee test-configs/nodes/committees/committee-0.toml \
-        --nodes test-configs/nodes/ \
+        --chain test-configs/chain.toml \
+        --namespace 10101 \
+        --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
+        --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
         --blocks 300
 
 test-dyn-comm: build-release build-test-utils
-    env RUST_LOG=info,timeboost_utils=debug \
+    env RUST_LOG=block_checker=info,error \
     target/release/run \
         --verbose \
         --timeout 120 \
-        --spawn "1|anvil --port 8545" \
+        --spawn "1|anvil --port 8545 --silent --block-time 1" \
         --run   "2|sleep 3" \
         --run   "3|just deploy-contract 127.0.0.1:8545" \
         --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
         --spawn "5|target/release/run-committee \
-            --committee test-configs/nodes/committees/committee-0.toml \
+            --chain test-configs/chain.toml \
+            --committee 0 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
-            --until-round 2000 \
             --verbose" \
-        --spawn "6|target/release/yapper \
-            --committee test-configs/nodes/committees/committee-0.toml \
-            --nodes test-configs/nodes/" \
-        --run   "7|sleep 5" \
+        --run   "6|sleep 3" \
+        --run   "7|just register-key 127.0.0.1:8545" \
         --run   "8|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-1.toml" \
-        target/release/run-committee -- \
-            --committee test-configs/nodes/committees/committee-1.toml \
+        --run   "9|sleep 3" \
+        --spawn "10|target/release/run-committee \
+            --chain test-configs/chain.toml \
+            --committee 1 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
-            --until-round 500 \
-            --until-decrypt-round 10 \
-            --verbose
+            --verbose" \
+        --run   "11|sleep 3" \
+        --spawn "12|target/release/block-maker \
+            --chain test-configs/chain.toml \
+            --bind 127.0.0.1:55000" \
+        --spawn "13|target/release/tx-generator \
+            --chain test-configs/chain.toml \
+            --namespace 10101 \
+            --enc-ratio 1.0" \
+        target/release/block-checker -- \
+            --chain test-configs/chain.toml \
+            --namespace 10101 \
+            --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
+            --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
+            --blocks 300
 
 [linux]
 forward-ipv4 val: build-test-utils
@@ -248,25 +272,30 @@ netsim nodes: build-release build-test-utils
         --env RUST_LOG \
         --uid $(id -u) \
         --gid $(id -g) \
-        --spawn "1|anvil --host 11.0.1.0 --port 8545" \
+        --spawn "1|anvil --host 11.0.1.0 --port 8545 --silent" \
         --run   "2|sleep 3" \
         --run   "3|just deploy-contract 11.0.1.0:8545" \
         --run   "4|just register-committee 11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
         --spawn "5|target/release/block-maker \
-            --bind 11.0.1.0:55000 \
-            --committee test-configs/linux/committees/linux-{{nodes}}.toml" \
+            --chain test-configs/chain.linux.toml \
+            --bind 11.0.1.0:55000" \
         --spawn-as-root "6|target/release/run-committee \
             -u $(id -u) \
             -g $(id -g) \
-            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
+            --chain test-configs/chain.linux.toml \
+            --committee 0 \
             --nodes test-configs/linux/ \
             --net test-configs/net.toml \
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
-        --spawn "7|target/release/yapper \
-            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
-            --nodes test-configs/linux/" \
+        --run   "7|sleep 3" \
+        --run   "8|just register-key 11.0.1.0:8545" \
+        --spawn "9|target/release/tx-generator \
+            --chain test-configs/chain.linux.toml \
+            --namespace 10101" \
         target/release/block-checker -- \
-            --committee test-configs/linux/committees/linux-{{nodes}}.toml \
-            --nodes test-configs/linux/ \
-            --blocks 200
+            --chain test-configs/chain.linux.toml \
+            --namespace 10101 \
+            --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
+            --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
+            --blocks 300
