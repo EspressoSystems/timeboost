@@ -67,7 +67,7 @@ generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
 http = "1.3.1"
 ipnet = { version = "2.11.0", features = ["serde"] }
 jiff = { version = "0.2", default-features = false, features = ["serde", "std"] }
-minicbor = { version = "2.1.2", features = ["full"] }
+minicbor = { version = "2.1.3", features = ["full"] }
 nohash-hasher = "0.2"
 parking_lot = "0.12.3"
 prometheus = "0.14"
