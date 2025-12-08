@@ -32,7 +32,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fc95d1bdb8e6666b2b217308eeeb09f2d6728d104be3e31916cc74d15420331"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -42,7 +42,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
 dependencies = [
  "crypto-common",
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -219,7 +219,7 @@ dependencies = [
 [[package]]
 name = "alloy-compat"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "ethers-core",
@@ -984,7 +984,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -995,7 +995,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2352,7 +2352,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -2361,7 +2361,7 @@ version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -2758,7 +2758,7 @@ version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12f8e7987cbd042a63249497f41aed09f8e65add917ea6566effbc56578d6801"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -2883,7 +2883,7 @@ dependencies = [
  "bs58",
  "const-hex",
  "digest 0.10.7",
- "generic-array",
+ "generic-array 0.14.7",
  "ripemd",
  "serde",
  "sha2 0.10.9",
@@ -3240,9 +3240,9 @@ dependencies = [
 
 [[package]]
 name = "criterion"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0dfe5e9e71bdcf4e4954f7d14da74d1cdb92a3a07686452d1509652684b1aab"
+checksum = "4d883447757bb0ee46f233e9dc22eb84d93a9508c9b868687b274fc431d886bf"
 dependencies = [
  "alloca",
  "anes",
@@ -3265,9 +3265,9 @@ dependencies = [
 
 [[package]]
 name = "criterion-plot"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de36c2bee19fba779808f92bf5d9b0fa5a40095c277aba10c458a12b35d21d6"
+checksum = "ed943f81ea2faa8dcecbbfa50164acf95d555afec96a27871663b300e387b2e4"
 dependencies = [
  "cast",
  "itertools 0.13.0",
@@ -3334,7 +3334,7 @@ version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0dc92fb57ca44df6db8059111ab3af99a63d5d0f8375d9972e319a379c6bab76"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
  "rand_core 0.6.4",
  "subtle",
  "zeroize",
@@ -3346,7 +3346,7 @@ version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
  "rand_core 0.6.4",
  "typenum",
 ]
@@ -3357,7 +3357,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4857fd85a0c34b3c3297875b747c1e02e06b6a0ea32dd892d8192b9ce0813ea6"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
  "subtle",
 ]
 
@@ -3594,7 +3594,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.110",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3777,7 +3777,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -3991,7 +3991,7 @@ dependencies = [
  "crypto-bigint",
  "digest 0.10.7",
  "ff",
- "generic-array",
+ "generic-array 0.14.7",
  "group",
  "pkcs8",
  "rand_core 0.6.4",
@@ -4099,7 +4099,7 @@ source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4
 [[package]]
 name = "espresso-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "alloy-compat",
@@ -4261,7 +4261,7 @@ dependencies = [
  "const-hex",
  "elliptic-curve",
  "ethabi",
- "generic-array",
+ "generic-array 0.14.7",
  "k256",
  "num_enum",
  "open-fastrlp",
@@ -4648,6 +4648,16 @@ dependencies = [
  "typenum",
  "version_check",
  "zeroize",
+]
+
+[[package]]
+name = "generic-array"
+version = "1.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaf57c49a95fd1fe24b90b3033bee6dc7e8f1288d51494cb44e627c295e38542"
+dependencies = [
+ "rustversion",
+ "typenum",
 ]
 
 [[package]]
@@ -5046,7 +5056,7 @@ dependencies = [
 [[package]]
 name = "hotshot"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5089,7 +5099,7 @@ dependencies = [
 [[package]]
 name = "hotshot-builder-api"
 version = "0.1.7"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "async-trait",
  "clap",
@@ -5108,7 +5118,7 @@ dependencies = [
 [[package]]
 name = "hotshot-contract-adapter"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5137,7 +5147,7 @@ dependencies = [
 [[package]]
 name = "hotshot-events-service"
 version = "0.1.57"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "async-broadcast",
@@ -5162,7 +5172,7 @@ dependencies = [
 [[package]]
 name = "hotshot-example-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5192,7 +5202,7 @@ dependencies = [
 [[package]]
 name = "hotshot-libp2p-networking"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5223,7 +5233,7 @@ dependencies = [
 [[package]]
 name = "hotshot-macros"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "derive_builder",
  "proc-macro2",
@@ -5234,7 +5244,7 @@ dependencies = [
 [[package]]
 name = "hotshot-query-service"
 version = "0.1.76"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5287,7 +5297,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "async-broadcast",
  "async-trait",
@@ -5300,7 +5310,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task-impls"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5338,7 +5348,7 @@ dependencies = [
 [[package]]
 name = "hotshot-testing"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5380,7 +5390,7 @@ dependencies = [
 [[package]]
 name = "hotshot-types"
 version = "0.1.11"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5404,6 +5414,7 @@ dependencies = [
  "dyn-clone",
  "either",
  "futures",
+ "generic-array 1.3.5",
  "hotshot-utils",
  "jf-advz",
  "jf-crhf",
@@ -5439,7 +5450,7 @@ dependencies = [
 [[package]]
 name = "hotshot-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "tracing",
 ]
@@ -5952,7 +5963,7 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
 ]
 
 [[package]]
@@ -6121,7 +6132,7 @@ dependencies = [
  "derivative",
  "digest 0.10.7",
  "displaydoc",
- "generic-array",
+ "generic-array 0.14.7",
  "getrandom 0.2.16",
  "itertools 0.14.0",
  "jf-merkle-tree-compat",
@@ -9651,7 +9662,7 @@ checksum = "d3e97a565f76233a6003f9f5c54be1d9c5bdfa3eccfb189469f11ec4901c47dc"
 dependencies = [
  "base16ct",
  "der",
- "generic-array",
+ "generic-array 0.14.7",
  "pkcs8",
  "serdect",
  "subtle",
@@ -9771,7 +9782,7 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 [[package]]
 name = "sequencer-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "alloy",
  "anyhow",
@@ -10452,7 +10463,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-util",
- "generic-array",
+ "generic-array 0.14.7",
  "hex",
  "hkdf 0.12.4",
  "hmac 0.12.1",
@@ -11335,7 +11346,7 @@ dependencies = [
  "criterion",
  "derive_more 2.0.1",
  "digest 0.10.7",
- "generic-array",
+ "generic-array 0.14.7",
  "multisig",
  "num-integer",
  "rand_chacha 0.3.1",
@@ -12174,7 +12185,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8326b2c654932e3e4f9196e69d08fdf7cfd718e1dc6f66b347e6024a0c961402"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.7",
  "subtle",
 ]
 
@@ -12353,7 +12364,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vid"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#4ac21c63c5b1772403e1e91ac3b5603b0fbb6bbd"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
 dependencies = [
  "anyhow",
  "ark-bn254",
@@ -12639,7 +12650,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
