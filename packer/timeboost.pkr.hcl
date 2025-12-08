@@ -19,11 +19,20 @@ variable "overlay-archive" {
   type = string
 }
 
+variable "regions" {
+  type = list(string)
+}
+
+variable "ssh_user" {
+  type = string
+}
+
 source "amazon-ebs" "linux" {
   ami_name      = "timeboost-${var.version}"
   instance_type = "t3a.micro"
   region        = "eu-central-1"
   profile       = "timeboost-dev"
+  ami_regions   = var.regions
 
   source_ami_filter {
     filters = {
@@ -42,7 +51,7 @@ source "amazon-ebs" "linux" {
     delete_on_termination = true
   }
 
-  ssh_username = "ec2-user"
+  ssh_username = var.ssh_user
 }
 
 build {
