@@ -544,7 +544,7 @@ services:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     entrypoint: |
       bash -c '
-        cast -vvvv send $$(jq -r '.inbox' /config/deployment.json) "depositEth()" \
+        cast send $$(jq -r '.inbox' /config/deployment.json) "depositEth()" \
         --value 1000ether \
         --rpc-url http://demo-l1-network:8545 \
         --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -562,7 +562,7 @@ services:
       bash -c '
         for i in $$(seq 0 300); do
         echo "Sending transaction $$i"
-        cast -vvvv send 0x99327EF7a2C17Ec21e95224dA9d42eB550d7b47C \
+        cast send 0x99327EF7a2C17Ec21e95224dA9d42eB550d7b47C \
           --value 0.5ether \
           --rpc-url http://node0:8003/v1/ \
           --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
