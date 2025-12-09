@@ -106,15 +106,10 @@ impl Timeboost {
                 },
                 out = self.sequencer.next() => match out {
                     Ok(Output::Transactions { round, timestamp, transactions, delayed_inbox_index }) => {
-                        info!(
-                            node  = %self.label,
-                            round = %round,
-                            trxs  = %transactions.len(),
-                            "sequencer output"
-                        );
+                        info!(node = %self.label, %round, trxs = %transactions.len(), "sequencer output");
+                        self.metrics.update(round);
                         self.nitro_forwarder
-                            .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
-                        self.metrics.update(round)
+                            .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?
                     }
                     Ok(Output::UseCommittee(r)) => {
                         if let Err(e) = self.certifier.use_committee(r).await {

@@ -7,6 +7,7 @@ use sailfish::types::RoundNumber;
 pub struct TimeboostMetrics {
     pub tb_certify: Box<dyn Gauge>,
     pub total: Box<dyn Gauge>,
+    pub verified: Box<dyn Gauge>,
 }
 
 impl Default for TimeboostMetrics {
@@ -20,6 +21,7 @@ impl TimeboostMetrics {
         Self {
             tb_certify: m.create_gauge("tb_certify_duration", Some("ms")),
             total: m.create_gauge("total_duration", Some("ms")),
+            verified: m.create_gauge("verify_duration", Some("ms")),
         }
     }
 
@@ -30,6 +32,7 @@ impl TimeboostMetrics {
     pub fn update(&self, r: RoundNumber) {
         self.update_tb_certify_duration(r);
         self.update_total_duration(r);
+        self.update_verify_duration(r);
     }
 
     #[cfg(feature = "times")]
@@ -59,5 +62,20 @@ impl TimeboostMetrics {
         };
         let d = b.saturating_duration_since(a);
         self.total.set(d.as_millis() as usize);
+    }
+
+    #[cfg(feature = "times")]
+    fn update_verify_duration(&self, r: RoundNumber) {
+        use sailfish::consensus::time_series::ROUND_START;
+        use timeboost_builder::time_series::VERIFIED;
+
+        let Some(a) = times::get(ROUND_START, r) else {
+            return;
+        };
+        let Some(b) = times::get(VERIFIED, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.verified.set(d.as_millis() as usize);
     }
 }
