@@ -11243,6 +11243,7 @@ dependencies = [
  "reqwest",
  "sailfish",
  "serde",
+ "serde_json",
  "test-utils",
  "thiserror 2.0.17",
  "timeboost-builder",

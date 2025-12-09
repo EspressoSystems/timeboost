@@ -45,6 +45,9 @@ pub struct TimeboostConfig {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     pub(crate) nitro_addr: Address,
 
+    /// The address of the Arbitrum Nitro batch poster.
+    pub(crate) batcher_addr: Address,
+
     /// Max. size of an espresso transaction.
     pub(crate) max_transaction_size: usize,
 

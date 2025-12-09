@@ -31,6 +31,7 @@ rand = { workspace = true }
 reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }

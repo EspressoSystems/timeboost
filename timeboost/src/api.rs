@@ -15,12 +15,12 @@ use axum::{
     routing::{get, post},
 };
 use bon::Builder;
+use cliquenet::Address;
 use http::{Request, Response, StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use timeboost_crypto::prelude::ThresholdEncKey;
-use timeboost_types::{
-    Bundle, BundleVariant, ChainId, Epoch, SignedPriorityBundle, ThresholdKeyCell,
-};
+use timeboost_types::{Bundle, BundleVariant, Epoch, SignedPriorityBundle, ThresholdKeyCell};
 use tokio::{
     net::{TcpListener, ToSocketAddrs},
     sync::mpsc::Sender,
@@ -34,6 +34,7 @@ pub mod internal;
 
 #[derive(Debug, Clone, Builder)]
 pub struct ApiServer {
+    upstream_addr: Address,
     bundles: Sender<BundleVariant>,
     enc_key: ThresholdKeyCell,
     express_lane: bool,
@@ -105,50 +106,96 @@ async fn submit_regular(server: State<ApiServer>, json: Json<Bundle>) -> Result<
 async fn rpc(
     server: State<ApiServer>,
     Json(req): Json<JsonRpcRequest>,
-) -> Result<Json<JsonRpcResponse<String>>> {
+) -> Result<axum::Json<Value>> {
     if req.jsonrpc != "2.0" {
         return Err(StatusCode::BAD_REQUEST.into());
     }
 
-    let id = &req.id;
-    if req.method != "eth_sendRawTransaction" && req.method != "eth_sendEncTransaction" {
-        return Err(StatusCode::BAD_REQUEST.into());
+    match req.method.as_str() {
+        "eth_sendRawTransaction" => handle_raw_tx(&server, req).await,
+        "eth_sendEncTransaction" => handle_enc_tx(&server, req).await,
+        _ => {
+            let upstream = server.upstream_addr.clone();
+            let response = proxy_rpc_call(&upstream, req).await?;
+
+            Ok(Json(response))
+        }
     }
-    let raw = req
-        .params
+}
+
+async fn handle_raw_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<Value>> {
+    let params = req.params.ok_or_else(|| StatusCode::BAD_REQUEST)?;
+    let raw = params
         .first()
+        .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?
         .trim_start_matches("0x");
+
     let bytes = hex::decode(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
     let mut hasher = Keccak256::new();
     hasher.update(&bytes);
-
     let tx_hash_bytes = hasher.finalize();
-    if req.method == "eth_sendRawTransaction" {
-        let env: TxEnvelope =
-            TxEnvelope::decode(&mut &bytes[..]).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let chain_id = env.chain_id().ok_or(StatusCode::BAD_REQUEST)?;
-        let singleton = vec![bytes];
-        let encoded = ssz::ssz_encode(&singleton);
-        let b = Bundle::new(ChainId::from(chain_id), Epoch::now(), encoded.into(), false);
-        server.submit_bundle(BundleVariant::Regular(b)).await?
-    } else {
-        let chain_params = req.params.get(1).ok_or(StatusCode::BAD_REQUEST)?;
-        let chain_id = chain_params
-            .parse::<u64>()
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let env = TxEnvelope::decode(&mut &bytes[..]).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let b = Bundle::new(chain_id.into(), Epoch::now(), bytes.into(), true);
-        server.submit_bundle(BundleVariant::Regular(b)).await?
+    let chain_id = env.chain_id().ok_or(StatusCode::BAD_REQUEST)?;
+    let encoded = ssz::ssz_encode(&vec![bytes.clone()]);
+    let bundle = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
+    server.submit_bundle(BundleVariant::Regular(bundle)).await?;
+
+    Ok(Json(json! ({
+        "jsonrpc": "2.0".to_string(),
+        "id": req.id.to_string(),
+        "result": json!(hex::encode_prefixed(tx_hash_bytes)),
+    })))
+}
+
+async fn handle_enc_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<Value>> {
+    let params = req.params.ok_or_else(|| StatusCode::BAD_REQUEST)?;
+    let raw = params
+        .first()
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .trim_start_matches("0x");
+
+    let bytes = hex::decode(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let chain_id = params
+        .get(1)
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .parse::<u64>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mut hasher = Keccak256::new();
+    hasher.update(&bytes);
+    let tx_hash_bytes = hasher.finalize();
+
+    let bundle = Bundle::new(chain_id.into(), Epoch::now(), bytes.into(), true);
+    server.submit_bundle(BundleVariant::Regular(bundle)).await?;
+
+    Ok(Json(json! ({
+        "jsonrpc": "2.0".to_string(),
+        "id": req.id.to_string(),
+        "result": json!(hex::encode_prefixed(tx_hash_bytes)),
+    })))
+}
+
+async fn proxy_rpc_call(upstream: &Address, req: JsonRpcRequest) -> Result<Value> {
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("http://{upstream}"))
+        .json(&req)
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    if !resp.status().is_success() {
+        return Err(StatusCode::BAD_GATEWAY.into());
     }
-    let tx_hash = format!("0x{}", hex::encode(tx_hash_bytes));
-    let response = JsonRpcResponse {
-        jsonrpc: "2.0".to_string(),
-        id: id.to_string(),
-        result: tx_hash,
-    };
-    Ok(Json(response))
+
+    resp.json::<Value>()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY.into())
 }
 
 async fn encryption_key(server: State<ApiServer>) -> Json<ThresholdEncKey> {
@@ -173,17 +220,10 @@ async fn health(server: State<ApiServer>) -> Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, serde::Serialize)]
 struct JsonRpcRequest {
     jsonrpc: String,
     method: String,
-    params: Vec<String>,
-    id: u64,
-}
-
-#[derive(Serialize)]
-struct JsonRpcResponse<T> {
-    jsonrpc: String,
-    id: String,
-    result: T,
+    params: Option<Vec<serde_json::Value>>,
+    id: serde_json::Value,
 }
