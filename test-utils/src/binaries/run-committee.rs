@@ -47,9 +47,6 @@ struct Args {
     #[clap(flatten)]
     until: UntilArgs,
 
-    #[clap(long)]
-    times_until: Option<u64>,
-
     #[clap(long, short)]
     verbose: bool,
 
@@ -125,9 +122,6 @@ async fn main() -> Result<()> {
         let mut cmd = Cmd::new(&args.timeboost);
         cmd.with_arg("--config")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
-        if let Some(t) = args.times_until {
-            cmd.with_args(["--times-until", &t.to_string()]);
-        }
         if args.scenario.is_none() || args.ignore_stamp {
             cmd.with_arg("--ignore-stamp");
         }

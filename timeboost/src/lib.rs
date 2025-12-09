@@ -29,13 +29,11 @@ pub use timeboost_types as types;
 use crate::api::ApiServer;
 use crate::api::internal::GrpcServer;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
+use crate::metrics::TimeboostMetrics;
 
 pub mod api;
 pub mod forwarder;
 pub mod metrics;
-
-#[cfg(feature = "times")]
-pub mod times;
 
 pub(crate) const TIMEBOOST_NO_SUBMIT: &str = "TIMEBOOST_NO_SUBMIT";
 
@@ -50,6 +48,7 @@ pub struct Timeboost {
     nitro_forwarder: NitroForwarder,
     submitter: Submitter,
     committees: BoxStream<'static, CommitteeConfig>,
+    metrics: TimeboostMetrics,
 }
 
 impl Timeboost {
@@ -61,6 +60,7 @@ impl Timeboost {
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
+        let met = TimeboostMetrics::new(&*pro);
 
         let nitro_forwarder =
             NitroForwarder::new(cfg.sign_keypair.public_key(), cfg.nitro_addr.clone())?;
@@ -78,6 +78,7 @@ impl Timeboost {
             nitro_forwarder,
             submitter: sub,
             committees: stream.boxed(),
+            metrics: met,
         })
     }
 
@@ -94,9 +95,6 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        #[cfg(feature = "times")]
-        let mut writer = crate::times::TimesWriter::new(self.label);
-
         let no_submit = env::var(TIMEBOOST_NO_SUBMIT).is_ok();
 
         loop {
@@ -114,17 +112,9 @@ impl Timeboost {
                             trxs  = %transactions.len(),
                             "sequencer output"
                         );
-                        #[cfg(feature = "times")]
-                        {
-                            if *round % 100 == 0 {
-                                info!(target: "times", node = %self.label, round = %*round)
-                            }
-                            if !writer.is_timeboost_saved() && *round >= self.config.times_until {
-                                writer.save_timeboost_series().await?
-                            }
-                        }
                         self.nitro_forwarder
-                            .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?
+                            .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
+                        self.metrics.update(round)
                     }
                     Ok(Output::UseCommittee(r)) => {
                         if let Err(e) = self.certifier.use_committee(r).await {

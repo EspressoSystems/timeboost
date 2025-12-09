@@ -1,4 +1,4 @@
-use metrics::{Gauge, Metrics, NoMetrics};
+use metrics::{Counter, Gauge, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -12,9 +12,9 @@ pub struct SequencerMetrics {
     /// Number of regular bundles in queue.
     pub queued_regular: Box<dyn Gauge>,
     /// Number of encrypted inclusion list ever enqueued.
-    pub queued_encrypted: Box<dyn Gauge>,
+    pub queued_encrypted: Box<dyn Counter>,
     /// Number of decrypted inclusion list ever outputed (by Decrypter, may not by Sequencer yet).
-    pub output_decrypted: Box<dyn Gauge>,
+    pub output_decrypted: Box<dyn Counter>,
 }
 
 impl Default for SequencerMetrics {
@@ -30,8 +30,8 @@ impl SequencerMetrics {
             committee: m.create_gauge("committee_id", None),
             queued_priority: m.create_gauge("queued_prio_bundles", None),
             queued_regular: m.create_gauge("queued_reg_bundles", None),
-            queued_encrypted: m.create_gauge("queued_encrypted_ilist", None),
-            output_decrypted: m.create_gauge("output_decrypted_ilist", None),
+            queued_encrypted: m.create_counter("queued_encrypted_ilist", None),
+            output_decrypted: m.create_counter("output_decrypted_ilist", None),
         };
         m.committee.set(0);
         m

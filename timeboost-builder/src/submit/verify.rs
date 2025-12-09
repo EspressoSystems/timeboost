@@ -13,6 +13,9 @@ use tracing::debug;
 
 use crate::metrics::BuilderMetrics;
 
+#[cfg(feature = "times")]
+use crate::time_series::VERIFIED;
+
 /// Verifies blocks and updates a sliding window of block numbers.
 #[derive(Debug, Builder)]
 pub struct Verifier {
@@ -71,7 +74,7 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
         for b in it {
             set.insert(b.0);
             #[cfg(feature = "times")]
-            times::record("tb-verified", *b.1)
+            times::record(VERIFIED, *b.1)
         }
         let len = set.len() - len;
         while set.len() > MAX_SIZE {

@@ -31,10 +31,6 @@ struct Cli {
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
     until: u64,
-
-    #[cfg(feature = "times")]
-    #[clap(long)]
-    times_until: u64,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -123,9 +119,6 @@ async fn main() -> Result<()> {
         .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
-    #[cfg(feature = "times")]
-    let mut writer = timeboost::times::TimesWriter::new(config.keys.signing.public);
-
     // Create proof of execution.
     tokio::fs::File::create(node.stamp)
         .await?
@@ -146,10 +139,6 @@ async fn main() -> Result<()> {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
                                 let r = *payload.round().num();
-                                #[cfg(feature = "times")]
-                                if !writer.is_sailfish_saved() && r >= cli.times_until {
-                                    writer.save_sailfish_series().await?
-                                }
                                 if r >= cli.until {
                                     break 'main
                                 }
