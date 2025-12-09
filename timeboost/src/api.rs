@@ -124,7 +124,7 @@ async fn rpc(
 }
 
 async fn handle_raw_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<Value>> {
-    let params = req.params.ok_or_else(|| StatusCode::BAD_REQUEST)?;
+    let params = req.params.ok_or(StatusCode::BAD_REQUEST)?;
     let raw = params
         .first()
         .and_then(|v| v.as_str())
@@ -151,7 +151,7 @@ async fn handle_raw_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<V
 }
 
 async fn handle_enc_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<Value>> {
-    let params = req.params.ok_or_else(|| StatusCode::BAD_REQUEST)?;
+    let params = req.params.ok_or(StatusCode::BAD_REQUEST)?;
     let raw = params
         .first()
         .and_then(|v| v.as_str())
