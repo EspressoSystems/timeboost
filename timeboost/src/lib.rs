@@ -1,4 +1,5 @@
 mod conf;
+mod metrics;
 
 use std::env;
 use std::sync::Arc;
@@ -33,7 +34,6 @@ use crate::metrics::TimeboostMetrics;
 
 pub mod api;
 pub mod forwarder;
-pub mod metrics;
 
 pub(crate) const TIMEBOOST_NO_SUBMIT: &str = "TIMEBOOST_NO_SUBMIT";
 

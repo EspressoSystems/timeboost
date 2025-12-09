@@ -331,6 +331,7 @@ impl Task {
                             let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
+                        self.metrics.update(round);
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
                                 continue
