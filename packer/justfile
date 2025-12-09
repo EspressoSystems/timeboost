@@ -15,7 +15,7 @@ format:
     packer fmt .
 
 build:
-    cargo build --release --bin timeboost
+    cargo build --release --bin timeboost --features times
 
 [private]
 extract-nitro target:
