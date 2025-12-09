@@ -19,8 +19,8 @@ pub use metrics::ConsensusMetrics;
 
 #[cfg(feature = "times")]
 pub mod time_series {
-    pub const ROUND_START: &'static str = "round_start";
-    pub const DELIVERED: &'static str = "delivered";
+    pub const ROUND_START: &str = "round_start";
+    pub const DELIVERED: &str = "delivered";
 }
 
 #[cfg(feature = "times")]

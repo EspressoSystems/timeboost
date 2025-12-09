@@ -12,7 +12,7 @@ pub use submit::{SenderTaskDown, Submitter};
 
 #[cfg(feature = "times")]
 pub mod time_series {
-    pub const VERIFIED: &'static str = "verified";
-    pub const CERTIFY_START: &'static str = "certify_start";
-    pub const CERTIFY_END: &'static str = "certify_end";
+    pub const VERIFIED: &str = "verified";
+    pub const CERTIFY_START: &str = "certify_start";
+    pub const CERTIFY_END: &str = "certify_end";
 }

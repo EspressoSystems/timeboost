@@ -28,12 +28,20 @@ impl TimeSeries {
     }
 }
 
+pub fn all() -> impl std::ops::Deref<Target = BTreeMap<&'static str, TimeSeries>> {
+    TIMERS.lock()
+}
+
 pub fn time_series(name: &str) -> Option<TimeSeries> {
     TIMERS.lock().get(name).cloned()
 }
 
 pub fn take_time_series(name: &str) -> Option<TimeSeries> {
     TIMERS.lock().remove(name)
+}
+
+pub fn get<T: Into<u64>>(name: &str, i: T) -> Option<Instant> {
+    TIMERS.lock().get(name)?.records().get(&i.into()).copied()
 }
 
 pub fn record(series: &'static str, key: u64) {

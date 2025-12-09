@@ -16,7 +16,7 @@ use crate::{RbcError, RbcMetrics};
 
 #[cfg(feature = "times")]
 pub mod time_series {
-    pub const LEADER_INFO: &'static str = "leader_info";
+    pub const LEADER_INFO: &str = "leader_info";
 }
 
 #[rustfmt::skip]

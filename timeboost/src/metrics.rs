@@ -1,11 +1,5 @@
-#[cfg(feature = "times")]
-use std::time::Instant;
-
 use metrics::{Gauge, Metrics, NoMetrics};
 use sailfish::types::RoundNumber;
-
-#[cfg(feature = "times")]
-use times::TimeSeries;
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -28,10 +22,10 @@ impl TimeboostMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
             sf_round_duration: m.create_gauge("sf_round_duration", Some("ms")),
-            rbc_leader_info: m.create_gauge("rbc_leader_info", Some("ms")),
-            sf_delivery: m.create_gauge("sf_delivery", Some("ms")),
-            tb_decrypt: m.create_gauge("tb_decrypt", Some("ms")),
-            tb_certify: m.create_gauge("tb_certify", Some("ms")),
+            rbc_leader_info: m.create_gauge("rbc_leader_info_duration", Some("ms")),
+            sf_delivery: m.create_gauge("sf_delivery_duration", Some("ms")),
+            tb_decrypt: m.create_gauge("tb_decrypt_duration", Some("ms")),
+            tb_certify: m.create_gauge("tb_certify_duration", Some("ms")),
             total: m.create_gauge("total_duration", Some("ms")),
         }
     }
@@ -41,89 +35,98 @@ impl TimeboostMetrics {
 
     #[cfg(feature = "times")]
     pub fn update(&self, r: RoundNumber) {
+        self.update_sf_round_duration(r);
+        self.update_rbc_leader_info_duration(r);
+        self.update_sf_delivery_duration(r);
+        self.update_tb_decrypt_duration(r);
+        self.update_tb_certify_duration(r);
+        self.update_total_duration(r);
+    }
+
+    #[cfg(feature = "times")]
+    fn update_sf_round_duration(&self, r: RoundNumber) {
         use sailfish::consensus::time_series::ROUND_START;
 
-        if let Some(ts) = times::time_series(ROUND_START) {
-            self.update_sf_round_duration(r, &ts);
-            self.update_rbc_leader_info(r, &ts);
-            self.update_sf_delivery(r, &ts);
-        }
-
-        self.update_tb_decrypt(r);
-        self.update_tb_certify(r);
+        let Some(a) = times::get(ROUND_START, r.saturating_sub(1)) else {
+            return;
+        };
+        let Some(b) = times::get(ROUND_START, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.sf_round_duration.set(d.as_millis() as usize)
     }
 
     #[cfg(feature = "times")]
-    fn update_sf_round_duration(&self, r: RoundNumber, ts: &TimeSeries) {
-        let Some(a) = ts.records().get(&r.saturating_sub(1)) else {
+    fn update_rbc_leader_info_duration(&self, r: RoundNumber) {
+        use sailfish::{
+            consensus::time_series::ROUND_START, rbc::abraham::time_series::LEADER_INFO,
+        };
+
+        let Some(a) = times::get(ROUND_START, r) else {
             return;
         };
-        let Some(b) = ts.records().get(&*r) else {
+        let Some(b) = times::get(LEADER_INFO, r) else {
             return;
         };
-        self.sf_round_duration
-            .set(b.saturating_duration_since(*a).as_millis() as usize)
+        let d = b.saturating_duration_since(a);
+        self.rbc_leader_info.set(d.as_millis() as usize)
     }
 
     #[cfg(feature = "times")]
-    fn update_rbc_leader_info(&self, r: RoundNumber, ts: &TimeSeries) {
-        use sailfish::rbc::abraham::time_series::LEADER_INFO;
+    fn update_sf_delivery_duration(&self, r: RoundNumber) {
+        use sailfish::consensus::time_series::{DELIVERED, ROUND_START};
 
-        let Some(a) = ts.records().get(&*r) else {
+        let Some(a) = times::get(ROUND_START, r) else {
             return;
         };
-        let Some(b) = lookup(LEADER_INFO, r) else {
+        let Some(b) = times::get(DELIVERED, r) else {
             return;
         };
-        self.rbc_leader_info
-            .set(b.saturating_duration_since(*a).as_millis() as usize)
+        let d = b.saturating_duration_since(a);
+        self.sf_delivery.set(d.as_millis() as usize)
     }
 
     #[cfg(feature = "times")]
-    fn update_sf_delivery(&self, r: RoundNumber, ts: &TimeSeries) {
-        use sailfish::consensus::time_series::DELIVERED;
-
-        let Some(a) = ts.records().get(&*r) else {
-            return;
-        };
-        let Some(b) = lookup(DELIVERED, r) else {
-            return;
-        };
-        self.sf_delivery
-            .set(b.saturating_duration_since(*a).as_millis() as usize)
-    }
-
-    #[cfg(feature = "times")]
-    fn update_tb_decrypt(&self, r: RoundNumber) {
+    fn update_tb_decrypt_duration(&self, r: RoundNumber) {
         use timeboost_sequencer::time_series::{DECRYPT_END, DECRYPT_START};
 
-        let Some(a) = lookup(DECRYPT_START, r) else {
+        let Some(a) = times::get(DECRYPT_START, r) else {
             return;
         };
-        let Some(b) = lookup(DECRYPT_END, r) else {
+        let Some(b) = times::get(DECRYPT_END, r) else {
             return;
         };
-        self.tb_decrypt
-            .set(b.saturating_duration_since(a).as_millis() as usize)
+        let d = b.saturating_duration_since(a);
+        self.tb_decrypt.set(d.as_millis() as usize)
     }
 
     #[cfg(feature = "times")]
-    fn update_tb_certify(&self, r: RoundNumber) {
+    fn update_tb_certify_duration(&self, r: RoundNumber) {
         use timeboost_builder::time_series::{CERTIFY_END, CERTIFY_START};
 
-        let Some(a) = lookup(CERTIFY_START, r) else {
+        let Some(a) = times::get(CERTIFY_START, r) else {
             return;
         };
-        let Some(b) = lookup(CERTIFY_END, r) else {
+        let Some(b) = times::get(CERTIFY_END, r) else {
             return;
         };
-        self.tb_decrypt
-            .set(b.saturating_duration_since(a).as_millis() as usize);
+        let d = b.saturating_duration_since(a);
+        self.tb_decrypt.set(d.as_millis() as usize);
     }
-}
 
-#[cfg(feature = "times")]
-fn lookup(name: &str, r: RoundNumber) -> Option<Instant> {
-    let ts = times::time_series(name)?;
-    ts.records().get(&*r).copied()
+    #[cfg(feature = "times")]
+    fn update_total_duration(&self, r: RoundNumber) {
+        use sailfish::consensus::time_series::ROUND_START;
+        use timeboost_builder::time_series::CERTIFY_END;
+
+        let Some(a) = times::get(ROUND_START, r) else {
+            return;
+        };
+        let Some(b) = times::get(CERTIFY_END, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.tb_decrypt.set(d.as_millis() as usize);
+    }
 }

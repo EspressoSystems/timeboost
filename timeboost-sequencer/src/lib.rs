@@ -39,8 +39,8 @@ use crate::delayed_inbox::DelayedInbox;
 
 #[cfg(feature = "times")]
 pub mod time_series {
-    pub const DECRYPT_START: &'static str = "decrypt_start";
-    pub const DECRYPT_END: &'static str = "decrypt_end";
+    pub const DECRYPT_START: &str = "decrypt_start";
+    pub const DECRYPT_END: &str = "decrypt_end";
 }
 
 type Result<T> = std::result::Result<T, TimeboostError>;
