@@ -30,7 +30,7 @@ variable "ssh_user" {
 source "amazon-ebs" "linux" {
   ami_name      = "timeboost-${var.version}"
   instance_type = "t3a.micro"
-  region        = "eu-central-1"
+  region        = "eu-west-2"
   profile       = "timeboost-dev"
   ami_regions   = var.regions
 
