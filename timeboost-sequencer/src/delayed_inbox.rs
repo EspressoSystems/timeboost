@@ -46,7 +46,7 @@ impl DelayedInbox {
         cfg: &ChainConfig,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let url = cfg.rpc_url.clone();
+        let url = &cfg.rpc_url;
         let parent_chain_id = cfg.id;
         let provider = ProviderBuilder::new().connect_http(url.clone());
         let rpc_chain_id = provider

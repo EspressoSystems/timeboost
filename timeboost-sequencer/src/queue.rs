@@ -122,8 +122,7 @@ impl BundleQueue {
                             .insert(b.seqno(), b);
                     }
                     Err(e) => {
-                        trace!(node = %inner.label, signer = ?b.sender(),
-                            err = %e, "bundle validation failed")
+                        trace!(node = %inner.label, signer = ?b.sender(), err = %e, "bundle validation failed")
                     }
                 }
             }

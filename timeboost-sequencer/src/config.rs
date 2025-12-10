@@ -51,7 +51,7 @@ pub struct SequencerConfig {
     pub(crate) namespace: ChainId,
 
     /// Chain configuration
-    pub chain_config: ChainConfig,
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl SequencerConfig {
@@ -101,6 +101,10 @@ impl SequencerConfig {
 
     pub fn namespace(&self) -> ChainId {
         self.namespace
+    }
+
+    pub fn chain_config(&self) -> &ChainConfig {
+        &self.chain_config
     }
 
     /// Derive an RBC config from this sequencer config.

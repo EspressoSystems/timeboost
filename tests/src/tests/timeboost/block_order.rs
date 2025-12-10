@@ -33,7 +33,7 @@ async fn block_order() {
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
 
     let chain_id = cfg[0].0.namespace();
-    let auction = Auction::new(cfg[0].0.chain_config.auction_contract.unwrap());
+    let auction = Auction::new(cfg[0].0.chain_config().auction_contract.unwrap());
 
     let mut rxs = Vec::new();
     let tasks = TaskTracker::new();

@@ -1,11 +1,14 @@
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
-use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
+use timeboost_builder::{
+    CertifierConfig, SubmitterConfig,
+    robusta::{self, espresso_types::NamespaceId},
+};
 use timeboost_config::{ChainConfig, CommitteeConfig};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{KeyStore, ThresholdKeyCell};
+use timeboost_types::{ChainId, KeyStore, ThresholdKeyCell};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -66,7 +69,7 @@ pub struct TimeboostConfig {
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
 
     /// Espresso namespace ID.
-    pub(crate) namespace: u64,
+    pub(crate) namespace: ChainId,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -92,7 +95,7 @@ impl TimeboostConfig {
             .leash_len(self.leash_len)
             .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())
-            .namespace(self.namespace.into())
+            .namespace(self.namespace)
             .build()
     }
 
@@ -108,10 +111,12 @@ impl TimeboostConfig {
     }
 
     pub fn submitter_config(&self) -> SubmitterConfig {
+        let ns: u64 = self.namespace.into();
+        let ns: NamespaceId = ns.into();
         SubmitterConfig::builder()
             .pubkey(self.sign_keypair.public_key())
             .robusta(self.robusta.clone())
-            .namespace(self.namespace)
+            .namespace(ns)
             .committee(self.sailfish_committee.committee().clone())
             .max_transaction_size(self.max_transaction_size)
             .build()

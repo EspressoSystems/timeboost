@@ -124,13 +124,6 @@ mkconfig-linux nodes seed="42": build-release
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
-assemble-configs dir:
-    mkdir {{dir}}/committees
-    target/release/assemble \
-        --committee 0 \
-        --start 2025-10-01T00:00:00Z \
-        --output {{dir}}/committees/committee-0.toml \
-        {{dir}}/*.public.toml
 
 verify-blocks *ARGS: build-test-utils
     target/release/block-verifier {{ARGS}}

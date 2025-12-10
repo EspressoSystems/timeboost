@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
                 .build(),
             Vec::new(),
         ))
-        .namespace(config.espresso.namespace)
+        .namespace(config.espresso.namespace.into())
         .max_transaction_size(config.espresso.max_transaction_size)
         .chain_config(config.chain.clone())
         .build();

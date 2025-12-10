@@ -46,7 +46,7 @@ async fn run_handover(
     let round2block = Arc::new(Round2Block::new());
 
     let chain_id = curr[0].1.namespace();
-    let auction = Auction::new(curr[0].1.chain_config.auction_contract.unwrap());
+    let auction = Auction::new(curr[0].1.chain_config().auction_contract.unwrap());
 
     let a1 = curr[0].1.sailfish_committee().clone();
     let a2 = next[0].1.sailfish_committee().clone();

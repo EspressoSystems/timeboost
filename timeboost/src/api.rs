@@ -131,11 +131,11 @@ async fn handle_raw_tx(server: &ApiServer, req: JsonRpcRequest) -> Result<Json<V
         .trim_start_matches("0x");
 
     let bytes = hex::decode(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let env = TxEnvelope::decode(&mut &bytes[..]).map_err(|_| StatusCode::BAD_REQUEST)?;
+
     let mut hasher = Keccak256::new();
     hasher.update(&bytes);
     let tx_hash_bytes = hasher.finalize();
-
-    let env = TxEnvelope::decode(&mut &bytes[..]).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let chain_id = env.chain_id().ok_or(StatusCode::BAD_REQUEST)?;
     let encoded = ssz::ssz_encode(&vec![bytes.clone()]);
