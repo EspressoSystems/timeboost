@@ -89,13 +89,11 @@ impl Bundle {
         self.update_hash();
     }
 
-    pub fn set_chain_id(&mut self, chain_id: ChainId) {
-        self.chain_id = chain_id;
-        self.update_hash()
-    }
-
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
+    pub fn arbitrary(
+        u: &mut Unstructured<'_>,
+        chain_id: ChainId,
+    ) -> Result<Self, InvalidTransaction> {
         use alloy::rlp::Encodable;
 
         let t = loop {
@@ -111,10 +109,9 @@ impl Bundle {
 
         let mut d = Vec::new();
         t.encode(&mut d);
-        let c = ChainId::default();
         let e = Epoch::now() + bool::arbitrary(u)? as u64;
         let encoded = ssz::ssz_encode(&vec![&d]);
-        let b = Bundle::new(c, e, encoded.into(), false);
+        let b = Bundle::new(chain_id, e, encoded.into(), false);
 
         Ok(b)
     }
@@ -265,9 +262,10 @@ impl SignedPriorityBundle {
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(
         u: &mut arbitrary::Unstructured<'_>,
+        chain_id: ChainId,
         max_seqno: u64,
     ) -> Result<SignedPriorityBundle, InvalidTransaction> {
-        let bundle = Bundle::arbitrary(u)?;
+        let bundle = Bundle::arbitrary(u, chain_id)?;
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
         let priority_bundle = PriorityBundle::new(bundle, auction, seqno);
@@ -373,7 +371,7 @@ impl From<ChainId> for u64 {
 
 impl fmt::Display for ChainId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ChainId({})", self.0)
+        write!(f, "{}", self.0)
     }
 }
 

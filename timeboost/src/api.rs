@@ -43,13 +43,12 @@ pub struct ApiServer {
 
 impl ApiServer {
     pub fn router(&self) -> Router {
-        let mut router = Router::new();
-        router = if self.express_lane {
-            router
+        let router = if self.express_lane {
+            Router::new()
                 .route("/v1/submit/priority", post(submit_priority))
                 .route("/v1/submit/regular", post(submit_regular))
         } else {
-            router.route("/v1/", post(rpc))
+            Router::new().route("/v1/", post(rpc))
         };
         router.route("/v1/encryption-key", get(encryption_key))
         .route("/i/health", get(health))

@@ -36,8 +36,7 @@ pub fn make_bundle(
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let mut bundle = Bundle::arbitrary(&mut u)?;
-    bundle.set_chain_id(chain_id);
+    let mut bundle = Bundle::arbitrary(&mut u, chain_id)?;
 
     if rng.gen_bool(0.5) {
         // encrypt bundle
