@@ -34,7 +34,6 @@ use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
 
-use crate::delayed_inbox::DelayedInbox;
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 #[cfg(feature = "times")]
