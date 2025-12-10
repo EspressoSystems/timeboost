@@ -194,7 +194,6 @@ test-all: build-release build-test-utils
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
         --namespace 10101 \
-        --express-lane" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
