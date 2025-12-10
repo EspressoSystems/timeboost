@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+times = []
+
 [dependencies]
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
 arrayvec = { workspace = true }

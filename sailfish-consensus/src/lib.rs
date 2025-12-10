@@ -18,13 +18,7 @@ pub use dag::Dag;
 pub use metrics::ConsensusMetrics;
 
 #[cfg(feature = "times")]
-pub mod time_series {
-    pub const ROUND_START: &str = "round_start";
-    pub const DELIVERED: &str = "delivered";
-}
-
-#[cfg(feature = "times")]
-use time_series::{DELIVERED, ROUND_START};
+use sailfish_types::time_series::{DELIVERED, ROUND_START};
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex<T>(Vertex<T>);

@@ -1,7 +1,6 @@
 mod conf;
 mod metrics;
 
-use std::env;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
@@ -15,7 +14,7 @@ use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{BundleVariant, ConsensusTime};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub use cliquenet as net;
 pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
@@ -34,8 +33,6 @@ use crate::metrics::TimeboostMetrics;
 
 pub mod api;
 pub mod forwarder;
-
-pub(crate) const TIMEBOOST_NO_SUBMIT: &str = "TIMEBOOST_NO_SUBMIT";
 
 pub struct Timeboost {
     label: PublicKey,
@@ -95,8 +92,6 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        let no_submit = env::var(TIMEBOOST_NO_SUBMIT).is_ok();
-
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -107,7 +102,6 @@ impl Timeboost {
                 out = self.sequencer.next() => match out {
                     Ok(Output::Transactions { round, timestamp, transactions, delayed_inbox_index }) => {
                         info!(node = %self.label, %round, trxs = %transactions.len(), "sequencer output");
-                        self.metrics.update(round);
                         self.nitro_forwarder
                             .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?
                     }
@@ -124,13 +118,8 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        if no_submit {
-                            warn!(
-                                node  = %self.label,
-                                block = %b.data().round(),
-                                "TIMEBOOST_NO_SUBMIT is set, not submitting block"
-                            );
-                        } else if let Err(e) = self.submitter.submit(b).await {
+                        self.metrics.update(b.data().round());
+                        if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
                         }

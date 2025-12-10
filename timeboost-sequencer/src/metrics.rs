@@ -65,7 +65,7 @@ impl SequencerMetrics {
 
     #[cfg(feature = "times")]
     fn update_sf_round_duration(&self, r: RoundNumber) {
-        use sailfish::consensus::time_series::ROUND_START;
+        use sailfish::types::time_series::ROUND_START;
 
         let Some(a) = times::get(ROUND_START, r.saturating_sub(1)) else {
             return;
@@ -79,9 +79,7 @@ impl SequencerMetrics {
 
     #[cfg(feature = "times")]
     fn update_rbc_leader_info_duration(&self, r: RoundNumber) {
-        use sailfish::{
-            consensus::time_series::ROUND_START, rbc::abraham::time_series::LEADER_INFO,
-        };
+        use sailfish::{rbc::abraham::time_series::LEADER_INFO, types::time_series::ROUND_START};
 
         let Some(a) = times::get(ROUND_START, r) else {
             return;
@@ -95,7 +93,7 @@ impl SequencerMetrics {
 
     #[cfg(feature = "times")]
     fn update_sf_delivery_duration(&self, r: RoundNumber) {
-        use sailfish::consensus::time_series::{DELIVERED, ROUND_START};
+        use sailfish::types::time_series::{DELIVERED, ROUND_START};
 
         let Some(a) = times::get(ROUND_START, r) else {
             return;
