@@ -23,10 +23,6 @@ struct Cli {
     #[clap(long, short)]
     config: PathBuf,
 
-    /// Enable Timeboost (express lane auction).
-    #[clap(long, default_value_t = false)]
-    express_lane: bool,
-
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -42,20 +38,11 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let mut config = NodeConfig::read(&cli.config)
+    let config = NodeConfig::read(&cli.config)
         .await
         .with_context(|| format!("could not read config {:?}", cli.config))?;
 
     let sign_keypair = Keypair::from(config.keys.signing.secret.clone());
-
-    if cli.express_lane && config.chain.auction_contract.is_none() {
-        bail!("Failed to initialize express lane mode; missing auction contract")
-    }
-
-    if !cli.express_lane {
-        config.chain.auction_contract = None;
-    }
-
     let sign_pubkey = sign_keypair.public_key();
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 

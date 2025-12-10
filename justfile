@@ -185,7 +185,6 @@ test-all: build-release build-test-utils
         --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.toml \
-        --express-lane \
         --committee 0 \
         --nodes test-configs/nodes/ \
         --scenario test-configs/scenarios/rolling-restart.toml \
@@ -211,20 +210,20 @@ test-no-express: build-release build-test-utils
     --spawn "1|anvil --port 8545 --silent" \
     --run   "2|sleep 3" \
     --run   "3|just deploy-contract 127.0.0.1:8545" \
-    --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+    --run   "4|just register-committee 127.0.0.1:8545 test-configs/no-express/committees/committee-0.toml" \
     --spawn "5|target/release/block-maker \
-        --chain test-configs/chain.toml \
+        --chain test-configs/chain.no-express.toml \
         --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
-        --chain test-configs/chain.toml \
+        --chain test-configs/chain.no-express.toml \
         --committee 0 \
-        --nodes test-configs/nodes/ \
+        --nodes test-configs/no-express/ \
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
     --run   "7|sleep 3" \
     --run   "8|just register-key 127.0.0.1:8545" \
     --spawn "9|target/release/tx-generator \
-        --chain test-configs/chain.toml \
+        --chain test-configs/chain.no-express.toml \
         --namespace 10101" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
@@ -244,7 +243,6 @@ test-dyn-comm: build-release build-test-utils
         --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
         --spawn "5|target/release/run-committee \
             --chain test-configs/chain.toml \
-            --express-lane \
             --committee 0 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \

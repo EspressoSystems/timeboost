@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use crate::{Address, Epoch};
 
 #[derive(Debug)]
@@ -17,7 +15,7 @@ impl Auction {
         }
     }
 
-    pub fn controller(&self, epoch: Epoch) -> Address {
+    pub fn controller(&self, _: Epoch) -> Address {
         // TODO: return actual controller address
         Address::default()
     }
@@ -27,6 +25,6 @@ impl Auction {
     }
 
     pub async fn go(self) {
-        // TODO: sync with auction contract on L1
+        // TODO: sync with auction contract
     }
 }

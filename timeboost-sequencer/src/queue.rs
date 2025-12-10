@@ -109,7 +109,7 @@ impl BundleQueue {
             }
             BundleVariant::Priority(b) => {
                 let Some(auction) = inner.auction.as_ref() else {
-                    warn!("no priority address for bundle");
+                    warn!(node = %inner.label, "missing auction contract");
                     return;
                 };
                 match b.validate(epoch_now, auction) {
@@ -122,7 +122,8 @@ impl BundleQueue {
                             .insert(b.seqno(), b);
                     }
                     Err(e) => {
-                        trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
+                        trace!(node = %inner.label, signer = ?b.sender(),
+                            err = %e, "bundle validation failed")
                     }
                 }
             }
@@ -215,8 +216,8 @@ impl DataSource for BundleQueue {
         let now = Instant::now();
 
         let mut inner = self.0.lock();
-        let express_lane_support = inner.auction.is_some();
         inner.set_time(time);
+        let express_lane_support = inner.auction.is_some();
 
         if r.is_genesis() || inner.mode.is_passive() {
             return CandidateList::builder(Timestamp::now(), inner.index)
