@@ -124,6 +124,13 @@ mkconfig-linux nodes seed="42": build-release
             --stamp-dir "/tmp" \
             --output "test-configs/linux"; \
     done
+assemble-configs dir:
+    mkdir {{dir}}/committees
+    target/release/assemble \
+        --committee 0 \
+        --start 2025-10-01T00:00:00Z \
+        --output {{dir}}/committees/committee-0.toml \
+        {{dir}}/*.public.toml
 
 verify-blocks *ARGS: build-test-utils
     target/release/block-verifier {{ARGS}}
@@ -193,7 +200,7 @@ test-all: build-release build-test-utils
     --run   "8|just register-key 127.0.0.1:8545" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
-        --namespace 10101 \
+        --namespace 10101" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
