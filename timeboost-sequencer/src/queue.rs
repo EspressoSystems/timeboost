@@ -3,15 +3,17 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use multisig::PublicKey;
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
-    Address, Bundle, BundleVariant, DkgBundle, Epoch, RetryList, SeqNo, SignedPriorityBundle,
+    Auction, Bundle, BundleVariant, ChainId, DkgBundle, Epoch, RetryList, SeqNo,
+    SignedPriorityBundle,
 };
 use timeboost_types::{
     CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
 };
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use super::Mode;
 use crate::metrics::SequencerMetrics;
@@ -23,7 +25,9 @@ pub struct BundleQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
-    priority_addr: Address,
+    label: PublicKey,
+    chain_id: ChainId,
+    auction: Option<Auction>,
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,
@@ -48,9 +52,16 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(
+        label: PublicKey,
+        chain_id: ChainId,
+        auction: Option<Auction>,
+        metrics: Arc<SequencerMetrics>,
+    ) -> Self {
         Self(Arc::new(Mutex::new(Inner {
-            priority_addr: prio,
+            label,
+            chain_id,
+            auction,
             time: Timestamp::now(),
             index: 0.into(),
             priority: BTreeMap::new(),
@@ -87,23 +98,34 @@ impl BundleQueue {
         match b {
             BundleVariant::Dkg(b) => inner.dkg = Some(b),
             BundleVariant::Regular(b) => {
+                if b.chain_id() != inner.chain_id {
+                    warn!(node = %inner.label, chain = %inner.chain_id, "wrong chain id: {}", b.chain_id());
+                    return;
+                }
+
                 if inner.cache.insert(*b.digest()) {
                     inner.regular.push_back((now, b))
                 }
             }
-            BundleVariant::Priority(b) => match b.validate(epoch_now, Some(inner.priority_addr)) {
-                Ok(_) => {
-                    let epoch = b.bundle().epoch();
-                    inner
-                        .priority
-                        .entry(epoch)
-                        .or_default()
-                        .insert(b.seqno(), b);
+            BundleVariant::Priority(b) => {
+                let Some(auction) = inner.auction.as_ref() else {
+                    warn!(node = %inner.label, "missing auction contract");
+                    return;
+                };
+                match b.validate(epoch_now, auction) {
+                    Ok(_) => {
+                        let epoch = b.bundle().epoch();
+                        inner
+                            .priority
+                            .entry(epoch)
+                            .or_default()
+                            .insert(b.seqno(), b);
+                    }
+                    Err(e) => {
+                        trace!(node = %inner.label, signer = ?b.sender(), err = %e, "bundle validation failed")
+                    }
                 }
-                Err(e) => {
-                    trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
-                }
-            },
+            }
         }
 
         inner
@@ -193,8 +215,8 @@ impl DataSource for BundleQueue {
         let now = Instant::now();
 
         let mut inner = self.0.lock();
-
         inner.set_time(time);
+        let express_lane_support = inner.auction.is_some();
 
         if r.is_genesis() || inner.mode.is_passive() {
             return CandidateList::builder(Timestamp::now(), inner.index)
@@ -221,7 +243,7 @@ impl DataSource for BundleQueue {
 
         let mut regular = Vec::new();
         for (t, b) in &inner.regular {
-            if now.duration_since(*t) < MIN_WAIT_TIME {
+            if express_lane_support && now.duration_since(*t) < MIN_WAIT_TIME {
                 break;
             }
             let Ok(n) = bincode_len(b) else { continue };

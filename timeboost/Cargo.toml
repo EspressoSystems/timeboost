@@ -21,11 +21,9 @@ axum = { workspace = true }
 bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
-committable = { workspace = true }
-either = { workspace = true }
+ethereum_ssz = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-jiff = { workspace = true }
 metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
@@ -33,7 +31,7 @@ rand = { workspace = true }
 reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
-serde_bytes = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }

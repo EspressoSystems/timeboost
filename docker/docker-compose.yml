@@ -96,14 +96,13 @@ services:
       inbox-block-tag = "finalized"
       EOF
         for i in $$(seq 0 3); do
-          batch_poster_port=$$((8547 + i * 10))
-          echo "Running configure for node $$i with seed $$((42 + i)) and batch poster port $${batch_poster_port}"
+          echo "Running configure for node $$i with seed $$((42 + i))"
           /app/configure \
             --seed $$((42 + i)) \
             --bind "0.0.0.0:8000" \
             --external "node$$i:8000" \
             --nitro "nitro$$i:55000" \
-            --batchposter "http://host.docker.internal:$${batch_poster_port}" \
+            --batchposter "nitro$$i:8547" \
             --espresso-namespace 412346 \
             --espresso-base-url "http://espresso-dev-node:41000/v1/" \
             --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
@@ -339,7 +338,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml"
+        "/config/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml",
       ]
     volumes:
       - "config:/config"
@@ -348,7 +347,7 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
-      - "8100:8004"
+      - "8100:8003"
       - "8800:8800"
       - "9000:9000"
     depends_on:
@@ -361,7 +360,7 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node0:8004/i/health"]
+      test: ["CMD", "curl", "-f", "http://node0:8003/i/health"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -374,7 +373,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml"
+        "/config/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml",
       ]
     volumes:
       - "config:/config"
@@ -383,7 +382,7 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
-      - "8101:8004"
+      - "8101:8003"
       - "8801:8800"
       - "9001:9000"
     depends_on:
@@ -396,7 +395,7 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node1:8004/i/health"]
+      test: ["CMD", "curl", "-f", "http://node1:8003/i/health"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -409,7 +408,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml"
+        "/config/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml",
       ]
     volumes:
       - "config:/config"
@@ -418,7 +417,7 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
-      - "8102:8004"
+      - "8102:8003"
       - "8802:8800"
       - "9002:9000"
     depends_on:
@@ -431,7 +430,7 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node2:8004/i/health"]
+      test: ["CMD", "curl", "-f", "http://node2:8003/i/health"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -444,7 +443,7 @@ services:
         "--https-only",
         "false",
         "--config",
-        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml"
+        "/config/qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.toml",
       ]
     volumes:
       - "config:/config"
@@ -453,11 +452,11 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
-      - "8103:8004"
+      - "8103:8003"
       - "8803:8800"
       - "9003:9000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://node3:8004/i/health"]
+      test: ["CMD", "curl", "-f", "http://node3:8003/i/health"]
       interval: 10s
       timeout: 3s
       retries: 20
@@ -514,7 +513,7 @@ services:
         "--https-only",
         "false",
         "--blocks",
-        "100"
+        "100",
       ]
     volumes:
       - "config:/config"
@@ -541,30 +540,40 @@ services:
     depends_on:
       block-checker:
         condition: service_completed_successfully
-  tx-generator:
+  bridge-funds:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
-    command:
-      [
-        "/app/tx-generator",
-        "--chain",
-        "/config/chain.toml",
-        "--nitro-url",
-        "http://nitro0:8547",
-        "--namespace",
-        "412346",
-        "--tps",
-        "10"
-      ]
+    entrypoint: |
+      bash -c '
+        cast send $$(jq -r '.inbox' /config/deployment.json) "depositEth()" \
+        --value 1000ether \
+        --rpc-url http://demo-l1-network:8545 \
+        --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      '
     volumes:
       - "config:/config"
-    environment:
-      - RUST_LOG=info
     networks:
       - timeboost
     depends_on:
       threshold-key-register:
         condition: service_completed_successfully
-
+  tx-generator:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    entrypoint: |
+      bash -c '
+        for i in $$(seq 0 300); do
+        echo "Sending transaction $$i"
+        cast send 0x99327EF7a2C17Ec21e95224dA9d42eB550d7b47C \
+          --value 0.5ether \
+          --rpc-url http://node0:8003/v1/ \
+          --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+        sleep 0.3
+      done
+      '
+    networks:
+      - timeboost
+    depends_on:
+      bridge-funds:
+        condition: service_completed_successfully
 networks:
   timeboost:
     driver: bridge

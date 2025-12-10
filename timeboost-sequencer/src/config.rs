@@ -6,7 +6,7 @@ use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
 use timeboost_config::ChainConfig;
 use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_types::{Address, KeyStore, ThresholdKeyCell};
+use timeboost_types::{ChainId, KeyStore, ThresholdKeyCell};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -31,10 +31,6 @@ pub struct SequencerConfig {
     /// The peers that Decrypter will connect to (network and key info).
     pub(crate) decrypt_committee: (AddressableCommittee, KeyStore),
 
-    /// The priority lane controller address.
-    #[builder(default)]
-    pub(crate) priority_addr: Address,
-
     /// Is this sequencer recovering from a crash?
     #[builder(default = true)]
     pub(crate) recover: bool,
@@ -50,6 +46,9 @@ pub struct SequencerConfig {
 
     /// Atomic cell holding the threshold encryption key post DKG.
     pub(crate) threshold_dec_key: ThresholdKeyCell,
+
+    /// Chain id (namespace) for the sequencing chain.
+    pub(crate) namespace: ChainId,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -98,6 +97,14 @@ impl SequencerConfig {
 
     pub fn dec_key(&self) -> &ThresholdKeyCell {
         &self.threshold_dec_key
+    }
+
+    pub fn namespace(&self) -> ChainId {
+        self.namespace
+    }
+
+    pub fn chain_config(&self) -> &ChainConfig {
+        &self.chain_config
     }
 
     /// Derive an RBC config from this sequencer config.

@@ -20,7 +20,7 @@ use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, CoordinatorEvent};
 use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
-    BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
+    Auction, BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
 };
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
@@ -29,13 +29,12 @@ use tokio::task::{JoinHandle, spawn};
 use tracing::{debug, error, info, warn};
 
 use decrypt::{Decrypter, DecrypterError};
+use delayed_inbox::DelayedInbox;
 use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
-
-use crate::delayed_inbox::DelayedInbox;
 
 #[cfg(feature = "times")]
 pub mod time_series {
@@ -117,8 +116,9 @@ impl Sequencer {
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let public_key = cfg.sign_keypair.public_key();
+        let auction = cfg.chain_config.auction_contract.map(Auction::new);
 
-        let queue = BundleQueue::new(cfg.priority_addr, seq_metrics.clone());
+        let queue = BundleQueue::new(public_key, cfg.namespace, auction, seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);

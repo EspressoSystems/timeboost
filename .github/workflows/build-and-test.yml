@@ -109,6 +109,8 @@ jobs:
       run: just run-sailfish-demo
     - name: Test with block-maker
       run: just test-all
+    - name: Test without express lane
+      run: just test-no-express
     - name: Test dynamic committee change
       run: just test-dyn-comm
 

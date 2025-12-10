@@ -50,13 +50,15 @@ async fn main() -> Result<()> {
     let mut committee = contract.active().await?;
     let mut prev_committee = None;
 
-    if committee.member(&sign_pubkey).is_none() {
+    let member = if let Some(m) = committee.member(&sign_pubkey) {
+        m
+    } else {
         let Some(next) = contract.next(committee.id).await? else {
             bail!("{sign_pubkey} not a member of the active committee and no next committee exists")
         };
-        if next.member(&sign_pubkey).is_none() {
+        let Some(member) = next.member(&sign_pubkey) else {
             bail!("{sign_pubkey} not a member of the active nor the next committee")
-        }
+        };
         info!(
             node      = %sign_pubkey,
             committee = %next.id,
@@ -64,8 +66,9 @@ async fn main() -> Result<()> {
             "awaiting previous committee"
         );
         prev_committee = Some(committee);
-        committee = next;
-    }
+        committee = next.clone();
+        &member.clone()
+    };
 
     let is_recover = !cli.ignore_stamp && config.stamp.is_file();
 
@@ -91,6 +94,7 @@ async fn main() -> Result<()> {
         .decrypt_addr(config.net.bind.clone().with_offset(DECRYPTER_PORT_OFFSET))
         .certifier_addr(config.net.bind.clone().with_offset(CERTIFIER_PORT_OFFSET))
         .nitro_addr(config.net.nitro.clone())
+        .batcher_addr(member.batchposter.clone())
         .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
@@ -103,7 +107,7 @@ async fn main() -> Result<()> {
                 .build(),
             Vec::new(),
         ))
-        .namespace(config.espresso.namespace)
+        .namespace(config.espresso.namespace.into())
         .max_transaction_size(config.espresso.max_transaction_size)
         .chain_config(config.chain.clone())
         .build();

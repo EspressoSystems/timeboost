@@ -1,20 +1,20 @@
-stamp = "/tmp/timeboost.qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m.stamp"
+stamp = "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp"
 
 [net]
-bind = "127.0.0.1:8030"
+bind = "127.0.0.1:8010"
 nitro = "127.0.0.1:55000"
 
 [keys.signing]
-secret = "FvNPFm2VySb2hasVFSgRyzSjnDy73BDL7XJfRmGy4SST"
-public = "qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m"
+secret = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
+public = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
 
 [keys.dh]
-secret = "3SxqfGusCVtc6oujqVPtkwKdhbN1aUKMNQbbhZZoExNu"
-public = "CetqwdEDC8BkBXB9wpTmuumCsj2kRPcq9hbJVEdaQ7r9"
+secret = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
+public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
 
 [keys.dkg]
-secret = "9F7mt5c8twcF3FBVWpHxN8gBM7ZLSTh2jtvkxtrJKF8Z"
-public = "7DLbA7pdikS3BjBWyAPbDLivEEPXGU9anPngeTo8nyAsJFSoBvjD8UStzSp1MgBu8V"
+secret = "GLNPt6EYeFQbq8cCX5nKMA4LbCKdrUN5o5hmWTPJbkJZ"
+public = "63zn28rzuHhYTHrv8LqmmB3L1R9ibcv4wtX4zvEoZ3sgLjyLJmrTNcZyeEBwQ9egYE"
 
 [chain]
 id = 31337
@@ -23,7 +23,6 @@ websocket-url = "ws://127.0.0.1:8545/"
 key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 inbox-block-tag = "finalized"
-auction-contract = "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1"
 
 [espresso]
 namespace = 10101

@@ -3,6 +3,7 @@ use std::{str::FromStr, time::Duration};
 
 use alloy::{
     consensus::{SignableTransaction, TxEnvelope, TxLegacy},
+    hex::ToHexExt,
     network::{Ethereum, TransactionBuilder, TxSignerSync},
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder, RootProvider},
@@ -16,12 +17,16 @@ use bytes::BytesMut;
 use clap::Parser;
 use futures::future::join_all;
 use reqwest::{Client, Url};
+use serde::Serialize;
 use timeboost::config::{ChainConfig, HTTP_API_PORT_OFFSET};
 use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
 };
 use timeboost_contract::KeyManager;
-use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
+use timeboost_types::{Auction, ChainId};
+use timeboost_utils::load_generation::{
+    TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, tps_to_millis,
+};
 use timeboost_utils::logging::init_logging;
 use tokio::{
     signal::{
@@ -68,6 +73,7 @@ struct Args {
 struct ApiUrl {
     regular_url: Url,
     priority_url: Url,
+    json_rpc_url: Url,
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -76,9 +82,10 @@ struct TxGeneratorConfig {
     tps: u32,
     enc_ratio: f64,
     prio_ratio: f64,
-    chain_id: u64,
-    parent_id: u64,
+    chain_id: ChainId,
+    parent_id: ChainId,
     parent_url: Url,
+    auction_contract: Option<alloy::primitives::Address>,
     enc_key: ThresholdEncKey,
     nitro_cfg: Option<NitroConfig>,
 }
@@ -95,16 +102,19 @@ struct TxGenerator {
     node_urls: Vec<ApiUrl>,
     client: Client,
     interval: Duration,
-    chain_id: u64,
+    chain_id: ChainId,
     enc_ratio: f64,
     prio_ratio: f64,
     enc_key: ThresholdEncKey,
+    auction: Option<Auction>,
     nitro: Option<(RootProvider, Vec<PrivateKeySigner>)>,
 }
 
 impl TxGenerator {
     pub(crate) async fn new(cfg: TxGeneratorConfig) -> Result<Self> {
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
+        let auction = cfg.auction_contract.map(Auction::new);
+
         let nitro = if let Some(NitroConfig {
             rpc_url,
             dev_account,
@@ -147,15 +157,24 @@ impl TxGenerator {
             enc_ratio: cfg.enc_ratio,
             prio_ratio: cfg.prio_ratio,
             nitro,
+            auction,
             enc_key: cfg.enc_key,
         })
     }
 
     pub(crate) async fn generate(&self) -> Result<()> {
-        info!("starting tx-generator");
-        let mut interval = interval(self.interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        if self.auction.is_some() {
+            self.generate_bundles().await
+        } else {
+            self.generate_raw_txs().await
+        }
+    }
 
+    pub(crate) async fn generate_bundles(&self) -> Result<()> {
+        info!("starting bundle generator");
+        let mut interval = interval(self.interval);
+        let auction = self.auction.as_ref().expect("auction is present");
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
             let bundle = match &self.nitro {
@@ -174,11 +193,17 @@ impl TxGenerator {
                         }
                     };
 
-                    make_dev_acct_bundle(&self.enc_key, txn, self.enc_ratio, self.prio_ratio)
-                        .map_err(|_| warn!("failed to generate dev account bundle"))
-                        .ok()
+                    make_dev_acct_bundle(
+                        &self.enc_key,
+                        auction,
+                        txn,
+                        self.enc_ratio,
+                        self.prio_ratio,
+                    )
+                    .map_err(|_| warn!("failed to generate dev account bundle"))
+                    .ok()
                 }
-                None => make_bundle(&self.enc_key)
+                None => make_bundle(self.chain_id, &self.enc_key, auction)
                     .map_err(|_| warn!("failed to generate bundle"))
                     .ok(),
             };
@@ -198,15 +223,74 @@ impl TxGenerator {
         }
     }
 
+    pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
+        info!("starting transaction generator");
+        let mut interval = interval(self.interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut count = 0;
+        loop {
+            let tx = match &self.nitro {
+                Some((p, senders)) => {
+                    let len = senders.len();
+                    let sender = senders[count % len].clone();
+                    let receiver = senders[(count + 1) % len].clone();
+
+                    let txn = match Self::prepare_txn(p, self.chain_id, sender, receiver.address())
+                        .await
+                    {
+                        Ok(txn) => txn,
+                        Err(_) => {
+                            warn!("failed to prepare txn");
+                            continue;
+                        }
+                    };
+
+                    make_dev_acct_txn(&self.enc_key, txn, self.enc_ratio)
+                        .map_err(|_| warn!("failed to generate dev account txn"))
+                        .ok()
+                }
+                None => {
+                    let dev_account = PrivateKeySigner::from_str(DEV_ACCOUNT)?;
+                    let tx_info = TxInfo {
+                        chain_id: self.chain_id.into(),
+                        nonce: 0,
+                        to: dev_account.address(),
+                        base_fee: 5,
+                        gas_limit: 5,
+                        signer: dev_account,
+                    };
+                    make_dev_acct_txn(&self.enc_key, tx_info, self.enc_ratio)
+                        .map_err(|_| warn!("failed to generate txn"))
+                        .ok()
+                }
+            };
+
+            let Some(tx) = tx else { continue };
+
+            join_all(
+                self.node_urls
+                    .iter()
+                    .map(|urls| async { self.send_txn(tx.clone(), &urls.json_rpc_url).await }),
+            )
+            .await;
+
+            if count % 100 == 0 {
+                debug!("submitted: {} bundles", count);
+            }
+            count += 1;
+            interval.tick().await;
+        }
+    }
+
     async fn prepare_txn(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         from: PrivateKeySigner,
         to: Address,
     ) -> Result<TxInfo> {
         let nonce = p.get_transaction_count(from.address()).await?;
         let tx = TransactionRequest::default()
-            .with_chain_id(chain_id)
+            .with_chain_id(chain_id.into())
             .with_nonce(nonce)
             .with_from(from.address())
             .with_to(to)
@@ -223,13 +307,47 @@ impl TxGenerator {
             .with_context(|| "failed to get gas price")?;
 
         Ok(TxInfo {
-            chain_id,
+            chain_id: chain_id.into(),
             nonce,
             to,
             gas_limit,
             base_fee,
             signer: from,
         })
+    }
+
+    async fn send_txn(&self, txn: TransactionVariant, url: &Url) {
+        let (method, params) = match txn {
+            TransactionVariant::PlainText(t) => {
+                ("eth_sendRawTransaction", vec![t.encode_hex_with_prefix()])
+            }
+            TransactionVariant::Encrypted(t) => {
+                let chain_id: u64 = self.chain_id.into();
+                (
+                    "eth_sendEncTransaction",
+                    vec![t.encode_hex_with_prefix(), chain_id.to_string()],
+                )
+            }
+        };
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params,
+            id: 1,
+        };
+
+        let result = self.client.post(url.clone()).json(&req).send().await;
+
+        match result {
+            Ok(response) if !response.status().is_success() => {
+                warn!("response status: {}", response.status());
+            }
+            Err(err) => {
+                warn!(%err, "failed to send transaction");
+            }
+            _ => {}
+        }
     }
 
     async fn send_bundle(&self, bundle: &BundleVariant, regular_url: &Url, priority_url: &Url) {
@@ -269,7 +387,7 @@ impl TxGenerator {
     async fn fund_addresses(
         parent: &RootProvider,
         nitro: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         dev_key: &PrivateKeySigner,
         keys: &[PrivateKeySigner],
         bridge_addr: alloy::primitives::Address,
@@ -328,14 +446,14 @@ impl TxGenerator {
 
     async fn fund_address(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         from: &PrivateKeySigner,
         to: &PrivateKeySigner,
         nonce: u64,
     ) -> Result<()> {
         let one_eth_plus = U256::from_str("1100000000000000000").expect("1.1 ETH");
         let mut tx = TxLegacy {
-            chain_id: Some(chain_id),
+            chain_id: Some(chain_id.into()),
             nonce,
             gas_price: 1_000_000_000,
             gas_limit: 21_000,
@@ -356,7 +474,7 @@ impl TxGenerator {
 
     async fn bridge_funds(
         p: &RootProvider,
-        chain_id: u64,
+        chain_id: ChainId,
         key: &PrivateKeySigner,
         bridge_addr: Address,
     ) -> Result<()> {
@@ -367,7 +485,7 @@ impl TxGenerator {
         let calldata = alloy::primitives::Bytes::from(func_sig);
 
         let mut tx = TxLegacy {
-            chain_id: Some(chain_id),
+            chain_id: Some(chain_id.into()),
             nonce: 0,
             gas_price: 1_000_000_000,
             gas_limit: 100_000,
@@ -408,6 +526,14 @@ impl TxGenerator {
     }
 }
 
+#[derive(Serialize, Clone)]
+struct JsonRpcRequest {
+    jsonrpc: String,
+    method: String,
+    params: Vec<String>,
+    id: u64,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging();
@@ -436,10 +562,11 @@ async fn main() -> Result<()> {
         let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
         let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
         let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
-
+        let json_rpc_url = format!("http://{addr}/v1/").parse()?;
         urls.push(ApiUrl {
             regular_url,
             priority_url,
+            json_rpc_url,
         });
     }
 
@@ -463,7 +590,8 @@ async fn main() -> Result<()> {
         .prio_ratio(args.prio_ratio)
         .parent_url(chain_config.rpc_url)
         .parent_id(chain_config.id)
-        .chain_id(args.namespace)
+        .maybe_auction_contract(chain_config.auction_contract)
+        .chain_id(args.namespace.into())
         .enc_key(enc_key)
         .maybe_nitro_cfg(nitro_cfg)
         .build();

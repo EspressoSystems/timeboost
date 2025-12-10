@@ -7,14 +7,12 @@ rust-version.workspace = true
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 bon = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 either = { workspace = true }
 futures = { workspace = true }
 jiff = { workspace = true }
 multisig = { path = "../multisig" }
-rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-contract = { workspace = true }

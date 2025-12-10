@@ -125,6 +125,7 @@ async fn main() -> Result<()> {
         if args.scenario.is_none() || args.ignore_stamp {
             cmd.with_arg("--ignore-stamp");
         }
+
         if let Some(until) = &args.until.until_round {
             let mut u = Cmd::new(args.until.until.clone());
             u.with_arg("--api")

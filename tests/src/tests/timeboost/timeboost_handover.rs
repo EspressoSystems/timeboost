@@ -12,7 +12,7 @@ use timeboost::builder::Certifier;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, ChainConfig, DECRYPTER_PORT_OFFSET};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Output, SequencerConfig};
-use timeboost::types::{Block, BlockInfo, BundleVariant, KeyStore, ThresholdKeyCell};
+use timeboost::types::{Block, BlockInfo, BundleVariant, ChainId, KeyStore, ThresholdKeyCell};
 use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -44,6 +44,9 @@ async fn run_handover(
     let (bcast, _) = broadcast::channel(1024);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
+
+    let chain_id = curr[0].1.namespace();
+    let auction = Auction::new(curr[0].1.chain_config().auction_contract.unwrap());
 
     let a1 = curr[0].1.sailfish_committee().clone();
     let a2 = next[0].1.sailfish_committee().clone();
@@ -141,7 +144,7 @@ async fn run_handover(
         let bcast = bcast.clone();
         async move {
             let (tx, mut rx) = tokio::sync::broadcast::channel(200);
-            tokio::spawn(gen_bundles(key, tx));
+            tokio::spawn(gen_bundles(tx, chain_id, key, auction));
             while let Ok(bundle) = rx.recv().await {
                 if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
                     warn!("Failed to send bundle: {}", e);
@@ -408,9 +411,10 @@ async fn mk_configs(
             .recover(false)
             .leash_len(1000)
             .threshold_dec_key(enc_key.clone())
+            .namespace(ChainId::default())
             .chain_config(
                 ChainConfig::builder()
-                    .id(1)
+                    .id(ChainId::from(1))
                     .rpc_url(
                         "https://theserversroom.com/ethereum/54cmzzhcj1o/"
                             .parse::<Url>()
@@ -421,9 +425,10 @@ async fn mk_configs(
                             .parse::<Url>()
                             .expect("valid url"),
                     )
+                    .key_management_contract(alloy::primitives::Address::default())
                     .inbox_contract(alloy::primitives::Address::default())
                     .inbox_block_tag(alloy::eips::BlockNumberOrTag::Finalized)
-                    .key_management_contract(alloy::primitives::Address::default())
+                    .auction_contract(alloy::primitives::Address::default())
                     .build(),
             )
             .build();

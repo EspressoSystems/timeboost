@@ -12,6 +12,7 @@ use alloy::sol;
 use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
 use timeboost_config::ChainConfig;
+use timeboost_types::ChainId;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -52,9 +53,10 @@ impl DelayedInbox {
             .get_chain_id()
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
-        if cfg.id != rpc_chain_id {
+        let inbox_chain_id = ChainId::from(rpc_chain_id);
+        if parent_chain_id != inbox_chain_id {
             error!(%parent_chain_id, %rpc_chain_id, "mismatching chain id");
-            return Err(Error::MismatchingChainID(parent_chain_id, rpc_chain_id));
+            return Err(Error::MismatchingChainID(parent_chain_id, inbox_chain_id));
         }
         Ok(Self {
             node,
@@ -135,5 +137,5 @@ pub enum Error {
     #[error("rpc err: {0}")]
     RpcError(String),
     #[error("mismatching chain id: {0} != {1}")]
-    MismatchingChainID(u64, u64),
+    MismatchingChainID(ChainId, ChainId),
 }
