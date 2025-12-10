@@ -1,11 +1,12 @@
-use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
+use metrics::{Gauge, Metrics, NoMetrics};
+use sailfish::types::RoundNumber;
 
 #[derive(Debug)]
+#[allow(unused)]
 #[non_exhaustive]
 pub struct TimeboostMetrics {
-    pub epoch: Box<dyn Gauge>,
-    pub epoch_duration: Box<dyn Histogram>,
-    pub failed_epochs: Box<dyn Counter>,
+    pub tb_certify: Box<dyn Gauge>,
+    pub total: Box<dyn Gauge>,
 }
 
 impl Default for TimeboostMetrics {
@@ -17,9 +18,46 @@ impl Default for TimeboostMetrics {
 impl TimeboostMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
-            epoch: m.create_gauge("epoch", None),
-            epoch_duration: m.create_histogram("epoch_duration", None, None),
-            failed_epochs: m.create_counter("failed_epochs", None),
+            tb_certify: m.create_gauge("tb_certify_duration", Some("ms")),
+            total: m.create_gauge("total_duration", Some("ms")),
         }
+    }
+
+    #[cfg(not(feature = "times"))]
+    pub fn update(&self, _: RoundNumber) {}
+
+    #[cfg(feature = "times")]
+    pub fn update(&self, r: RoundNumber) {
+        self.update_tb_certify_duration(r);
+        self.update_total_duration(r);
+    }
+
+    #[cfg(feature = "times")]
+    fn update_tb_certify_duration(&self, r: RoundNumber) {
+        use timeboost_builder::time_series::{CERTIFY_END, CERTIFY_START};
+
+        let Some(a) = times::get(CERTIFY_START, r) else {
+            return;
+        };
+        let Some(b) = times::get(CERTIFY_END, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.tb_certify.set(d.as_millis() as usize);
+    }
+
+    #[cfg(feature = "times")]
+    fn update_total_duration(&self, r: RoundNumber) {
+        use sailfish::types::time_series::ROUND_START;
+        use timeboost_builder::time_series::CERTIFY_END;
+
+        let Some(a) = times::get(ROUND_START, r) else {
+            return;
+        };
+        let Some(b) = times::get(CERTIFY_END, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.total.set(d.as_millis() as usize);
     }
 }

@@ -5,6 +5,9 @@ use std::{
 
 use parking_lot::Mutex;
 
+/// Max. number of records to keep per time series.
+const MAX_SIZE: usize = 1000;
+
 static TIMERS: Mutex<BTreeMap<&str, TimeSeries>> = Mutex::new(BTreeMap::new());
 
 #[derive(Clone, Debug, Default)]
@@ -25,6 +28,10 @@ impl TimeSeries {
     }
 }
 
+pub fn all() -> impl std::ops::Deref<Target = BTreeMap<&'static str, TimeSeries>> {
+    TIMERS.lock()
+}
+
 pub fn time_series(name: &str) -> Option<TimeSeries> {
     TIMERS.lock().get(name).cloned()
 }
@@ -33,9 +40,16 @@ pub fn take_time_series(name: &str) -> Option<TimeSeries> {
     TIMERS.lock().remove(name)
 }
 
+pub fn get<T: Into<u64>>(name: &str, i: T) -> Option<Instant> {
+    TIMERS.lock().get(name)?.records().get(&i.into()).copied()
+}
+
 pub fn record(series: &'static str, key: u64) {
-    TIMERS
-        .lock()
+    let mut timers = TIMERS.lock();
+    if timers.len() == MAX_SIZE {
+        timers.pop_first();
+    }
+    timers
         .entry(series)
         .or_default()
         .times
@@ -43,8 +57,11 @@ pub fn record(series: &'static str, key: u64) {
 }
 
 pub fn record_once(series: &'static str, key: u64) {
-    TIMERS
-        .lock()
+    let mut timers = TIMERS.lock();
+    if timers.len() == MAX_SIZE {
+        timers.pop_first();
+    }
+    timers
         .entry(series)
         .or_default()
         .times

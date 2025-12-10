@@ -25,6 +25,9 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::CertifierConfig;
 
+#[cfg(feature = "times")]
+use crate::time_series::{CERTIFY_END, CERTIFY_START};
+
 type Result<T> = StdResult<T, CertifierError>;
 
 const CAPACITY: usize = 128;
@@ -140,7 +143,7 @@ impl Certifier {
                         "certified block"
                     );
                     #[cfg(feature = "times")]
-                    times::record("tb-certify-end", *b.data().round());
+                    times::record(CERTIFY_END, *b.data().round());
                     return Ok(b)
                 }
                 error!(node = %self.label, "worker terminated");
@@ -191,7 +194,7 @@ impl Handle {
             "enqueuing block"
         );
         #[cfg(feature = "times")]
-        times::record("tb-certify-start", *b.round());
+        times::record(CERTIFY_START, *b.round());
         self.worker_tx
             .send(Command::Certify(b))
             .await

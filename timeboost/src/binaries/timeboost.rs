@@ -30,10 +30,6 @@ struct Cli {
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
-
-    #[cfg(feature = "times")]
-    #[clap(long)]
-    times_until: u64,
 }
 
 #[tokio::main]
@@ -82,7 +78,7 @@ async fn main() -> Result<()> {
 
     let pubkey = sign_keypair.public_key();
 
-    let builder = TimeboostConfig::builder()
+    let tb_config = TimeboostConfig::builder()
         .sailfish_committee(committee.sailfish())
         .maybe_prev_committee(prev_committee)
         .decrypt_committee(committee.decrypt())
@@ -109,18 +105,11 @@ async fn main() -> Result<()> {
         ))
         .namespace(config.espresso.namespace)
         .max_transaction_size(config.espresso.max_transaction_size)
-        .chain_config(config.chain.clone());
+        .chain_config(config.chain.clone())
+        .build();
 
-    let timeboost = {
-        let committees = contract.subscribe(committee.id).await?;
-
-        #[cfg(feature = "times")]
-        let config = builder.times_until(cli.times_until).build();
-        #[cfg(not(feature = "times"))]
-        let config = builder.build();
-
-        Timeboost::new(config, committees).await?
-    };
+    let committees = contract.subscribe(committee.id).await?;
+    let timeboost = Timeboost::new(tb_config, committees).await?;
 
     let mut grpc = {
         let addr = config

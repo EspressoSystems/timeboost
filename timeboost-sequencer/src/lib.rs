@@ -37,6 +37,12 @@ pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 use crate::delayed_inbox::DelayedInbox;
 
+#[cfg(feature = "times")]
+pub mod time_series {
+    pub const DECRYPT_START: &str = "decrypt_start";
+    pub const DECRYPT_END: &str = "decrypt_end";
+}
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -325,6 +331,7 @@ impl Task {
                             let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
+                        self.metrics.update(round);
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
                                 continue

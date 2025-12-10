@@ -50,9 +50,9 @@ impl Submitter {
     where
         M: ::metrics::Metrics,
     {
-        let verified = Verified::default();
-        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
         let metrics = Arc::new(BuilderMetrics::new(metrics));
+        let verified = Verified::new(metrics.clone());
+        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
         let verifier = Verifier::builder()
             .label(cfg.pubkey)
             .nsid(cfg.namespace)

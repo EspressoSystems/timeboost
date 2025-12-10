@@ -1,6 +1,6 @@
 mod conf;
+mod metrics;
 
-use std::env;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
@@ -14,7 +14,7 @@ use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{BundleVariant, ConsensusTime};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub use cliquenet as net;
 pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
@@ -29,15 +29,10 @@ pub use timeboost_types as types;
 use crate::api::ApiServer;
 use crate::api::internal::GrpcServer;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
+use crate::metrics::TimeboostMetrics;
 
 pub mod api;
 pub mod forwarder;
-pub mod metrics;
-
-#[cfg(feature = "times")]
-pub mod times;
-
-pub(crate) const TIMEBOOST_NO_SUBMIT: &str = "TIMEBOOST_NO_SUBMIT";
 
 pub struct Timeboost {
     label: PublicKey,
@@ -50,6 +45,7 @@ pub struct Timeboost {
     nitro_forwarder: NitroForwarder,
     submitter: Submitter,
     committees: BoxStream<'static, CommitteeConfig>,
+    metrics: TimeboostMetrics,
 }
 
 impl Timeboost {
@@ -61,6 +57,7 @@ impl Timeboost {
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
+        let met = TimeboostMetrics::new(&*pro);
 
         let nitro_forwarder =
             NitroForwarder::new(cfg.sign_keypair.public_key(), cfg.nitro_addr.clone())?;
@@ -78,6 +75,7 @@ impl Timeboost {
             nitro_forwarder,
             submitter: sub,
             committees: stream.boxed(),
+            metrics: met,
         })
     }
 
@@ -94,11 +92,6 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        #[cfg(feature = "times")]
-        let mut writer = crate::times::TimesWriter::new(self.label);
-
-        let no_submit = env::var(TIMEBOOST_NO_SUBMIT).is_ok();
-
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -108,21 +101,7 @@ impl Timeboost {
                 },
                 out = self.sequencer.next() => match out {
                     Ok(Output::Transactions { round, timestamp, transactions, delayed_inbox_index }) => {
-                        info!(
-                            node  = %self.label,
-                            round = %round,
-                            trxs  = %transactions.len(),
-                            "sequencer output"
-                        );
-                        #[cfg(feature = "times")]
-                        {
-                            if *round % 100 == 0 {
-                                info!(target: "times", node = %self.label, round = %*round)
-                            }
-                            if !writer.is_timeboost_saved() && *round >= self.config.times_until {
-                                writer.save_timeboost_series().await?
-                            }
-                        }
+                        info!(node = %self.label, %round, trxs = %transactions.len(), "sequencer output");
                         self.nitro_forwarder
                             .enqueue(round, timestamp, &transactions, delayed_inbox_index).await?
                     }
@@ -139,13 +118,8 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        if no_submit {
-                            warn!(
-                                node  = %self.label,
-                                block = %b.data().round(),
-                                "TIMEBOOST_NO_SUBMIT is set, not submitting block"
-                            );
-                        } else if let Err(e) = self.submitter.submit(b).await {
+                        self.metrics.update(b.data().round());
+                        if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
                         }

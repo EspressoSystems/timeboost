@@ -6,7 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-test = []
+times = ["dep:times", "sailfish-types/times"]
+test  = []
 
 [dependencies]
 committable = { workspace = true }

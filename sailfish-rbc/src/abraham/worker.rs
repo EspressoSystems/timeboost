@@ -22,6 +22,9 @@ use crate::digest::Digest;
 
 use super::{Command, Nonce, Protocol, RbcConfig, serialize};
 
+#[cfg(feature = "times")]
+use super::time_series::LEADER_INFO;
+
 type RbcResult<T> = std::result::Result<T, RbcError>;
 type SendResult<T> = std::result::Result<T, NetworkDown>;
 type Sender<T> = mpsc::Sender<Event<T, Validated>>;
@@ -771,7 +774,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     .await
                     .map_err(|_| RbcError::Shutdown)?;
                 #[cfg(feature = "times")]
-                times::record_once("rbc-leader-info", prev_round);
+                times::record_once(LEADER_INFO, prev_round);
                 messages.leader_threshold = true
             }
         }

@@ -25,6 +25,12 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "times")]
+pub mod time_series {
+    pub const ROUND_START: &str = "round_start";
+    pub const DELIVERED: &str = "delivered";
+}
+
 /// The empty type has no values.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Empty {}

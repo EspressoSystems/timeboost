@@ -32,6 +32,9 @@ use tracing::{debug, error, info, trace, warn};
 use crate::config::DecrypterConfig;
 use crate::metrics::SequencerMetrics;
 
+#[cfg(feature = "times")]
+use crate::time_series::{DECRYPT_END, DECRYPT_START};
+
 const DKG_AAD: &[u8] = b"dkg";
 const THRES_AAD: &[u8] = b"threshold";
 
@@ -209,11 +212,11 @@ impl Decrypter {
     /// Send the inclusion list to the Worker for decryption.
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         #[cfg(feature = "times")]
-        times::record("tb-decrypt-start", *incl.round());
+        times::record(DECRYPT_START, *incl.round());
         let round = incl.round();
         let is_encrypted = incl.is_encrypted();
         if is_encrypted {
-            self.metrics.queued_encrypted.update(1);
+            self.metrics.queued_encrypted.add(1);
         }
         debug!(node = %self.label, %round, %is_encrypted, "enqueuing inclusion list");
 
@@ -377,11 +380,11 @@ impl Decrypter {
                         !dec_incl.is_encrypted(),
                         "decrypter Worker returned non-decrypted inclusion list"
                     );
-                    self.metrics.output_decrypted.update(1);
+                    self.metrics.output_decrypted.add(1);
                 }
 
                 #[cfg(feature = "times")]
-                times::record("tb-decrypt-end", *dec_incl.round());
+                times::record(DECRYPT_END, *dec_incl.round());
 
                 return Ok(dec_incl);
             } else {

@@ -14,6 +14,11 @@ use tokio::task::JoinHandle;
 use crate::digest::Digest;
 use crate::{RbcError, RbcMetrics};
 
+#[cfg(feature = "times")]
+pub mod time_series {
+    pub const LEADER_INFO: &str = "leader_info";
+}
+
 #[rustfmt::skip]
 mod worker;
 
