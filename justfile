@@ -253,7 +253,6 @@ test-dyn-comm: build-release build-test-utils
         --run   "9|sleep 3" \
         --spawn "10|target/release/run-committee \
             --chain test-configs/chain.toml \
-            --express-lane \
             --committee 1 \
             --nodes test-configs/nodes/ \
             --ignore-stamp \
@@ -263,7 +262,6 @@ test-dyn-comm: build-release build-test-utils
             --chain test-configs/chain.toml \
             --bind 127.0.0.1:55000" \
         --spawn "13|target/release/tx-generator \
-            --express-lane \
             --chain test-configs/chain.toml \
             --namespace 10101 \
             --enc-ratio 1.0" \

@@ -49,9 +49,6 @@ struct Args {
     #[clap(long, default_value_t = 10101)]
     namespace: u64,
 
-    #[clap(long, short)]
-    express_lane: bool,
-
     #[clap(long, default_value_t = 100)]
     tps: u32,
 
@@ -551,17 +548,9 @@ async fn main() -> Result<()> {
         "prio_ratio must be a fraction between 0 and 1"
     );
 
-    let mut chain_config = ChainConfig::read(&args.chain)
+    let chain_config = ChainConfig::read(&args.chain)
         .await
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
-
-    if args.express_lane && chain_config.auction_contract.is_none() {
-        bail!("Failed to initialize express lane mode; missing auction contract")
-    }
-
-    if !args.express_lane {
-        chain_config.auction_contract = None;
-    }
 
     let mut contract = CommitteeContract::from(&chain_config);
     let Ok(committee) = contract.active().await else {
