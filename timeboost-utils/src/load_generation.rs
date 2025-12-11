@@ -33,7 +33,6 @@ pub enum TransactionVariant {
     Encrypted(Vec<u8>),
 }
 
-/// Helper function for when we only have a ThresholdEncKey directly
 pub fn create_tx(
     pubkey: &ThresholdEncKey,
     txn: TxInfo,
@@ -55,7 +54,6 @@ pub fn create_tx(
     Ok(TransactionVariant::PlainText(tx))
 }
 
-/// Helper function for when we only have a ThresholdEncKey directly
 pub fn create_bundle(
     pubkey: &ThresholdEncKey,
     auction: &Auction,
