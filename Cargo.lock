@@ -11431,7 +11431,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "arbitrary",
  "ark-std 0.5.0",
  "bincode 2.0.1",
  "bytes 1.11.0",

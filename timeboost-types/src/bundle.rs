@@ -9,8 +9,6 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{CommitteeId, KeyId, PublicKey};
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "arbitrary")]
-use arbitrary::{Arbitrary, Result, Unstructured};
 use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
 use crate::{Auction, Bytes, Epoch, SeqNo};
@@ -87,33 +85,6 @@ impl Bundle {
         self.data = d;
         self.encrypted = false;
         self.update_hash();
-    }
-
-    #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(
-        u: &mut Unstructured<'_>,
-        chain_id: ChainId,
-    ) -> Result<Self, InvalidTransaction> {
-        use alloy::rlp::Encodable;
-
-        let t = loop {
-            let candidate = TxEnvelope::arbitrary(u)?;
-            if let TxEnvelope::Eip4844(ref eip4844) = candidate {
-                if eip4844.tx().clone().try_into_4844_with_sidecar().is_ok() {
-                    // Avoid generating 4844 Tx with blobs of size 131 KB
-                    continue;
-                }
-            }
-            break candidate;
-        };
-
-        let mut d = Vec::new();
-        t.encode(&mut d);
-        let e = Epoch::now() + bool::arbitrary(u)? as u64;
-        let encoded = ssz::ssz_encode(&vec![&d]);
-        let b = Bundle::new(chain_id, e, encoded.into(), false);
-
-        Ok(b)
     }
 }
 
@@ -258,22 +229,6 @@ impl SignedPriorityBundle {
         let digest = self.commit();
         self.hash = digest.into();
     }
-
-    #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(
-        u: &mut arbitrary::Unstructured<'_>,
-        chain_id: ChainId,
-        max_seqno: u64,
-    ) -> Result<SignedPriorityBundle, InvalidTransaction> {
-        let bundle = Bundle::arbitrary(u, chain_id)?;
-        let auction = Address::default();
-        let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
-        let priority_bundle = PriorityBundle::new(bundle, auction, seqno);
-
-        let signer = Signer::default();
-        let signed_bundle = priority_bundle.sign(signer).expect("default signer");
-        Ok(signed_bundle)
-    }
 }
 
 impl Committable for SignedPriorityBundle {
@@ -354,7 +309,6 @@ impl Committable for DkgBundle {
 #[derive(
     Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChainId(alloy::primitives::ChainId);
 
 impl From<u64> for ChainId {
@@ -404,7 +358,6 @@ impl Transaction {
 
 // Address wrapper
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy::primitives::Address);
 
 impl std::ops::Deref for Address {
@@ -514,10 +467,6 @@ pub enum InvalidTransaction {
 
     #[error("invalid rlp encoding: {0}")]
     Rlp(#[from] alloy::rlp::Error),
-
-    #[cfg(feature = "arbitrary")]
-    #[error("arbitrary error: {0}")]
-    Arbitrary(#[from] arbitrary::Error),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

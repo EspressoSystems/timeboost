@@ -8,7 +8,6 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::Context;
-use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -65,10 +64,6 @@ pub fn create_bundle(
     prio_ratio: f64,
 ) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
-    let mut v = [0; 256];
-    rng.fill(&mut v);
-    let mut u = Unstructured::new(&v);
-
     let max_seqno = 10;
     let mut bundle = create_singleton_bundle(txn)?;
 
@@ -86,7 +81,7 @@ pub fn create_bundle(
         // priority
         let auction_address = auction.contract();
         let controller = auction.controller(Epoch::now());
-        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
+        let seqno = SeqNo::from(rng.gen_range(0..=max_seqno));
         let signer = Signer::default();
         if signer.address() == *controller {
             let priority = PriorityBundle::new(bundle, auction_address, seqno);
