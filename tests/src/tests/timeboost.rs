@@ -23,9 +23,9 @@ use timeboost::config::ChainConfig;
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
 use timeboost::types::{
-    Auction, BlockNumber, BundleVariant, ChainId, KeyStore, ThresholdKeyCell, Transaction,
+    Auction, BlockNumber, BundleVariant, ChainId, KeyStore, Signer, ThresholdKeyCell, Transaction,
 };
-use timeboost_utils::load_generation::make_bundle;
+use timeboost_utils::load_generation::{create_bundle, prepare_test};
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
@@ -154,7 +154,13 @@ async fn gen_bundles(
     auction: Auction,
 ) {
     loop {
-        let Ok(b) = make_bundle(chain_id, enc_key.read().await.pubkey(), &auction) else {
+        let t = prepare_test(
+            chain_id,
+            Signer::default().into(),
+            timeboost_types::Address::default().into(),
+        );
+        let Ok(b) = create_bundle(enc_key.read().await.pubkey(), &auction, t, 0.5f64, 0.5f64)
+        else {
             warn!("Failed to generate bundle");
             continue;
         };

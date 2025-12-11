@@ -26,6 +26,7 @@ serde = { workspace = true }
 serde_bytes = { workspace = true }
 test-utils = { path = "../test-utils", features = ["ports"]}
 timeboost = { path = "../timeboost" }
+timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 times = { path = "../times", optional = true }
 tokio = { workspace = true }

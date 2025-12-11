@@ -1,10 +1,13 @@
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
-    network::TxSignerSync,
-    primitives::{TxKind, U256},
+    network::{TransactionBuilder, TxSignerSync},
+    primitives::{Address, TxKind, U256},
+    providers::{Provider, RootProvider},
     rlp::Encodable,
+    rpc::types::TransactionRequest,
     signers::local::PrivateKeySigner,
 };
+use anyhow::Context;
 use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
@@ -25,45 +28,6 @@ pub struct TxInfo {
     pub signer: PrivateKeySigner,
 }
 
-pub fn make_bundle(
-    chain_id: ChainId,
-    key: &ThresholdEncKey,
-    auction: &Auction,
-) -> anyhow::Result<BundleVariant> {
-    let mut rng = rand::thread_rng();
-    let mut v = [0; 256];
-    rng.fill(&mut v);
-    let mut u = Unstructured::new(&v);
-
-    let max_seqno = 10;
-    let mut bundle = Bundle::arbitrary(&mut u, chain_id)?;
-
-    if rng.gen_bool(0.5) {
-        // encrypt bundle
-        let data = bundle.data();
-        let plaintext = Plaintext::new(data.to_vec());
-        let aad = b"threshold".to_vec();
-        let ciphertext = ThresholdScheme::encrypt(&mut rng, key, &plaintext, &aad)?;
-        let encoded = serialize(&ciphertext)?;
-        bundle.set_encrypted_data(encoded.into());
-    }
-
-    if rng.gen_bool(0.5) {
-        // priority
-        let auction_address = auction.contract();
-        let controller = auction.controller(Epoch::now());
-        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
-        let signer = Signer::default();
-        if signer.address() == *controller {
-            let priority = PriorityBundle::new(bundle, auction_address, seqno);
-            let signed_priority = priority.sign(signer)?;
-            return Ok(BundleVariant::Priority(signed_priority));
-        }
-        warn!("unable to produce priority tx");
-    }
-    Ok(BundleVariant::Regular(bundle))
-}
-
 #[derive(Clone)]
 pub enum TransactionVariant {
     PlainText(Vec<u8>),
@@ -71,13 +35,13 @@ pub enum TransactionVariant {
 }
 
 /// Helper function for when we only have a ThresholdEncKey directly
-pub fn make_dev_acct_txn(
+pub fn create_tx(
     pubkey: &ThresholdEncKey,
     txn: TxInfo,
     enc_ratio: f64,
 ) -> anyhow::Result<TransactionVariant> {
     let mut rng = rand::thread_rng();
-    let tx = create_dev_acct_txn(txn)?;
+    let tx = build_signed(txn)?;
 
     if rng.gen_bool(enc_ratio) {
         // encrypt bundle
@@ -93,7 +57,7 @@ pub fn make_dev_acct_txn(
 }
 
 /// Helper function for when we only have a ThresholdEncKey directly
-pub fn make_dev_acct_bundle(
+pub fn create_bundle(
     pubkey: &ThresholdEncKey,
     auction: &Auction,
     txn: TxInfo,
@@ -106,7 +70,7 @@ pub fn make_dev_acct_bundle(
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let mut bundle = create_dev_acct_txn_bundle(txn)?;
+    let mut bundle = create_singleton_bundle(txn)?;
 
     if rng.gen_bool(enc_ratio) {
         // encrypt bundle
@@ -134,16 +98,16 @@ pub fn make_dev_acct_bundle(
     Ok(BundleVariant::Regular(bundle))
 }
 
-pub fn create_dev_acct_txn_bundle(tx_info: TxInfo) -> anyhow::Result<Bundle> {
+pub fn create_singleton_bundle(tx_info: TxInfo) -> anyhow::Result<Bundle> {
     let chain_id = tx_info.chain_id;
-    let rlp = create_dev_acct_txn(tx_info)?;
+    let rlp = build_signed(tx_info)?;
     let encoded = ssz::ssz_encode(&vec![&rlp]);
     let b = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
 
     Ok(b)
 }
 
-pub fn create_dev_acct_txn(tx_info: TxInfo) -> anyhow::Result<Vec<u8>> {
+pub fn build_signed(tx_info: TxInfo) -> anyhow::Result<Vec<u8>> {
     let mut tx = TxEip1559 {
         chain_id: tx_info.chain_id,
         nonce: tx_info.nonce,
@@ -160,6 +124,51 @@ pub fn create_dev_acct_txn(tx_info: TxInfo) -> anyhow::Result<Vec<u8>> {
     let mut rlp = Vec::new();
     env.encode(&mut rlp);
     Ok(rlp)
+}
+
+pub fn prepare_test(chain_id: ChainId, from: PrivateKeySigner, to: Address) -> TxInfo {
+    TxInfo {
+        chain_id: chain_id.into(),
+        nonce: 0,
+        to,
+        base_fee: 5,
+        gas_limit: 5,
+        signer: from,
+    }
+}
+
+pub async fn prepare(
+    p: &RootProvider,
+    chain_id: ChainId,
+    from: PrivateKeySigner,
+    to: Address,
+) -> anyhow::Result<TxInfo> {
+    let nonce = p.get_transaction_count(from.address()).await?;
+    let tx = TransactionRequest::default()
+        .with_chain_id(chain_id.into())
+        .with_nonce(nonce)
+        .with_from(from.address())
+        .with_to(to)
+        .with_value(U256::from(1));
+
+    let gas_limit = p
+        .estimate_gas(tx)
+        .await
+        .with_context(|| "failed to estimate gas")?;
+
+    let base_fee = p
+        .get_gas_price()
+        .await
+        .with_context(|| "failed to get gas price")?;
+
+    Ok(TxInfo {
+        chain_id: chain_id.into(),
+        nonce,
+        to,
+        gas_limit,
+        base_fee,
+        signer: from,
+    })
 }
 
 /// Transactions per second to milliseconds is 1000 / TPS

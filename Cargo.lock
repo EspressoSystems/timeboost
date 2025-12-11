@@ -10991,6 +10991,7 @@ dependencies = [
  "serde_bytes",
  "test-utils",
  "timeboost",
+ "timeboost-types",
  "timeboost-utils",
  "times",
  "tokio",

@@ -474,6 +474,12 @@ impl Committable for Signature {
 // Signer wrapper
 pub struct Signer(alloy::signers::local::PrivateKeySigner);
 
+impl From<Signer> for alloy::signers::local::PrivateKeySigner {
+    fn from(s: Signer) -> Self {
+        s.0
+    }
+}
+
 impl Signer {
     pub fn address(&self) -> alloy::primitives::Address {
         self.0.address()
