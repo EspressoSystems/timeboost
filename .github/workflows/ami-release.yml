@@ -11,7 +11,8 @@ concurrency:
 jobs:
   build-ami:
     runs-on: ubuntu-latest
-
+    env:
+      AWS_PROFILE: timeboost-dev
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
