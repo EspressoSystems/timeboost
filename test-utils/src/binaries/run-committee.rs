@@ -49,9 +49,6 @@ struct Args {
 
     #[clap(long, short)]
     verbose: bool,
-
-    #[clap(long, default_value_t = false)]
-    ignore_stamp: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -122,9 +119,6 @@ async fn main() -> Result<()> {
         let mut cmd = Cmd::new(&args.timeboost);
         cmd.with_arg("--config")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
-        if args.scenario.is_none() || args.ignore_stamp {
-            cmd.with_arg("--ignore-stamp");
-        }
 
         if let Some(until) = &args.until.until_round {
             let mut u = Cmd::new(args.until.until.clone());

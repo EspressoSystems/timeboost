@@ -210,10 +210,9 @@ where
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
-            let rnd = Round::new(r, self.committee.id());
             #[cfg(feature = "times")]
             times::record(ROUND_START, *env.data().round().data().num());
-            vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
+            vec![Action::SendProposal(env)]
         } else {
             self.advance_from_round(r, e)
         };

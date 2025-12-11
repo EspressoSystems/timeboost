@@ -31,10 +31,6 @@ pub struct SequencerConfig {
     /// The peers that Decrypter will connect to (network and key info).
     pub(crate) decrypt_committee: (AddressableCommittee, KeyStore),
 
-    /// Is this sequencer recovering from a crash?
-    #[builder(default = true)]
-    pub(crate) recover: bool,
-
     /// The previous Sailfish committee.
     pub(crate) previous_sailfish_committee: Option<AddressableCommittee>,
 
@@ -91,10 +87,6 @@ impl SequencerConfig {
         &self.decrypt_committee
     }
 
-    pub fn is_recover(&self) -> bool {
-        self.recover
-    }
-
     pub fn dec_key(&self) -> &ThresholdKeyCell {
         &self.threshold_dec_key
     }
@@ -116,7 +108,7 @@ impl SequencerConfig {
             CommitteeVec::new(self.sailfish_committee.committee().clone())
         };
         let id = self.sailfish_committee.committee().id();
-        RbcConfig::new(self.sign_keypair.clone(), id, cv).recover(self.recover)
+        RbcConfig::new(self.sign_keypair.clone(), id, cv)
     }
 
     pub fn decrypter_config(&self) -> DecrypterConfig {

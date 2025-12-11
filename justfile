@@ -60,22 +60,11 @@ run-sailfish-demo: build-test-utils build-release
       --run   "2|sleep 3" \
       --run   "3|just deploy-contract 127.0.0.1:8545" \
       --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
-      --spawn "5|target/release/sailfish \
-        --node test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml \
-        --ignore-stamp" \
-      --spawn "5|target/release/sailfish \
-        --node test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml \
-        --ignore-stamp" \
-      --spawn "5|target/release/sailfish \
-        --node test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml \
-        --ignore-stamp" \
-      --spawn "5|target/release/sailfish \
-        --node test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.toml \
-        --ignore-stamp" \
-      target/release/sailfish -- \
-        --node test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml \
-        --ignore-stamp \
-        --until 300
+      --spawn "5|target/release/sailfish -c test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml" \
+      --spawn "5|target/release/sailfish -c test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml" \
+      --spawn "5|target/release/sailfish -c test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml" \
+      --spawn "5|target/release/sailfish -c test-configs/nodes/29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.toml" \
+      target/release/sailfish -- -c test-configs/nodes/eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.toml --until 300
 
 run *ARGS:
   cargo run {{ARGS}}
@@ -180,9 +169,7 @@ test-all: build-release build-test-utils
     --run   "2|sleep 3" \
     --run   "3|just deploy-contract 127.0.0.1:8545" \
     --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
-    --spawn "5|target/release/block-maker \
-        --chain test-configs/chain.toml \
-        --bind 127.0.0.1:55000" \
+    --spawn "5|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.toml \
         --committee 0 \
@@ -191,9 +178,7 @@ test-all: build-release build-test-utils
         --verbose" \
     --run   "7|sleep 3" \
     --run   "8|just register-key 127.0.0.1:8545" \
-    --spawn "9|target/release/tx-generator \
-        --chain test-configs/chain.toml \
-        --namespace 10101" \
+    --spawn "9|target/release/tx-generator --chain test-configs/chain.toml --namespace 10101" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -210,9 +195,7 @@ test-no-express: build-release build-test-utils
     --run   "2|sleep 3" \
     --run   "3|just deploy-contract 127.0.0.1:8545" \
     --run   "4|just register-committee 127.0.0.1:8545 test-configs/no-express/committees/committee-0.toml" \
-    --spawn "5|target/release/block-maker \
-        --chain test-configs/chain.no-express.toml \
-        --bind 127.0.0.1:55000" \
+    --spawn "5|target/release/block-maker --chain test-configs/chain.no-express.toml --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.no-express.toml \
         --committee 0 \
@@ -221,9 +204,7 @@ test-no-express: build-release build-test-utils
         --verbose" \
     --run   "7|sleep 3" \
     --run   "8|just register-key 127.0.0.1:8545" \
-    --spawn "9|target/release/tx-generator \
-        --chain test-configs/chain.no-express.toml \
-        --namespace 10101" \
+    --spawn "9|target/release/tx-generator --chain test-configs/chain.no-express.toml --namespace 10101" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -244,7 +225,6 @@ test-dyn-comm: build-release build-test-utils
             --chain test-configs/chain.toml \
             --committee 0 \
             --nodes test-configs/nodes/ \
-            --ignore-stamp \
             --verbose" \
         --run   "6|sleep 3" \
         --run   "7|just register-key 127.0.0.1:8545" \
@@ -254,12 +234,9 @@ test-dyn-comm: build-release build-test-utils
             --chain test-configs/chain.toml \
             --committee 1 \
             --nodes test-configs/nodes/ \
-            --ignore-stamp \
             --verbose" \
         --run   "11|sleep 3" \
-        --spawn "12|target/release/block-maker \
-            --chain test-configs/chain.toml \
-            --bind 127.0.0.1:55000" \
+        --spawn "12|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
         --spawn "13|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --namespace 10101 \

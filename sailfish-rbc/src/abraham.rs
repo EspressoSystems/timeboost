@@ -82,7 +82,6 @@ pub struct RbcConfig {
     keypair: Keypair,
     committees: CommitteeVec<2>,
     committee_id: CommitteeId,
-    recover: bool,
     metrics: RbcMetrics,
 }
 
@@ -97,7 +96,6 @@ impl RbcConfig {
             keypair: k,
             committee_id: id,
             committees: c,
-            recover: true,
             metrics: RbcMetrics::default(),
         }
     }
@@ -105,12 +103,6 @@ impl RbcConfig {
     /// Set the RBC metrics value to use.
     pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
         self.metrics = m;
-        self
-    }
-
-    /// Should we recover from a previous run?
-    pub fn recover(mut self, val: bool) -> Self {
-        self.recover = val;
         self
     }
 }

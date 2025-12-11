@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Duration;
 
 use metrics::NoMetrics;
 use multisig::Certificate;
@@ -12,7 +11,6 @@ use timeboost_utils::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
-use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info};
@@ -22,7 +20,6 @@ use crate::tests::timeboost::{Round2Block, hash};
 use super::{gen_bundles, make_configs};
 
 const NUM_OF_BLOCKS: usize = 50;
-const RECOVER_INDEX: usize = 2;
 
 #[tokio::test]
 async fn block_order() {
@@ -30,7 +27,7 @@ async fn block_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
-    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
+    let (enc_keys, cfg) = make_configs(num).await;
 
     let chain_id = cfg[0].0.namespace();
     let auction = Auction::new(cfg[0].0.chain_config().auction_contract.unwrap());
@@ -48,10 +45,6 @@ async fn block_order() {
         let label = c.sign_keypair().public_key();
         let r2b = round2block.clone();
         tasks.spawn(async move {
-            if c.is_recover() {
-                // delay start of a recovering node:
-                sleep(Duration::from_secs(5)).await
-            }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             let mut r = None;
