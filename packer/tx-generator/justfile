@@ -38,7 +38,6 @@ validate:
         tx-generator.pkr.hcl
 
 make-image: validate
-    export AWS_PROFILE=timeboost-dev
     packer build \
         --var version={{version}} \
         --var vector-version={{vector-version}} \
