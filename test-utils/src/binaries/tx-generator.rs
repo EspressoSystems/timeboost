@@ -287,7 +287,10 @@ async fn main() -> Result<()> {
         0f64 <= args.prio_ratio && args.prio_ratio <= 1f64,
         "prio_ratio must be a fraction between 0 and 1"
     );
-    ensure!(0 < args.signers.len(), "must have at least one signer key");
+    ensure!(
+        !args.signers.is_empty(),
+        "must have at least one signer key"
+    );
 
     let chain_config = ChainConfig::read(&args.chain)
         .await
