@@ -194,7 +194,7 @@ test-all: build-release build-test-utils
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
         --namespace 10101 \
-        --keys $(cast wallet new --json | jq -r '.[0].private_key')" \
+        --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -224,7 +224,7 @@ test-no-express: build-release build-test-utils
     --run   "8|just register-key 127.0.0.1:8545" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.no-express.toml \
-        --keys $(cast wallet new --json | jq -r '.[0].private_key')" \
+        --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -263,7 +263,8 @@ test-dyn-comm: build-release build-test-utils
             --bind 127.0.0.1:55000" \
         --spawn "13|target/release/tx-generator \
             --chain test-configs/chain.toml \
-            --enc-ratio 1.0" \
+            --enc-ratio 1.0 \
+            --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
             --namespace 10101 \
@@ -324,7 +325,7 @@ netsim nodes: build-release build-test-utils
         --run   "8|just register-key 11.0.1.0:8545" \
         --spawn "9|target/release/tx-generator \
             --chain test-configs/chain.linux.toml \
-            --keys $(cast wallet new --json | jq -r '.[0].private_key')" \
+            --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.linux.toml \
             --namespace 10101 \
