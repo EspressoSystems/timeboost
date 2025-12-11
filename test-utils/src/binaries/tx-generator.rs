@@ -1,19 +1,14 @@
 use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
 
+use alloy::network::Ethereum;
 use alloy::{
-    consensus::{SignableTransaction, TxEnvelope, TxLegacy},
     hex::ToHexExt,
-    network::{Ethereum, TransactionBuilder, TxSignerSync},
-    primitives::{Address, U256},
-    providers::{Provider, ProviderBuilder, RootProvider},
-    rlp::Encodable,
-    rpc::types::TransactionRequest,
-    signers::local::{LocalSigner, PrivateKeySigner},
+    providers::{ProviderBuilder, RootProvider},
+    signers::local::PrivateKeySigner,
 };
 use anyhow::{Context, Result, bail, ensure};
 use bon::Builder;
-use bytes::BytesMut;
 use clap::Parser;
 use futures::future::join_all;
 use reqwest::{Client, Url};
@@ -25,7 +20,7 @@ use timeboost::{
 use timeboost_contract::KeyManager;
 use timeboost_types::{Auction, ChainId};
 use timeboost_utils::load_generation::{
-    TransactionVariant, TxInfo, make_bundle, make_dev_acct_bundle, make_dev_acct_txn, tps_to_millis,
+    TransactionVariant, create_bundle, create_tx, prepare, prepare_test, tps_to_millis,
 };
 use timeboost_utils::logging::init_logging;
 use tokio::{
@@ -33,13 +28,9 @@ use tokio::{
         ctrl_c,
         unix::{SignalKind, signal},
     },
-    time::{interval, sleep},
+    time::interval,
 };
-use tracing::{debug, info, warn};
-
-/// Private key from pre funded dev account on test node
-/// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
-const DEV_ACCOUNT: &str = "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659";
+use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -58,15 +49,11 @@ struct Args {
     #[clap(long, default_value_t = 0.5)]
     prio_ratio: f64,
 
-    // Nitro Configuration
-    #[clap(long, short)]
-    nitro_url: Option<Url>,
+    #[clap(long, use_value_delimiter = true)]
+    signers: Vec<String>,
 
-    #[clap(long, short, default_value = DEV_ACCOUNT, requires = "nitro_url")]
-    dev_account: String,
-
-    #[clap(long, default_value_t = 5, requires = "nitro_url")]
-    nitro_senders: u32,
+    #[clap(long, default_value_t = false)]
+    nitro: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -83,19 +70,10 @@ struct TxGeneratorConfig {
     enc_ratio: f64,
     prio_ratio: f64,
     chain_id: ChainId,
-    parent_id: ChainId,
-    parent_url: Url,
-    auction_contract: Option<alloy::primitives::Address>,
     enc_key: ThresholdEncKey,
-    nitro_cfg: Option<NitroConfig>,
-}
-
-#[derive(Debug, Clone, Builder)]
-struct NitroConfig {
-    rpc_url: Url,
-    dev_account: String,
-    senders: u32,
-    bridge_addr: alloy::primitives::Address,
+    signers: Vec<PrivateKeySigner>,
+    auction_contract: Option<alloy::primitives::Address>,
+    nitro: bool,
 }
 
 struct TxGenerator {
@@ -106,48 +84,15 @@ struct TxGenerator {
     enc_ratio: f64,
     prio_ratio: f64,
     enc_key: ThresholdEncKey,
+    signers: Vec<PrivateKeySigner>,
     auction: Option<Auction>,
-    nitro: Option<(RootProvider, Vec<PrivateKeySigner>)>,
+    nitro: bool,
 }
 
 impl TxGenerator {
     pub(crate) async fn new(cfg: TxGeneratorConfig) -> Result<Self> {
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
         let auction = cfg.auction_contract.map(Auction::new);
-
-        let nitro = if let Some(NitroConfig {
-            rpc_url,
-            dev_account,
-            senders,
-            bridge_addr,
-        }) = cfg.nitro_cfg
-        {
-            let nitro_provider = RootProvider::<Ethereum>::connect(rpc_url.as_str()).await?;
-            let l1_provider = RootProvider::<Ethereum>::connect(cfg.parent_url.as_str()).await?;
-            let funded_keys: Vec<_> = {
-                let sampled_keys: Vec<_> = (0..senders).map(|_| LocalSigner::random()).collect();
-                let dev_key = PrivateKeySigner::from_str(&dev_account)?;
-                if Self::fund_addresses(
-                    &l1_provider,
-                    &nitro_provider,
-                    cfg.parent_id,
-                    &dev_key,
-                    &sampled_keys,
-                    bridge_addr,
-                )
-                .await
-                .is_ok()
-                {
-                    sampled_keys
-                } else {
-                    info!("bridging to senders failed; using dev account");
-                    vec![PrivateKeySigner::from_str(&dev_account)?]
-                }
-            };
-            Some((nitro_provider, funded_keys))
-        } else {
-            None
-        };
 
         Ok(Self {
             node_urls: cfg.node_urls,
@@ -156,9 +101,10 @@ impl TxGenerator {
             chain_id: cfg.chain_id,
             enc_ratio: cfg.enc_ratio,
             prio_ratio: cfg.prio_ratio,
-            nitro,
-            auction,
             enc_key: cfg.enc_key,
+            signers: cfg.signers,
+            nitro: cfg.nitro,
+            auction,
         })
     }
 
@@ -173,40 +119,30 @@ impl TxGenerator {
     pub(crate) async fn generate_bundles(&self) -> Result<()> {
         info!("starting bundle generator");
         let mut interval = interval(self.interval);
+        let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
         let auction = self.auction.as_ref().expect("auction is present");
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
-            let bundle = match &self.nitro {
-                Some((p, senders)) => {
-                    let len = senders.len();
-                    let sender = senders[count % len].clone();
-                    let receiver = senders[(count + 1) % len].clone();
+            let len = self.signers.len();
+            let sender = self.signers[count % len].clone();
+            let receiver = self.signers[(count + 1) % len].clone();
 
-                    let txn = match Self::prepare_txn(p, self.chain_id, sender, receiver.address())
-                        .await
-                    {
-                        Ok(txn) => txn,
-                        Err(_) => {
-                            warn!("failed to prepare txn");
-                            continue;
-                        }
-                    };
-
-                    make_dev_acct_bundle(
-                        &self.enc_key,
-                        auction,
-                        txn,
-                        self.enc_ratio,
-                        self.prio_ratio,
-                    )
-                    .map_err(|_| warn!("failed to generate dev account bundle"))
-                    .ok()
+            let tx = if self.nitro {
+                match prepare(&p, self.chain_id, sender, receiver.address()).await {
+                    Ok(tx) => tx,
+                    Err(_) => {
+                        warn!("failed to prepare txn");
+                        continue;
+                    }
                 }
-                None => make_bundle(self.chain_id, &self.enc_key, auction)
-                    .map_err(|_| warn!("failed to generate bundle"))
-                    .ok(),
+            } else {
+                prepare_test(self.chain_id, sender, receiver.address())
             };
+
+            let bundle = create_bundle(&self.enc_key, auction, tx, self.enc_ratio, self.prio_ratio)
+                .map_err(|_| warn!("failed to generate dev account bundle"))
+                .ok();
             let Some(b) = bundle else { continue };
 
             join_all(self.node_urls.iter().map(|urls| async {
@@ -215,9 +151,6 @@ impl TxGenerator {
             }))
             .await;
 
-            if count % 100 == 0 {
-                debug!("submitted: {} bundles", count);
-            }
             count += 1;
             interval.tick().await;
         }
@@ -226,97 +159,45 @@ impl TxGenerator {
     pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
         info!("starting transaction generator");
         let mut interval = interval(self.interval);
+        let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
-            let tx = match &self.nitro {
-                Some((p, senders)) => {
-                    let len = senders.len();
-                    let sender = senders[count % len].clone();
-                    let receiver = senders[(count + 1) % len].clone();
+            let len = self.signers.len();
+            let sender = self.signers[count % len].clone();
+            let receiver = self.signers[(count + 1) % len].clone();
 
-                    let txn = match Self::prepare_txn(p, self.chain_id, sender, receiver.address())
-                        .await
-                    {
-                        Ok(txn) => txn,
-                        Err(_) => {
-                            warn!("failed to prepare txn");
-                            continue;
-                        }
-                    };
-
-                    make_dev_acct_txn(&self.enc_key, txn, self.enc_ratio)
-                        .map_err(|_| warn!("failed to generate dev account txn"))
-                        .ok()
+            let tx = if self.nitro {
+                match prepare(&p, self.chain_id, sender, receiver.address()).await {
+                    Ok(tx) => tx,
+                    Err(_) => {
+                        warn!("failed to prepare txn");
+                        continue;
+                    }
                 }
-                None => {
-                    let dev_account = PrivateKeySigner::from_str(DEV_ACCOUNT)?;
-                    let tx_info = TxInfo {
-                        chain_id: self.chain_id.into(),
-                        nonce: 0,
-                        to: dev_account.address(),
-                        base_fee: 5,
-                        gas_limit: 5,
-                        signer: dev_account,
-                    };
-                    make_dev_acct_txn(&self.enc_key, tx_info, self.enc_ratio)
-                        .map_err(|_| warn!("failed to generate txn"))
-                        .ok()
-                }
+            } else {
+                prepare_test(self.chain_id, sender, receiver.address())
             };
+
+            let tx = create_tx(&self.enc_key, tx, self.enc_ratio)
+                .map_err(|_| warn!("failed to generate dev account txn"))
+                .ok();
 
             let Some(tx) = tx else { continue };
 
             join_all(
                 self.node_urls
                     .iter()
-                    .map(|urls| async { self.send_txn(tx.clone(), &urls.json_rpc_url).await }),
+                    .map(|urls| async { self.send_tx(tx.clone(), &urls.json_rpc_url).await }),
             )
             .await;
 
-            if count % 100 == 0 {
-                debug!("submitted: {} bundles", count);
-            }
             count += 1;
             interval.tick().await;
         }
     }
 
-    async fn prepare_txn(
-        p: &RootProvider,
-        chain_id: ChainId,
-        from: PrivateKeySigner,
-        to: Address,
-    ) -> Result<TxInfo> {
-        let nonce = p.get_transaction_count(from.address()).await?;
-        let tx = TransactionRequest::default()
-            .with_chain_id(chain_id.into())
-            .with_nonce(nonce)
-            .with_from(from.address())
-            .with_to(to)
-            .with_value(U256::from(1));
-
-        let gas_limit = p
-            .estimate_gas(tx)
-            .await
-            .with_context(|| "failed to estimate gas")?;
-
-        let base_fee = p
-            .get_gas_price()
-            .await
-            .with_context(|| "failed to get gas price")?;
-
-        Ok(TxInfo {
-            chain_id: chain_id.into(),
-            nonce,
-            to,
-            gas_limit,
-            base_fee,
-            signer: from,
-        })
-    }
-
-    async fn send_txn(&self, txn: TransactionVariant, url: &Url) {
+    async fn send_tx(&self, txn: TransactionVariant, url: &Url) {
         let (method, params) = match txn {
             TransactionVariant::PlainText(t) => {
                 ("eth_sendRawTransaction", vec![t.encode_hex_with_prefix()])
@@ -383,147 +264,6 @@ impl TxGenerator {
             }
         }
     }
-
-    async fn fund_addresses(
-        parent: &RootProvider,
-        nitro: &RootProvider,
-        chain_id: ChainId,
-        dev_key: &PrivateKeySigner,
-        keys: &[PrivateKeySigner],
-        bridge_addr: alloy::primitives::Address,
-    ) -> Result<()> {
-        let mut failures = 0;
-        let max = 40;
-        let d = Duration::from_millis(100);
-        for k in keys {
-            loop {
-                let Ok(nonce) = parent.get_transaction_count(dev_key.address()).await else {
-                    failures += 1;
-                    if failures == max {
-                        warn!(addr=%k.address(), "failed to get nonce");
-                        return Err(anyhow::anyhow!(
-                            "max retries hit for key {}. falling back to dev acct only",
-                            k.address()
-                        ));
-                    }
-
-                    sleep(d).await;
-                    continue;
-                };
-                if let Err(err) = Self::fund_address(parent, chain_id, dev_key, k, nonce).await {
-                    failures += 1;
-                    if failures == max {
-                        warn!(addr=%k.address(), %err, "failed to fund address");
-                        return Err(anyhow::anyhow!(
-                            "max retries hit for key {}. falling back to dev acct only",
-                            k.address()
-                        ));
-                    }
-                    sleep(d).await;
-                    continue;
-                }
-                if let Err(err) = Self::bridge_funds(parent, chain_id, k, bridge_addr).await {
-                    failures += 1;
-                    if failures == max {
-                        warn!(addr=%k.address(), %err, "failed to bridge funds");
-                        return Err(anyhow::anyhow!(
-                            "max retries hit for key {}. falling back to dev acct only",
-                            k.address()
-                        ));
-                    }
-                    sleep(d).await;
-                    continue;
-                }
-                info!("bridged ETH to L2 for address {}", k.address());
-                break;
-            }
-            failures = 0;
-        }
-        info!("waiting for funds to settle on L2");
-        Self::wait_for_balances(nitro, keys).await?;
-        Ok(())
-    }
-
-    async fn fund_address(
-        p: &RootProvider,
-        chain_id: ChainId,
-        from: &PrivateKeySigner,
-        to: &PrivateKeySigner,
-        nonce: u64,
-    ) -> Result<()> {
-        let one_eth_plus = U256::from_str("1100000000000000000").expect("1.1 ETH");
-        let mut tx = TxLegacy {
-            chain_id: Some(chain_id.into()),
-            nonce,
-            gas_price: 1_000_000_000,
-            gas_limit: 21_000,
-            to: to.address().into(),
-            value: one_eth_plus,
-            input: alloy::primitives::Bytes::new(),
-        };
-
-        let sig = from.sign_transaction_sync(&mut tx)?;
-        let signed = tx.into_signed(sig);
-        let env = TxEnvelope::Legacy(signed);
-        let mut rlp = BytesMut::new();
-        env.encode(&mut rlp);
-        let raw_tx: bytes::Bytes = rlp.freeze();
-        let _ = p.send_raw_transaction(&raw_tx).await?;
-        Ok(())
-    }
-
-    async fn bridge_funds(
-        p: &RootProvider,
-        chain_id: ChainId,
-        key: &PrivateKeySigner,
-        bridge_addr: Address,
-    ) -> Result<()> {
-        let one_eth = U256::from_str("1000000000000000000").expect("1 ETH");
-
-        // ABI encode depositEth() call
-        let func_sig = alloy::hex::decode("439370b1")?;
-        let calldata = alloy::primitives::Bytes::from(func_sig);
-
-        let mut tx = TxLegacy {
-            chain_id: Some(chain_id.into()),
-            nonce: 0,
-            gas_price: 1_000_000_000,
-            gas_limit: 100_000,
-            to: bridge_addr.into(),
-            value: one_eth,
-            input: calldata,
-        };
-
-        let sig = key.sign_transaction_sync(&mut tx)?;
-        let signed = tx.into_signed(sig);
-        let env = TxEnvelope::Legacy(signed);
-
-        let mut rlp = BytesMut::new();
-        env.encode(&mut rlp);
-        let raw_tx: bytes::Bytes = rlp.freeze();
-        let _ = p.send_raw_transaction(&raw_tx).await?;
-        Ok(())
-    }
-
-    async fn wait_for_balances(p: &RootProvider, keys: &[PrivateKeySigner]) -> Result<()> {
-        for _ in 0..10 {
-            let mut all_non_zero = true;
-
-            for key in keys.iter() {
-                let balance = p.get_balance(key.address()).await.unwrap();
-                if balance.is_zero() {
-                    all_non_zero = false;
-                    break;
-                }
-            }
-
-            sleep(Duration::from_secs(5)).await;
-            if all_non_zero {
-                return Ok(());
-            }
-        }
-        Err(anyhow::anyhow!("unable to bridge funds"))
-    }
 }
 
 #[derive(Serialize, Clone)]
@@ -547,6 +287,10 @@ async fn main() -> Result<()> {
         0f64 <= args.prio_ratio && args.prio_ratio <= 1f64,
         "prio_ratio must be a fraction between 0 and 1"
     );
+    ensure!(
+        !args.signers.is_empty(),
+        "must have at least one signer key"
+    );
 
     let chain_config = ChainConfig::read(&args.chain)
         .await
@@ -556,6 +300,12 @@ async fn main() -> Result<()> {
     let Ok(committee) = contract.active().await else {
         bail!("no active committee on contract")
     };
+
+    let signers = args
+        .signers
+        .into_iter()
+        .map(|k| PrivateKeySigner::from_str(&k))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut urls = Vec::new();
     for m in committee.members {
@@ -574,26 +324,16 @@ async fn main() -> Result<()> {
     let contract = KeyManager::new(chain_config.key_management_contract, provider);
     let enc_key = ThresholdEncKey::from_bytes(&contract.thresholdEncryptionKey().call().await?.0)?;
 
-    let nitro_cfg = args.nitro_url.map(|rpc_url| {
-        NitroConfig::builder()
-            .rpc_url(rpc_url)
-            .dev_account(args.dev_account)
-            .senders(args.nitro_senders)
-            .bridge_addr(chain_config.inbox_contract)
-            .build()
-    });
-
     let config = TxGeneratorConfig::builder()
         .node_urls(urls)
         .tps(args.tps)
         .enc_ratio(args.enc_ratio)
         .prio_ratio(args.prio_ratio)
-        .parent_url(chain_config.rpc_url)
-        .parent_id(chain_config.id)
         .maybe_auction_contract(chain_config.auction_contract)
         .chain_id(args.namespace.into())
         .enc_key(enc_key)
-        .maybe_nitro_cfg(nitro_cfg)
+        .signers(signers)
+        .nitro(args.nitro)
         .build();
 
     let tx_generator = TxGenerator::new(config).await?;

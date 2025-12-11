@@ -48,9 +48,10 @@ impl ApiServer {
                 .route("/v1/submit/priority", post(submit_priority))
                 .route("/v1/submit/regular", post(submit_regular))
         } else {
-            Router::new().route("/v1/", post(rpc))
+            Router::new()
         };
-        router.route("/v1/encryption-key", get(encryption_key))
+        router.route("/v1/", post(rpc))
+        .route("/v1/encryption-key", get(encryption_key))
         .route("/i/health", get(health))
         .route("/i/metrics", get(metrics))
         .with_state(self.clone())
