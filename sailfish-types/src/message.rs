@@ -7,7 +7,7 @@ use multisig::{
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{CommitteeVec, Round, RoundNumber, Vertex};
+use crate::{CommitteeVec, GENESIS_ROUND, Round, RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -422,6 +422,12 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
+
+    /// A minority node detected that the quorum has restarted.
+    ///
+    /// This action indicates that this node should restart asap to
+    /// join the quorum in processing.
+    RestartRequired,
 }
 
 impl<T: Committable> Action<T> {
@@ -474,6 +480,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
+            Action::RestartRequired => f.write_str("RestartRequired"),
         }
     }
 }
@@ -539,7 +546,7 @@ pub enum Evidence {
 impl Evidence {
     pub fn round(&self) -> RoundNumber {
         match self {
-            Self::Genesis => RoundNumber::genesis(),
+            Self::Genesis => GENESIS_ROUND,
             Self::Regular(x) => x.data().num(),
             Self::Timeout(x) => x.data().round().num(),
             Self::Handover(x) => x.data().round().num(),

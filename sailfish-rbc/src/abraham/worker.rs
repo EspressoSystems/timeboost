@@ -11,7 +11,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, KeyId, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Event, Evidence, GENESIS_ROUND, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -54,11 +54,7 @@ pub struct Worker<T: Committable> {
 }
 
 enum WorkerState {
-    /// The first run of this worker.
-    ///
-    /// No round number information is collected.
-    Genesis,
-    /// The worker did run previously and should collect round number information.
+    /// Start state where we send a handshake message to our peers.
     ///
     /// While in this state, no messages will be sent to other parties,
     /// but inbound messages will be processed and delivered to the
@@ -68,10 +64,17 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// reached, the deferred messages from that round number onwards will
     /// be sent out.
-    Recover(Nonce, Option<cliquenet::Id>, HashMap<PublicKey, RoundNumber>),
-    /// This is the normal running state after round numbers have been collected.
+    Handshake {
+        nonce: Nonce,
+        rounds: HashMap<PublicKey, RoundNumber>
+    },
+    /// This is the normal running state.
+    ///
     /// The barrier is the maximum of at least 2t + 1 reported round numbers and
     /// restricts when messages are eligible for sending.
+    ///
+    /// Members of the next committee do not perform a handshake though and set
+    /// the barrier to 0.
     Barrier(RoundNumber),
 }
 
@@ -189,11 +192,14 @@ impl<T: Committable> Worker<T> {
             tx,
             rx,
             buffer: BTreeMap::new(),
-            round: (RoundNumber::genesis(), Evidence::Genesis),
-            state: if cfg.recover {
-                WorkerState::Recover(Nonce::new(), None, HashMap::new())
+            round: (GENESIS_ROUND, Evidence::Genesis),
+            state: if cfg.handshake {
+                WorkerState::Handshake {
+                    nonce: Nonce::new(),
+                    rounds: HashMap::new(),
+                }
             } else {
-                WorkerState::Genesis
+                WorkerState::Barrier(GENESIS_ROUND)
             },
             config: cfg,
             timer: {
@@ -212,7 +218,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// to deliver. Periodically we also revisit our message buffer and try to make
     /// progress.
     pub async fn go(mut self) {
-        if let Err(err) = self.startup().await {
+        if let Err(err) = self.start().await {
             error!(node = %self.key, %err, "startup failure");
             return
         }
@@ -369,12 +375,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         Ok(())
     }
 
-    /// Request round number information when recovering.
-    async fn startup(&mut self) -> RbcResult<()> {
-        if let WorkerState::Recover(nonce, id@None, _) = &mut self.state {
-            let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
+    /// Request round number information when starting.
+    async fn start(&mut self) -> RbcResult<()> {
+        if let WorkerState::Handshake { nonce, .. } = &mut self.state {
+            let req = Protocol::<'_, T, Validated>::HandshakeRequest(*nonce);
             let bytes = serialize(&req)?;
-            *id = Some(self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?);
+            self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?;
             debug!(node = %self.key, %nonce, "info request broadcasted");
         }
         Ok(())
@@ -479,34 +485,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             Protocol::GetRequest(dig) => self.on_get_request(src, dig).await?,
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
             Protocol::Cert(crt) => self.on_cert(src, crt).await?,
-            Protocol::InfoRequest(nonce) => self.on_info_request(src, nonce).await?,
-            Protocol::InfoResponse(n, r, e) => self.on_info_response(src, n, r, e.into_owned()).await?,
+            Protocol::HandshakeRequest(nonce) => self.on_handshake_request(src, nonce).await?,
+            Protocol::HandshakeResponse(n, r, e) => self.on_handshake_response(src, n, r, e.into_owned()).await?,
         }
 
         Ok(())
     }
 
     /// We receveived a round number information request.
-    async fn on_info_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
-        debug!(node = %self.key, %src, nonce = %n, "info request received");
-
-        if self.barrier().is_gt() {
-            debug!(node = %self.key, %src, nonce = %n, "suppressed info response");
-            return Ok(())
-        }
-
+    async fn on_handshake_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
+        debug!(node = %self.key, %src, nonce = %n, "handshake request received");
         let (r, e) = &self.round;
-        let proto = Protocol::<'_, T, Validated>::InfoResponse(n, *r, Cow::Borrowed(e));
+        let proto = Protocol::<'_, T, Validated>::HandshakeResponse(n, *r, Cow::Borrowed(e));
         let bytes = serialize(&proto)?;
         self.comm.unicast(src, **r, bytes).await?;
         Ok(())
     }
 
     /// We receveived a response to our round number information request.
-    async fn on_info_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
-        debug!(node = %self.key, %src, nonce = %n, %r, "info response received");
+    async fn on_handshake_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
+        debug!(node = %self.key, %src, nonce = %n, %r, "handshake response received");
 
-        let WorkerState::Recover(nonce, id, rounds) = &mut self.state else {
+        let WorkerState::Handshake { nonce, rounds } = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
@@ -532,49 +532,50 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::NoCommittee(self.config.committee_id))
         };
 
-        if rounds.len() >= c.quorum_size().get() {
-            let barrier = rounds
+        if rounds.len() < c.quorum_size().get() {
+            return Ok(())
+        }
+
+        let barrier =
+            if rounds.values().all(|r| r.is_genesis()) {
+                GENESIS_ROUND
+            } else {
+                rounds
                 .values()
                 .max()
                 .copied()
                 .expect("|rounds| >= quorum > 0")
                 .saturating_add(2)
-                .into();
+                .into()
+            };
 
-            if let Some(id) = id {
-                self.comm.rm(overlay::MAX_BUCKET, *id);
-            } else {
-                error!(node = %self.key, "missing info request message id")
-            }
+        self.state = WorkerState::Barrier(barrier);
 
-            self.state = WorkerState::Barrier(barrier);
+        info!(node = %self.key, %barrier, "round number info collected");
 
-            debug!(node = %self.key, %barrier, "round number info collected");
-
-            for (round, messages) in self.buffer.range_mut(barrier ..) {
-                for (digest, tracker) in &mut messages.map {
-                    match tracker.status {
-                        // A quorum has been formed already => just send the certificate.
-                        Status::Requested | Status::Delivered => {
-                            if let Some(cert) = tracker.message.defer.cert.take() {
-                                self.comm.broadcast(**round, cert).await?;
-                                debug!(node = %self.key, %digest, "cert broadcasted");
-                            }
+        for (round, messages) in self.buffer.range_mut(barrier ..) {
+            for (digest, tracker) in &mut messages.map {
+                match tracker.status {
+                    // A quorum has been formed already => just send the certificate.
+                    Status::Requested | Status::Delivered => {
+                        if let Some(cert) = tracker.message.defer.cert.take() {
+                            self.comm.broadcast(**round, cert).await?;
+                            debug!(node = %self.key, %digest, "cert broadcasted");
                         }
-                        // Send all deferred values.
-                        Status::Initiated => {
-                            if let Some(proposal) = tracker.message.defer.prop.take() {
-                                self.comm.broadcast(**round, proposal).await?;
-                                debug!(node = %self.key, %digest, "proposal broadcasted");
-                            }
-                            if let Some(vote) = tracker.message.defer.vote.take() {
-                                self.comm.broadcast(**round, vote).await?;
-                                debug!(node = %self.key, %digest, "vote broadcasted");
-                            }
-                            if let Some(cert) = tracker.message.defer.cert.take() {
-                                self.comm.broadcast(**round, cert).await?;
-                                debug!(node = %self.key, %digest, "cert broadcasted");
-                            }
+                    }
+                    // Send all deferred values.
+                    Status::Initiated => {
+                        if let Some(proposal) = tracker.message.defer.prop.take() {
+                            self.comm.broadcast(**round, proposal).await?;
+                            debug!(node = %self.key, %digest, "proposal broadcasted");
+                        }
+                        if let Some(vote) = tracker.message.defer.vote.take() {
+                            self.comm.broadcast(**round, vote).await?;
+                            debug!(node = %self.key, %digest, "vote broadcasted");
+                        }
+                        if let Some(cert) = tracker.message.defer.cert.take() {
+                            self.comm.broadcast(**round, cert).await?;
+                            debug!(node = %self.key, %digest, "cert broadcasted");
                         }
                     }
                 }
@@ -802,7 +803,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .buffer
             .last_key_value()
             .map(|(r, _)| *r)
-            .unwrap_or_else(RoundNumber::genesis);
+            .unwrap_or(GENESIS_ROUND);
 
         if digest.round().num() > latest_round + 1 && !evi.is_valid(digest.round().num(), &self.config.committees) {
             warn!(node = %self.key, %src, "invalid vote evidence");
@@ -1062,9 +1063,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
     fn barrier(&self) -> Ordering {
         match self.state {
-            WorkerState::Genesis => Ordering::Less,
-            WorkerState::Recover(..) => Ordering::Greater,
-            WorkerState::Barrier(rn) => rn.cmp(&self.round.0)
+            WorkerState::Handshake {..} => Ordering::Greater,
+            WorkerState::Barrier(r) => r.cmp(&self.round.0)
         }
     }
 }

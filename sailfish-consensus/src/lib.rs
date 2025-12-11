@@ -8,7 +8,9 @@ use std::time::Instant;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use multisig::{CommitteeId, KeyId};
-use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
+use sailfish_types::{
+    Action, Evidence, GENESIS_ROUND, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage,
+};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use sailfish_types::{Info, math};
@@ -90,7 +92,7 @@ pub struct Consensus<T> {
     committed_round: RoundNumber,
 
     /// Information about committee members.
-    nodes: NodeInfo<RoundNumber>,
+    nodes: NodeInfo<KeyId, RoundNumber>,
 
     /// The set of vertices that we've received so far.
     buffer: Dag<T>,
@@ -167,10 +169,10 @@ where
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
-            nodes: NodeInfo::new(&committee, committee.quorum_size()),
+            nodes: NodeInfo::new(committee.quorum_size()),
             dag: Dag::new(committee.size()),
-            round: RoundNumber::genesis(),
-            committed_round: RoundNumber::genesis(),
+            round: GENESIS_ROUND,
+            committed_round: GENESIS_ROUND,
             buffer: Dag::new(committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
@@ -193,7 +195,7 @@ where
     pub fn go(&mut self, d: Dag<T>, e: Evidence) -> Vec<Action<T>> {
         info!(node = %self.public_key(), round = %self.round(), "start consensus");
 
-        let r = d.max_round().unwrap_or(RoundNumber::genesis());
+        let r = d.max_round().unwrap_or(GENESIS_ROUND);
 
         self.dag = d;
         self.round = r;
@@ -371,6 +373,27 @@ where
             return actions;
         }
 
+        self.nodes.record(v.source(), v.committed_round());
+
+        if self.is_restart_required() {
+            actions.push(Action::RestartRequired)
+        }
+
+        if v.round().data().num() < self.dag.min_round().unwrap_or(GENESIS_ROUND) {
+            debug!(
+                node   = %self.public_key(),
+                round  = %self.round,
+                vertex = %v,
+                "vertex round is too old"
+            );
+            return actions;
+        }
+
+        if v.round().data().num() < v.committed_round() {
+            warn!(node = %self.public_key(), vertex = %v, "vertex round < committed round");
+            return actions;
+        }
+
         let accum = self
             .rounds
             .entry(v.round().data().num())
@@ -388,8 +411,6 @@ where
             }
             return actions;
         }
-
-        self.nodes.record(v.source(), v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
             actions.extend(self.cleanup());
@@ -953,7 +974,7 @@ where
             // This orders vertices by round and source.
             for to_deliver in self
                 .dag
-                .vertex_range(RoundNumber::genesis() + 1..)
+                .vertex_range(GENESIS_ROUND + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
                 let r = to_deliver.round().data();
@@ -1019,7 +1040,7 @@ where
                 }
                 actions.push(Action::Catchup(Round::new(r, self.committee.id())));
             }
-        } else if self.committed_round >= *self.nodes.quorum() {
+        } else if self.committed_round >= self.nodes.quorum().copied().unwrap_or(GENESIS_ROUND) {
             for v in self.buffer.drain_round(r) {
                 self.dag.add(v)
             }
@@ -1064,25 +1085,6 @@ where
                 "accepting genesis vertex"
             );
             return true;
-        }
-
-        if v.round().data().num() < self.dag.min_round().unwrap_or_else(RoundNumber::genesis) {
-            debug!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vertex = %v,
-                "vertex round is too old"
-            );
-            return false;
-        }
-
-        if v.round().data().num() < v.committed_round() {
-            warn!(
-                node   = %self.public_key(),
-                vertex = %v,
-                "vertex round is less than committed round"
-            );
-            return false;
         }
 
         if v.is_first_after_handover() {
@@ -1166,8 +1168,27 @@ where
     fn lower_round_bound(&self) -> RoundNumber {
         self.nodes
             .quorum()
+            .copied()
+            .unwrap_or(GENESIS_ROUND)
             .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
+    }
+
+    /// Is this node part of a minority that did not restart?
+    ///
+    /// If we detect that a quorum of committee members is submitting vertex
+    /// proposals for rounds less than our committed round minus some margin
+    /// we assume that the quorum has restarted and we are in a minority that
+    /// did not. Then we should also restart to rejoin the others.
+    fn is_restart_required(&self) -> bool {
+        let max = self.nodes.quorum_rev().copied().map(u64::from).unwrap_or(u64::MAX);
+        let min = self.committed_round.saturating_sub(self.committee.size().get() as u64);
+        if max < min {
+            error!(node = %self.public_key(), %min, %max, "restart required");
+            true
+        } else {
+            false
+        }
     }
 
     /// Called by the current committee to see if the handover should be started.
@@ -1200,13 +1221,14 @@ where
 
         let round = Round::new(self.round, self.committee.id());
 
-        let vertex = Vertex::new(
+        let mut vertex = Vertex::new(
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
             self.key_id,
             &self.keypair,
         );
+        vertex.set_committed_round(r);
         let env = Envelope::signed(vertex, &self.keypair);
 
         #[cfg(feature = "times")]

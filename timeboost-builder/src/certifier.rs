@@ -96,10 +96,9 @@ impl Certifier {
             .rx(cmd_rx)
             .info({
                 let c = cfg.committee.committee();
-                NodeInfo::new(c, c.one_honest_threshold())
+                NodeInfo::new(c.one_honest_threshold())
             })
             .history(cfg.committee.committee().quorum_size().get() as u64)
-            .recover(cfg.recover)
             .build();
 
         Ok(Self {
@@ -263,11 +262,8 @@ struct Worker {
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
 
-    /// Are we recovering from a crash?
-    recover: bool,
-
     /// Quorum of block numbers to use with garbage collection.
-    info: NodeInfo<BlockNumber>,
+    info: NodeInfo<KeyId, BlockNumber>,
 
     /// How many extra blocks to keep before GC.
     history: u64,
@@ -365,17 +361,6 @@ impl Worker {
 
         if self.next_block.is_none() {
             self.next_block = Some(block.num());
-            if self.recover {
-                debug!(
-                    node  = %self.label,
-                    round = %block.round(),
-                    num   = %block.num(),
-                    hash  = %block.hash(),
-                    "recovering: stashing block until evidence is available"
-                );
-                self.pending.insert(block.num(), (block, info));
-                return Ok(());
-            }
         } else if evidence.is_none() {
             debug!(
                 node  = %self.label,
@@ -544,7 +529,13 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
-        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
+        let lower_bound: BlockNumber = self
+            .info
+            .quorum()
+            .copied()
+            .unwrap_or_default()
+            .saturating_sub(self.history)
+            .into();
 
         // Check if we need to catch up to the others.
         if self.next_block.unwrap_or_default() < lower_bound {

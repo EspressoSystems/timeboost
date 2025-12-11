@@ -543,7 +543,10 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_)
+                | Action::Catchup(_)
+                | Action::UseCommittee(_)
+                | Action::RestartRequired => {}
             }
         }
     }

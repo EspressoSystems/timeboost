@@ -4,7 +4,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, KeyId, Keypair, Signed};
 use serde::{Deserialize, Serialize};
 
-use crate::{Evidence, NoVote, Round, RoundNumber};
+use crate::{Evidence, GENESIS_ROUND, NoVote, Round, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
@@ -25,7 +25,7 @@ impl<T> Vertex<T> {
     {
         let evidence = evidence.into();
 
-        debug_assert!(evidence.round() + 1 == round.num() || round.num() == RoundNumber::genesis());
+        debug_assert!(evidence.round() + 1 == round.num() || round.num() == GENESIS_ROUND);
 
         Self {
             source: source.into(),
@@ -33,14 +33,14 @@ impl<T> Vertex<T> {
             edges: BTreeSet::new(),
             evidence,
             no_vote: None,
-            committed: RoundNumber::genesis(),
+            committed: GENESIS_ROUND,
             payload,
         }
     }
 
     /// Is this vertex from the genesis round?
     pub fn is_genesis(&self) -> bool {
-        self.round.data().num() == RoundNumber::genesis()
+        self.round.data().num() == GENESIS_ROUND
             && self.round.data().num() == self.evidence.round()
             && self.evidence.is_genesis()
             && self.edges.is_empty()

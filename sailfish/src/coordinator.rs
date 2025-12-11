@@ -83,8 +83,10 @@ pub enum CoordinatorEvent<T: Committable> {
     Gc(Round),
     /// Consensus was catching up.
     Catchup(Round),
-    /// Some payload is being delivered
+    /// Some payload is being delivered.
     Deliver(Payload<T>),
+    /// A restart is required.
+    Restart,
 }
 
 impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
@@ -327,6 +329,7 @@ where
             }
             Action::Catchup(r) => return Ok(Some(CoordinatorEvent::Catchup(r))),
             Action::Deliver(v) => return Ok(Some(CoordinatorEvent::Deliver(v))),
+            Action::RestartRequired => return Ok(Some(CoordinatorEvent::Restart)),
         }
         Ok(None)
     }
