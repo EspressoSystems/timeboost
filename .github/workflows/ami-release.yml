@@ -31,11 +31,6 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@just
 
-      - name: Install Packer
-        uses: hashicorp/setup-packer@v2
-        with:
-          version: "1.8.0"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
