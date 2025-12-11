@@ -1,0 +1,48 @@
+version         := shell('git rev-parse --short HEAD')
+vector-version  := "0.51.1"
+overlay-archive := "tx-generator-overlay.tar.gz"
+ssh_user        := "ec2-user"
+regions         := '["eu-west-2", "eu-west-3"]'
+
+init:
+    packer init .
+
+clean:
+    rm -f {{overlay-archive}}
+
+format:
+    packer fmt .
+
+build:
+    cargo build --release --bin tx-generator
+
+make-overlay: build
+    #!/usr/bin/env bash
+    set -e
+    if [[ -f {{overlay-archive}} ]]; then
+        rm {{overlay-archive}}
+    fi
+    dir=$(mktemp -d)
+    cp -R overlay $dir/
+    mkdir -p $dir/overlay/usr/local/bin
+    cp ../../target/release/tx-generator $dir/overlay/usr/local/bin/
+    tar --owner 0 --group 0 -caf {{overlay-archive}} -C $dir/overlay/ .
+
+validate:
+    packer validate \
+        --var version={{version}} \
+        --var vector-version={{vector-version}} \
+        --var overlay-archive={{overlay-archive}} \
+        --var ssh_user={{ssh_user}} \
+        --var regions='{{regions}}' \
+        tx-generator.pkr.hcl
+
+make-image: validate
+    export AWS_PROFILE=timeboost-dev
+    packer build \
+        --var version={{version}} \
+        --var vector-version={{vector-version}} \
+        --var overlay-archive={{overlay-archive}} \
+        --var ssh_user={{ssh_user}} \
+        --var regions='{{regions}}' \
+        tx-generator.pkr.hcl
