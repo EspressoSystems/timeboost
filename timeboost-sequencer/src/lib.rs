@@ -154,7 +154,9 @@ impl Sequencer {
             let rbc = Rbc::new(
                 5 * cfg.sailfish_committee.committee().size().get(),
                 Overlay::new(net),
-                cfg.rbc_config().with_metrics(rbc_metrics),
+                cfg.rbc_config()
+                    .with_metrics(rbc_metrics)
+                    .with_handshake(cfg.previous_sailfish_committee.is_none()),
             );
 
             let mut cons = Consensus::new(

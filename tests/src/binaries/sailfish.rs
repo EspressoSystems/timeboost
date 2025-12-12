@@ -23,10 +23,7 @@ use clap::Parser;
 struct Cli {
     /// Path to node configuration.
     #[clap(long, short)]
-    node: PathBuf,
-
-    #[clap(long, default_value_t = false)]
-    ignore_stamp: bool,
+    config: PathBuf,
 
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
@@ -64,15 +61,15 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let node = NodeConfig::read(&cli.node)
+    let conf = NodeConfig::read(&cli.config)
         .await
         .context("failed to read node config")?;
 
-    let signing_keypair = Keypair::from(node.keys.signing.secret.clone());
+    let signing_keypair = Keypair::from(conf.keys.signing.secret.clone());
     let sign_pubkey = signing_keypair.public_key();
-    let dh_keypair = x25519::Keypair::from(node.keys.dh.secret.clone());
+    let dh_keypair = x25519::Keypair::from(conf.keys.dh.secret.clone());
 
-    let mut contract = CommitteeContract::from(&node.chain);
+    let mut contract = CommitteeContract::from(&conf.chain);
     let committee = contract.active().await?;
 
     if committee.member(&sign_pubkey).is_none() {
@@ -89,7 +86,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        node.net.bind.clone(),
+        conf.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         committee.sailfish().entries(),
@@ -97,17 +94,9 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    // If the stamp file exists we need to recover from a previous run.
-    let recover = if cli.ignore_stamp {
-        false
-    } else {
-        tokio::fs::try_exists(&node.stamp).await?
-    };
-
     let committee = committee.committee();
 
-    let cfg =
-        RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone()).recover(recover);
+    let cfg = RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone());
 
     let rbc = Rbc::new(
         committee.size().get() * 5,
@@ -118,12 +107,6 @@ async fn main() -> Result<()> {
     let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
         .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus, false);
-
-    // Create proof of execution.
-    tokio::fs::File::create(node.stamp)
-        .await?
-        .sync_all()
-        .await?;
 
     for a in coordinator.init() {
         if let Err(err) = coordinator.execute(a).await {

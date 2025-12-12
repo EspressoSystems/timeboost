@@ -16,11 +16,6 @@ async fn test_simple_network_round_timeout() {
 }
 
 #[tokio::test]
-async fn test_simple_network_genesis_round_timeout() {
-    run_simple_network_round_timeout_genesis_test::<BasicNetworkTest>().await;
-}
-
-#[tokio::test]
 async fn test_simple_network_catchup() {
     run_simple_network_catchup_test::<BasicNetworkTest>().await;
 }

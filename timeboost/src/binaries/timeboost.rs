@@ -23,10 +23,6 @@ struct Cli {
     #[clap(long, short)]
     config: PathBuf,
 
-    /// Ignore any existing stamp file and start from genesis.
-    #[clap(long, default_value_t = false)]
-    ignore_stamp: bool,
-
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
@@ -70,15 +66,6 @@ async fn main() -> Result<()> {
         &member.clone()
     };
 
-    let is_recover = !cli.ignore_stamp && config.stamp.is_file();
-
-    tokio::fs::File::create(&config.stamp)
-        .await
-        .with_context(|| format!("Failed to create stamp file: {:?}", config.stamp))?
-        .sync_all()
-        .await
-        .with_context(|| "Failed to sync stamp file to disk")?;
-
     let pubkey = sign_keypair.public_key();
 
     let tb_config = TimeboostConfig::builder()
@@ -95,7 +82,6 @@ async fn main() -> Result<()> {
         .certifier_addr(config.net.bind.clone().with_offset(CERTIFIER_PORT_OFFSET))
         .nitro_addr(config.net.nitro.clone())
         .batcher_addr(member.batchposter.clone())
-        .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
             robusta::Config::builder()

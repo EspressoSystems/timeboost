@@ -330,7 +330,7 @@ impl Simulator {
                     name: n,
                     logic: Consensus::new(k, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
-                    timeout: (0, RoundNumber::genesis()),
+                    timeout: (u64::MAX, RoundNumber::genesis()),
                 };
                 (n, p)
             })
