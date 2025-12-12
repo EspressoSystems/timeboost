@@ -540,14 +540,29 @@ services:
     depends_on:
       block-checker:
         condition: service_completed_successfully
-  bridge-funds:
+  tx-generator:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
     entrypoint: |
       bash -c '
-        cast send $$(jq -r '.inbox' /config/deployment.json) "depositEth()" \
-        --value 1000ether \
-        --rpc-url http://demo-l1-network:8545 \
-        --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+        rpc="http://demo-l1-network:8545"
+        contract=0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
+        private_key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+        keys=$(cast wallet new -n 10 --json | jq -r '.[].private_key')
+        for key in $$keys; do
+            addr=$(cast wallet address $$key)
+            echo "Bridging funds for: $$addr"
+            cast send $$addr --value 101ether --rpc-url $$rpc --private-key $$private_key
+            cast send $$(jq -r '.inbox' /config/deployment.json) "depositEth()" \
+              --value 100ether \
+              --rpc-url $$rpc \
+              --private-key $$key
+        done
+        /app/tx-generator \
+            --chain /config/chain.toml \
+            --namespace 412346 \
+            --tps 10 \
+            --nitro \
+            --signers $(echo "$$keys" | paste -sd ',' -)
       '
     volumes:
       - "config:/config"
@@ -555,24 +570,6 @@ services:
       - timeboost
     depends_on:
       threshold-key-register:
-        condition: service_completed_successfully
-  tx-generator:
-    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
-    entrypoint: |
-      bash -c '
-        for i in $$(seq 0 300); do
-        echo "Sending transaction $$i"
-        cast send 0x99327EF7a2C17Ec21e95224dA9d42eB550d7b47C \
-          --value 0.5ether \
-          --rpc-url http://node0:8003/v1/ \
-          --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-        sleep 0.3
-      done
-      '
-    networks:
-      - timeboost
-    depends_on:
-      bridge-funds:
         condition: service_completed_successfully
 networks:
   timeboost:
