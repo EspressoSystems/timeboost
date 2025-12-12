@@ -161,7 +161,7 @@ test-individually: build-port-alloc
   done
 
 test-all: build-release build-test-utils
-  env RUST_LOG=block_checker=info,error \
+  env RUST_LOG=block_checker=info,timeboost_builder::submit=debug,error \
   target/release/run \
     --verbose \
     --timeout 120 \
