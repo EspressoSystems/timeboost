@@ -361,9 +361,7 @@ impl Worker {
 
         if self.next_block.is_none() {
             self.next_block = Some(block.num());
-        }
-
-        if evidence.is_none() {
+        } else if evidence.is_none() {
             debug!(
                 node  = %self.label,
                 round = %block.round(),

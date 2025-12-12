@@ -55,6 +55,8 @@ pub struct Worker<T: Committable> {
 }
 
 enum WorkerState {
+    /// Start state where we send a handshake message to our peers.
+    ///
     /// While in this state, no messages will be sent to other parties,
     /// but inbound messages will be processed and delivered to the
     /// application as normal.
@@ -63,14 +65,18 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// reached, the deferred messages from that round number onwards will
     /// be sent out.
-    Start {
+    Handshake {
         nonce: Nonce,
         resps: HashMap<PublicKey, RoundNumber>,
         votes: NonZeroUsize
     },
-    /// This is the normal running state after round numbers have been collected.
+    /// This is the normal running state.
+    ///
     /// The barrier is the maximum of at least 2t + 1 reported round numbers and
     /// restricts when messages are eligible for sending.
+    ///
+    /// Members of the next committee do not perform a handshake though and set
+    /// the barrier to 0.
     Barrier(RoundNumber),
 }
 
@@ -190,10 +196,14 @@ impl<T: Committable> Worker<T> {
             rx,
             buffer: BTreeMap::new(),
             round: (RoundNumber::genesis(), Evidence::Genesis),
-            state: WorkerState::Start {
-                nonce: Nonce::new(),
-                resps: HashMap::new(),
-                votes: c.quorum_size()
+            state: if cfg.handshake {
+                WorkerState::Handshake {
+                    nonce: Nonce::new(),
+                    resps: HashMap::new(),
+                    votes: c.quorum_size()
+                }
+            } else {
+                WorkerState::Barrier(RoundNumber::genesis())
             },
             config: cfg,
             timer: {
@@ -212,7 +222,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// to deliver. Periodically we also revisit our message buffer and try to make
     /// progress.
     pub async fn go(mut self) {
-        if let Err(err) = self.startup().await {
+        if let Err(err) = self.start().await {
             error!(node = %self.key, %err, "startup failure");
             return
         }
@@ -370,9 +380,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Request round number information when starting.
-    async fn startup(&mut self) -> RbcResult<()> {
-        if let WorkerState::Start { nonce, .. } = &mut self.state {
-            let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
+    async fn start(&mut self) -> RbcResult<()> {
+        if let WorkerState::Handshake { nonce, .. } = &mut self.state {
+            let req = Protocol::<'_, T, Validated>::HandshakeRequest(*nonce);
             let bytes = serialize(&req)?;
             self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?;
             debug!(node = %self.key, %nonce, "info request broadcasted");
@@ -479,28 +489,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             Protocol::GetRequest(dig) => self.on_get_request(src, dig).await?,
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
             Protocol::Cert(crt) => self.on_cert(src, crt).await?,
-            Protocol::InfoRequest(nonce) => self.on_info_request(src, nonce).await?,
-            Protocol::InfoResponse(n, r, e) => self.on_info_response(src, n, r, e.into_owned()).await?,
+            Protocol::HandshakeRequest(nonce) => self.on_handshake_request(src, nonce).await?,
+            Protocol::HandshakeResponse(n, r, e) => self.on_handshake_response(src, n, r, e.into_owned()).await?,
         }
 
         Ok(())
     }
 
     /// We receveived a round number information request.
-    async fn on_info_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
-        debug!(node = %self.key, %src, nonce = %n, "info request received");
+    async fn on_handshake_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
+        debug!(node = %self.key, %src, nonce = %n, "handshake request received");
         let (r, e) = &self.round;
-        let proto = Protocol::<'_, T, Validated>::InfoResponse(n, *r, Cow::Borrowed(e));
+        let proto = Protocol::<'_, T, Validated>::HandshakeResponse(n, *r, Cow::Borrowed(e));
         let bytes = serialize(&proto)?;
         self.comm.unicast(src, **r, bytes).await?;
         Ok(())
     }
 
     /// We receveived a response to our round number information request.
-    async fn on_info_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
-        debug!(node = %self.key, %src, nonce = %n, %r, "info response received");
+    async fn on_handshake_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
+        debug!(node = %self.key, %src, nonce = %n, %r, "handshake response received");
 
-        let WorkerState::Start { nonce, resps, votes } = &mut self.state else {
+        let WorkerState::Handshake { nonce, resps, votes } = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
@@ -1060,7 +1070,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
     fn barrier(&self) -> Ordering {
         match self.state {
-            WorkerState::Start {..} => Ordering::Greater,
+            WorkerState::Handshake {..} => Ordering::Greater,
             WorkerState::Barrier(r) => r.cmp(&self.round.0)
         }
     }

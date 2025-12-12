@@ -109,6 +109,7 @@ impl SequencerConfig {
         };
         let id = self.sailfish_committee.committee().id();
         RbcConfig::new(self.sign_keypair.clone(), id, cv)
+            .with_handshake(self.previous_sailfish_committee.is_none())
     }
 
     pub fn decrypter_config(&self) -> DecrypterConfig {

@@ -54,10 +54,10 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
 
     /// A direct request to retrieve the current round number of a party.
-    InfoRequest(Nonce),
+    HandshakeRequest(Nonce),
 
     /// The reply to an info request with round number and evidence.
-    InfoResponse(Nonce, RoundNumber, Cow<'a, Evidence>)
+    HandshakeResponse(Nonce, RoundNumber, Cow<'a, Evidence>)
 }
 
 /// Worker command
@@ -82,6 +82,7 @@ pub struct RbcConfig {
     keypair: Keypair,
     committees: CommitteeVec<2>,
     committee_id: CommitteeId,
+    handshake: bool,
     metrics: RbcMetrics,
 }
 
@@ -96,6 +97,7 @@ impl RbcConfig {
             keypair: k,
             committee_id: id,
             committees: c,
+            handshake: true,
             metrics: RbcMetrics::default(),
         }
     }
@@ -103,6 +105,12 @@ impl RbcConfig {
     /// Set the RBC metrics value to use.
     pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
         self.metrics = m;
+        self
+    }
+
+    /// Should we send a handshake first or start directly?
+    pub fn with_handshake(mut self, v: bool) -> Self {
+        self.handshake = v;
         self
     }
 }
