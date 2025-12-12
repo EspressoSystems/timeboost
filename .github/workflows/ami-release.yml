@@ -37,14 +37,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-2
 
-      - name: Build Timeboost AMI
-        run: |
-          cd packer/timeboost
-          just init
-          just build
-          just make-overlay
-          VERSION=${GITHUB_REF_NAME} just make-image
-
       - name: Build TxGenerator AMI
         run: |
           cd packer/tx-generator
