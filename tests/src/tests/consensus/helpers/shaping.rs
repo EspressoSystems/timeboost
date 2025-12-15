@@ -330,7 +330,7 @@ impl Simulator {
                     name: n,
                     logic: Consensus::new(k, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
-                    timeout: (u64::MAX, RoundNumber::genesis()),
+                    timeout: (0, RoundNumber::genesis()),
                 };
                 (n, p)
             })
@@ -543,7 +543,10 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_)
+                | Action::Catchup(_)
+                | Action::UseCommittee(_)
+                | Action::RestartRequired => {}
             }
         }
     }

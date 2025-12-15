@@ -21,6 +21,8 @@ pub enum Info {
     /// At least 2t + 1 vertex proposals with an edge to the leader of the
     /// given round number have been received.
     LeaderThresholdReached(RoundNumber),
+    /// A quorum of nodes has restarted.
+    QuorumRestarted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -422,6 +424,8 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
+
+    RestartRequired,
 }
 
 impl<T: Committable> Action<T> {
@@ -474,6 +478,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
+            Action::RestartRequired => f.write_str("RestartRequired"),
         }
     }
 }
@@ -735,6 +740,7 @@ impl fmt::Display for Info {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::LeaderThresholdReached(r) => write!(f, "LeaderThresholdReached({r})"),
+            Self::QuorumRestarted => write!(f, "QuorumRestarted"),
         }
     }
 }

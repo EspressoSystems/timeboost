@@ -184,6 +184,88 @@ where
     .await;
 }
 
+pub async fn run_simple_network_round_timeout_genesis_test<N>()
+where
+    N: TestableNetwork,
+{
+    logging::init_logging();
+
+    let num_nodes = 5;
+    let group = Group::new(num_nodes).await;
+    let committee = group.committee.clone();
+    let timeout_round = *RoundNumber::genesis();
+    let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
+        if let Message::Vertex(v) = msg {
+            let round = msg.round().num();
+            // If leader vertex do not process, but process every other so we have 2f + 1
+            if *round == timeout_round && *v.signing_key() == committee.leader(*round as usize) {
+                return Err("Dropping leader vertex".to_string());
+            }
+        }
+        Ok(msg.clone())
+    });
+
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .sign_keypairs
+        .iter()
+        .map(|k| {
+            // First only check if we received vertex with no vote cert from leader only
+            let committee = group.committee.clone();
+            let mut conditions = vec![TestCondition::new(
+                "No vote vertex from leader".to_string(),
+                move |msg, _a| {
+                    if let Some(Message::Vertex(v)) = msg {
+                        let d = v.data();
+                        // Ensure vertex has timeout and no vote cert and from round r + 1
+                        let no_vote_checks = d.no_vote_cert().is_some()
+                            && d.evidence().is_timeout()
+                            && *d.round().data().num() == timeout_round + 1;
+
+                        if no_vote_checks {
+                            // The signing key needs to be from leader for round `timeout_round + 1`
+                            if *v.signing_key() != committee.leader(timeout_round as usize + 1) {
+                                return TestOutcome::Failed(
+                                    "Should not receive a no vote certificate from non-leader",
+                                );
+                            }
+                            return TestOutcome::Passed;
+                        }
+                    }
+                    TestOutcome::Waiting
+                },
+            )];
+
+            // Next make sure we can advance some rounds and receive all vertices from each node
+            conditions.extend(group.sign_keypairs.iter().map(|kpr| {
+                let node_public_key = kpr.public_key();
+                let node_key_idx = group.committee.get_index(&node_public_key).unwrap();
+                TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
+                    if let Some(Message::Vertex(v)) = msg {
+                        // Go 20 rounds passed timeout, make sure all nodes receive all vertices
+                        // from round
+                        if *v.data().round().data().num() == timeout_round + 20
+                            && node_key_idx == v.data().source()
+                        {
+                            return TestOutcome::Passed;
+                        }
+                    }
+                    TestOutcome::Waiting
+                })
+            }));
+            (k.public_key(), conditions)
+        })
+        .collect();
+
+    NetworkTest::<N>::new(
+        group,
+        node_outcomes,
+        Some(Duration::from_secs(15)),
+        interceptor,
+    )
+    .run()
+    .await;
+}
+
 pub async fn run_simple_network_catchup_test<N>()
 where
     N: TestableNetwork,

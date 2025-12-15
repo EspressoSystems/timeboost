@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::num::NonZeroUsize;
 
 use bytes::Bytes;
 use cliquenet::{
@@ -10,7 +9,7 @@ use cliquenet::{
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
-use multisig::{Certificate, Envelope, KeyId, PublicKey, VoteAccumulator};
+use multisig::{Certificate, Committee, CommitteeId, Envelope, KeyId, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use sailfish_types::{Event, Evidence, Info, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
@@ -46,6 +45,8 @@ pub struct Worker<T: Committable> {
     rx: Receiver<T>,
     /// The tracking information per message.
     buffer: BTreeMap<RoundNumber, Messages<T>>,
+    /// Peer states.
+    peers: BTreeMap<CommitteeId, HashMap<PublicKey, Peer>>,
     /// The state the worker is in.
     state: WorkerState,
     /// The latest round number this worker proposed.
@@ -67,8 +68,7 @@ enum WorkerState {
     /// be sent out.
     Handshake {
         nonce: Nonce,
-        resps: HashMap<PublicKey, RoundNumber>,
-        votes: NonZeroUsize
+        rounds: HashMap<PublicKey, RoundNumber>
     },
     /// This is the normal running state.
     ///
@@ -78,6 +78,10 @@ enum WorkerState {
     /// Members of the next committee do not perform a handshake though and set
     /// the barrier to 0.
     Barrier(RoundNumber),
+}
+
+struct Peer {
+    last_proposal: RoundNumber
 }
 
 /// Messages of a single round.
@@ -188,19 +192,21 @@ impl fmt::Display for Status {
 
 impl<T: Committable> Worker<T> {
     pub fn new(tx: Sender<T>, rx: Receiver<T>, cfg: RbcConfig, net: Overlay) -> Self {
-        let c = cfg.committees.get(cfg.committee_id).expect("valid committee config");
         Self {
             key: cfg.keypair.public_key(),
             comm: net,
             tx,
             rx,
             buffer: BTreeMap::new(),
+            peers: {
+                let c = cfg.committees.get(cfg.committee_id).expect("valid committee config");
+                BTreeMap::from_iter([(cfg.committee_id, peers(c, RoundNumber::genesis()))])
+            },
             round: (RoundNumber::genesis(), Evidence::Genesis),
             state: if cfg.handshake {
                 WorkerState::Handshake {
                     nonce: Nonce::new(),
-                    resps: HashMap::new(),
-                    votes: c.quorum_size()
+                    rounds: HashMap::new(),
                 }
             } else {
                 WorkerState::Barrier(RoundNumber::genesis())
@@ -376,6 +382,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // Remove all messages from the old committee starting at round.
             m.map.retain(|d, _| d.round().committee() == round.committee())
         }
+        self.peers.clear();
+        self.peers.insert(committee.id(), peers(committee, round.num()));
         Ok(())
     }
 
@@ -510,12 +518,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn on_handshake_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, %r, "handshake response received");
 
-        let WorkerState::Handshake { nonce, resps, votes } = &mut self.state else {
+        let WorkerState::Handshake { nonce, rounds } = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
 
-        if resps.contains_key(&src) {
+        if rounds.contains_key(&src) {
             // We already received a response from this party.
             return Ok(())
         }
@@ -530,24 +538,21 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
-        resps.insert(src, r);
+        rounds.insert(src, r);
 
-        if resps.len() < votes.get() {
+        let Some(c) = self.config.committees.get(self.config.committee_id) else {
+            return Err(RbcError::NoCommittee(self.config.committee_id))
+        };
+
+        if rounds.len() < c.quorum_size().get() {
             return Ok(())
         }
 
         let barrier =
-            if resps.values().all(|r| r.is_genesis()) {
-                let Some(c) = self.config.committees.get(self.config.committee_id) else {
-                    return Err(RbcError::NoCommittee(self.config.committee_id))
-                };
-                if *votes < c.size() {
-                    *votes = c.size();
-                    return Ok(())
-                }
+            if rounds.values().all(|r| r.is_genesis()) {
                 RoundNumber::genesis()
             } else {
-                resps
+                rounds
                 .values()
                 .max()
                 .copied()
@@ -682,6 +687,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         let can_send = self.barrier().is_le();
         let evidence = vertex.data().evidence().clone();
+        let lower_bound = self.buffer.first_entry().map(|e| *e.key()).unwrap_or(RoundNumber::genesis());
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
         let Some(committee) = self.config.committees.get(round.committee()) else {
@@ -699,6 +705,20 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 status: Status::Initiated,
             }
         });
+
+        if round.committee() == self.config.committee_id
+            && let Some(c) = self.peers.get_mut(&self.config.committee_id)
+            && let Some(p) = c.get_mut(&src)
+        {
+            p.last_proposal = round.num();
+            if c.values()
+                .filter(|p| p.last_proposal < lower_bound)
+                .count() >= committee.quorum_size().get()
+            {
+                error!(node = %self.key, %lower_bound, "quorum has restarted");
+                self.tx.send(Event::Info(Info::QuorumRestarted)).await.map_err(|_| RbcError::Shutdown)?
+            }
+        }
 
         match tracker.status {
             // If this is a new message or we received our own we vote for it.
@@ -1075,3 +1095,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
     }
 }
+
+fn peers(c: &Committee, r: RoundNumber) -> HashMap<PublicKey, Peer> {
+    HashMap::from_iter(c.parties().map(|p| {
+        (*p, Peer { last_proposal: r })
+    }))
+}
+

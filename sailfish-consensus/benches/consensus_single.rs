@@ -138,6 +138,7 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
         Action::UseCommittee(_) => None,
+        Action::RestartRequired => None,
     }
 }
 
