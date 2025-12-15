@@ -40,8 +40,8 @@ struct Args {
     #[clap(long, default_value_t = 10101)]
     namespace: u64,
 
-    #[clap(long, default_value_t = 100)]
-    tps: u32,
+    #[clap(long, default_value_t = 100.0)]
+    tps: f64,
 
     #[clap(long, default_value_t = 0.5)]
     enc_ratio: f64,
@@ -49,7 +49,11 @@ struct Args {
     #[clap(long, default_value_t = 0.5)]
     prio_ratio: f64,
 
-    #[clap(long, use_value_delimiter = true)]
+    #[clap(
+        long,
+        use_value_delimiter = true,
+        default_value = "0x4a7347a749f03f485414757fce2ee0c77a76ee0a019c8af32b034b3b240a3136"
+    )]
     signers: Vec<String>,
 
     #[clap(long, default_value_t = false)]
@@ -66,11 +70,11 @@ struct ApiUrl {
 #[derive(Debug, Clone, Builder)]
 struct TxGeneratorConfig {
     node_urls: Vec<ApiUrl>,
-    tps: u32,
+    tps: f64,
     enc_ratio: f64,
     prio_ratio: f64,
     chain_id: ChainId,
-    enc_key: ThresholdEncKey,
+    enc_key: Option<ThresholdEncKey>,
     signers: Vec<PrivateKeySigner>,
     auction_contract: Option<alloy::primitives::Address>,
     nitro: bool,
@@ -79,11 +83,11 @@ struct TxGeneratorConfig {
 struct TxGenerator {
     node_urls: Vec<ApiUrl>,
     client: Client,
-    interval: Duration,
+    tps: f64,
     chain_id: ChainId,
     enc_ratio: f64,
     prio_ratio: f64,
-    enc_key: ThresholdEncKey,
+    enc_key: Option<ThresholdEncKey>,
     signers: Vec<PrivateKeySigner>,
     auction: Option<Auction>,
     nitro: bool,
@@ -96,9 +100,9 @@ impl TxGenerator {
 
         Ok(Self {
             node_urls: cfg.node_urls,
-            interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
             chain_id: cfg.chain_id,
+            tps: cfg.tps,
             enc_ratio: cfg.enc_ratio,
             prio_ratio: cfg.prio_ratio,
             enc_key: cfg.enc_key,
@@ -117,8 +121,12 @@ impl TxGenerator {
     }
 
     pub(crate) async fn generate_bundles(&self) -> Result<()> {
-        info!("starting bundle generator");
-        let mut interval = interval(self.interval);
+        info!(
+            "Starting with type={}, tps={}, enc_ratio={}, prio_ratio={}, nitro={}",
+            "bundle", self.tps, self.enc_ratio, self.prio_ratio, self.nitro
+        );
+        let duration = Duration::from_millis(tps_to_millis(self.tps));
+        let mut interval = interval(duration);
         let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
         let auction = self.auction.as_ref().expect("auction is present");
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -140,9 +148,15 @@ impl TxGenerator {
                 prepare_test(self.chain_id, sender, receiver.address())
             };
 
-            let bundle = create_bundle(&self.enc_key, auction, tx, self.enc_ratio, self.prio_ratio)
-                .map_err(|_| warn!("failed to generate dev account bundle"))
-                .ok();
+            let bundle = create_bundle(
+                self.enc_key.as_ref(),
+                auction,
+                tx,
+                self.enc_ratio,
+                self.prio_ratio,
+            )
+            .map_err(|_| warn!("failed to generate dev account bundle"))
+            .ok();
             let Some(b) = bundle else { continue };
 
             join_all(self.node_urls.iter().map(|urls| async {
@@ -157,8 +171,12 @@ impl TxGenerator {
     }
 
     pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
-        info!("starting transaction generator");
-        let mut interval = interval(self.interval);
+        info!(
+            "Starting with type={}, tps={}, enc_ratio={}, prio_ratio={}, nitro={}",
+            "raw-tx", self.tps, self.enc_ratio, self.prio_ratio, self.nitro
+        );
+        let duration = Duration::from_millis(tps_to_millis(self.tps));
+        let mut interval = interval(duration);
         let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
@@ -179,7 +197,7 @@ impl TxGenerator {
                 prepare_test(self.chain_id, sender, receiver.address())
             };
 
-            let tx = create_tx(&self.enc_key, tx, self.enc_ratio)
+            let tx = create_tx(self.enc_key.as_ref(), tx, self.enc_ratio)
                 .map_err(|_| warn!("failed to generate dev account txn"))
                 .ok();
 
@@ -320,9 +338,15 @@ async fn main() -> Result<()> {
         });
     }
 
-    let provider = ProviderBuilder::new().connect_http(chain_config.rpc_url.clone());
-    let contract = KeyManager::new(chain_config.key_management_contract, provider);
-    let enc_key = ThresholdEncKey::from_bytes(&contract.thresholdEncryptionKey().call().await?.0)?;
+    let enc_key = if args.enc_ratio == 0f64 {
+        None
+    } else {
+        let provider = ProviderBuilder::new().connect_http(chain_config.rpc_url.clone());
+        let contract = KeyManager::new(chain_config.key_management_contract, provider);
+        Some(ThresholdEncKey::from_bytes(
+            &contract.thresholdEncryptionKey().call().await?.0,
+        )?)
+    };
 
     let config = TxGeneratorConfig::builder()
         .node_urls(urls)
@@ -331,7 +355,7 @@ async fn main() -> Result<()> {
         .prio_ratio(args.prio_ratio)
         .maybe_auction_contract(chain_config.auction_contract)
         .chain_id(args.namespace.into())
-        .enc_key(enc_key)
+        .maybe_enc_key(enc_key)
         .signers(signers)
         .nitro(args.nitro)
         .build();
