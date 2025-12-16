@@ -1,4 +1,5 @@
 stamp = "/tmp/timeboost.29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.stamp"
+apikey = "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
 
 [net]
 bind = "127.0.0.1:8120"

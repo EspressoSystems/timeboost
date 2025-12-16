@@ -58,6 +58,9 @@ struct Args {
 
     #[clap(long, default_value_t = false)]
     nitro: bool,
+
+    #[clap(long)]
+    apikey: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,19 +81,13 @@ struct TxGeneratorConfig {
     signers: Vec<PrivateKeySigner>,
     auction_contract: Option<alloy::primitives::Address>,
     nitro: bool,
+    apikey: Option<String>,
 }
 
 struct TxGenerator {
-    node_urls: Vec<ApiUrl>,
+    config: TxGeneratorConfig,
     client: Client,
-    tps: f64,
-    chain_id: ChainId,
-    enc_ratio: f64,
-    prio_ratio: f64,
-    enc_key: Option<ThresholdEncKey>,
-    signers: Vec<PrivateKeySigner>,
     auction: Option<Auction>,
-    nitro: bool,
 }
 
 impl TxGenerator {
@@ -99,15 +96,8 @@ impl TxGenerator {
         let auction = cfg.auction_contract.map(Auction::new);
 
         Ok(Self {
-            node_urls: cfg.node_urls,
+            config: cfg,
             client,
-            chain_id: cfg.chain_id,
-            tps: cfg.tps,
-            enc_ratio: cfg.enc_ratio,
-            prio_ratio: cfg.prio_ratio,
-            enc_key: cfg.enc_key,
-            signers: cfg.signers,
-            nitro: cfg.nitro,
             auction,
         })
     }
@@ -122,22 +112,27 @@ impl TxGenerator {
 
     pub(crate) async fn generate_bundles(&self) -> Result<()> {
         info!(
-            "Starting with type={}, tps={}, enc_ratio={}, prio_ratio={}, nitro={}",
-            "bundle", self.tps, self.enc_ratio, self.prio_ratio, self.nitro
+            r#type     = "bundle",
+            tps        = %self.config.tps,
+            enc_ratio  = %self.config.enc_ratio,
+            prio_ratio = %self.config.prio_ratio,
+            nitro      = %self.config.nitro,
+            "Starting"
         );
-        let duration = Duration::from_millis(tps_to_millis(self.tps));
+        let duration = Duration::from_millis(tps_to_millis(self.config.tps));
         let mut interval = interval(duration);
-        let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
+        let p = RootProvider::<Ethereum>::connect(self.config.node_urls[0].json_rpc_url.as_str())
+            .await?;
         let auction = self.auction.as_ref().expect("auction is present");
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
-            let len = self.signers.len();
-            let sender = self.signers[count % len].clone();
-            let receiver = self.signers[(count + 1) % len].clone();
+            let len = self.config.signers.len();
+            let sender = self.config.signers[count % len].clone();
+            let receiver = self.config.signers[(count + 1) % len].clone();
 
-            let tx = if self.nitro {
-                match prepare(&p, self.chain_id, sender, receiver.address()).await {
+            let tx = if self.config.nitro {
+                match prepare(&p, self.config.chain_id, sender, receiver.address()).await {
                     Ok(tx) => tx,
                     Err(_) => {
                         warn!("failed to prepare txn");
@@ -145,21 +140,21 @@ impl TxGenerator {
                     }
                 }
             } else {
-                prepare_test(self.chain_id, sender, receiver.address())
+                prepare_test(self.config.chain_id, sender, receiver.address())
             };
 
             let bundle = create_bundle(
-                self.enc_key.as_ref(),
+                self.config.enc_key.as_ref(),
                 auction,
                 tx,
-                self.enc_ratio,
-                self.prio_ratio,
+                self.config.enc_ratio,
+                self.config.prio_ratio,
             )
             .map_err(|_| warn!("failed to generate dev account bundle"))
             .ok();
             let Some(b) = bundle else { continue };
 
-            join_all(self.node_urls.iter().map(|urls| async {
+            join_all(self.config.node_urls.iter().map(|urls| async {
                 self.send_bundle(&b, &urls.regular_url, &urls.priority_url)
                     .await
             }))
@@ -172,21 +167,26 @@ impl TxGenerator {
 
     pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
         info!(
-            "Starting with type={}, tps={}, enc_ratio={}, prio_ratio={}, nitro={}",
-            "raw-tx", self.tps, self.enc_ratio, self.prio_ratio, self.nitro
+            r#type     = "raw-tx",
+            tps        = %self.config.tps,
+            enc_ratio  = %self.config.enc_ratio,
+            prio_ratio = %self.config.prio_ratio,
+            nitro      = %self.config.nitro,
+            "Starting"
         );
-        let duration = Duration::from_millis(tps_to_millis(self.tps));
+        let duration = Duration::from_millis(tps_to_millis(self.config.tps));
         let mut interval = interval(duration);
-        let p = RootProvider::<Ethereum>::connect(self.node_urls[0].json_rpc_url.as_str()).await?;
+        let p = RootProvider::<Ethereum>::connect(self.config.node_urls[0].json_rpc_url.as_str())
+            .await?;
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
         loop {
-            let len = self.signers.len();
-            let sender = self.signers[count % len].clone();
-            let receiver = self.signers[(count + 1) % len].clone();
+            let len = self.config.signers.len();
+            let sender = self.config.signers[count % len].clone();
+            let receiver = self.config.signers[(count + 1) % len].clone();
 
-            let tx = if self.nitro {
-                match prepare(&p, self.chain_id, sender, receiver.address()).await {
+            let tx = if self.config.nitro {
+                match prepare(&p, self.config.chain_id, sender, receiver.address()).await {
                     Ok(tx) => tx,
                     Err(_) => {
                         warn!("failed to prepare txn");
@@ -194,17 +194,18 @@ impl TxGenerator {
                     }
                 }
             } else {
-                prepare_test(self.chain_id, sender, receiver.address())
+                prepare_test(self.config.chain_id, sender, receiver.address())
             };
 
-            let tx = create_tx(self.enc_key.as_ref(), tx, self.enc_ratio)
+            let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)
                 .map_err(|_| warn!("failed to generate dev account txn"))
                 .ok();
 
             let Some(tx) = tx else { continue };
 
             join_all(
-                self.node_urls
+                self.config
+                    .node_urls
                     .iter()
                     .map(|urls| async { self.send_tx(tx.clone(), &urls.json_rpc_url).await }),
             )
@@ -221,7 +222,7 @@ impl TxGenerator {
                 ("eth_sendRawTransaction", vec![t.encode_hex_with_prefix()])
             }
             TransactionVariant::Encrypted(t) => {
-                let chain_id: u64 = self.chain_id.into();
+                let chain_id: u64 = self.config.chain_id.into();
                 (
                     "eth_sendEncTransaction",
                     vec![t.encode_hex_with_prefix(), chain_id.to_string()],
@@ -252,18 +253,23 @@ impl TxGenerator {
     async fn send_bundle(&self, bundle: &BundleVariant, regular_url: &Url, priority_url: &Url) {
         let result = match bundle {
             BundleVariant::Regular(bundle) => {
-                self.client
-                    .post(regular_url.clone())
-                    .json(&bundle)
-                    .send()
-                    .await
+                let req = self.client.post(regular_url.clone()).json(&bundle);
+                if let Some(apikey) = &self.config.apikey {
+                    req.bearer_auth(apikey).send().await
+                } else {
+                    req.send().await
+                }
             }
             BundleVariant::Priority(signed_priority_bundle) => {
-                self.client
+                let req = self
+                    .client
                     .post(priority_url.clone())
-                    .json(&signed_priority_bundle)
-                    .send()
-                    .await
+                    .json(&signed_priority_bundle);
+                if let Some(apikey) = &self.config.apikey {
+                    req.bearer_auth(apikey).send().await
+                } else {
+                    req.send().await
+                }
             }
             _ => {
                 warn!("Unsupported bundle variant");
@@ -358,6 +364,7 @@ async fn main() -> Result<()> {
         .maybe_enc_key(enc_key)
         .signers(signers)
         .nitro(args.nitro)
+        .maybe_apikey(args.apikey)
         .build();
 
     let tx_generator = TxGenerator::new(config).await?;

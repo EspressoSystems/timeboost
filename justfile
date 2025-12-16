@@ -83,7 +83,7 @@ run *ARGS:
 bench *ARGS:
     cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig nodes seed="42": build-release
+mkconfig nodes apikey seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
         target/release/configure \
             --seed "$(({{seed}} + $i))" \
@@ -101,10 +101,11 @@ mkconfig nodes seed="42": build-release
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
+            --apikey "{{apikey}}" \
             --output "test-configs/nodes"; \
     done
 
-mkconfig-linux nodes seed="42": build-release
+mkconfig-linux nodes apikey seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
         target/release/configure \
             --seed "$(({{seed}} + $i))" \
@@ -122,6 +123,7 @@ mkconfig-linux nodes seed="42": build-release
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
+            --apikey "{{apikey}}" \
             --output "test-configs/linux"; \
     done
 

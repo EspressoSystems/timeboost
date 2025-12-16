@@ -73,6 +73,9 @@ pub struct TimeboostConfig {
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
+
+    /// Shared secret to access HTTP API.
+    pub(crate) apikey: Option<String>,
 }
 
 impl TimeboostConfig {
