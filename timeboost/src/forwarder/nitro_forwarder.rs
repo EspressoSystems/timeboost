@@ -11,7 +11,6 @@ use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
-use tracing::error;
 use worker::Worker;
 
 pub struct NitroForwarder {

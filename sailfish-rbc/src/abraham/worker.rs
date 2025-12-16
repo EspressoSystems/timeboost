@@ -139,16 +139,9 @@ struct Item<T> {
 }
 
 impl<T> Item<T> {
-    fn none() -> Self {
+    fn new(item: Option<T>) -> Self {
         Self {
-            item: None,
-            defer: Deferred::default(),
-        }
-    }
-
-    fn some(item: T) -> Self {
-        Self {
-            item: Some(item),
+            item,
             defer: Deferred::default(),
         }
     }
@@ -452,7 +445,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             start: now,
             timestamp: now,
             retries: 0,
-            message: Item::some(vertex),
+            message: Item::new(Some(vertex)),
             votes: VoteAccumulator::new(committee.clone()),
             status: Status::Initiated,
         };
@@ -693,7 +686,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 start: now,
                 timestamp: now,
                 retries: 0,
-                message: Item::none(),
+                message: Item::new(None),
                 votes: VoteAccumulator::new(committee.clone()),
                 status: Status::Initiated,
             }
@@ -715,7 +708,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     }
                 }
                 if tracker.message.item.is_none() {
-                    tracker.message = Item::some(vertex);
+                    tracker.message.item = Some(vertex);
                 }
             }
             // We had previously reached a quorum of votes but were missing the
@@ -723,7 +716,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // it to the application.
             Status::Requested => {
                 debug_assert!(tracker.message.item.is_none());
-                tracker.message = Item::some(vertex.clone());
+                tracker.message.item = Some(vertex.clone());
 
                 // Now that we have the message corresponding to the voter quorum we can
                 // broadcast the certificate as well:
@@ -825,7 +818,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 start: now,
                 timestamp: now,
                 retries: 0,
-                message: Item::none(),
+                message: Item::new(None),
                 votes: VoteAccumulator::new(committee.clone()),
                 status: Status::Initiated,
             }
@@ -919,7 +912,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 start: now,
                 timestamp: now,
                 retries: 0,
-                message: Item::none(),
+                message: Item::new(None),
                 votes: VoteAccumulator::new(committee.clone()),
                 status: Status::Initiated,
             }
@@ -1031,7 +1024,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
 
-        tracker.message = Item::some(vertex);
+        tracker.message = Item::new(Some(vertex));
         tracker.status = Status::Delivered;
 
         Ok(())
