@@ -219,7 +219,7 @@ dependencies = [
 [[package]]
 name = "alloy-compat"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "ethers-core",
@@ -1462,7 +1462,7 @@ dependencies = [
  "rand 0.8.5",
  "sha2 0.10.9",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "ureq",
 ]
 
@@ -2609,7 +2609,7 @@ dependencies = [
  "rkyv",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -2625,7 +2625,7 @@ dependencies = [
  "rand 0.8.5",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -2638,7 +2638,7 @@ dependencies = [
  "jf-signature",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -3042,7 +3042,7 @@ dependencies = [
  "tonic 0.12.3",
  "tracing",
  "tracing-core",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -4100,7 +4100,7 @@ source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4
 [[package]]
 name = "espresso-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "alloy-compat",
@@ -5057,7 +5057,7 @@ dependencies = [
 [[package]]
 name = "hotshot"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5092,7 +5092,7 @@ dependencies = [
  "time 0.3.44",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "url",
  "vbs",
 ]
@@ -5100,7 +5100,7 @@ dependencies = [
 [[package]]
 name = "hotshot-builder-api"
 version = "0.1.7"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "async-trait",
  "clap",
@@ -5119,7 +5119,7 @@ dependencies = [
 [[package]]
 name = "hotshot-contract-adapter"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5148,7 +5148,7 @@ dependencies = [
 [[package]]
 name = "hotshot-events-service"
 version = "0.1.57"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "async-broadcast",
@@ -5173,7 +5173,7 @@ dependencies = [
 [[package]]
 name = "hotshot-example-types"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5203,7 +5203,7 @@ dependencies = [
 [[package]]
 name = "hotshot-libp2p-networking"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5228,13 +5228,13 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
 name = "hotshot-macros"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "derive_builder",
  "proc-macro2",
@@ -5245,7 +5245,7 @@ dependencies = [
 [[package]]
 name = "hotshot-query-service"
 version = "0.1.76"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5288,7 +5288,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "trait-variant",
  "url",
  "vbs",
@@ -5298,7 +5298,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "async-broadcast",
  "async-trait",
@@ -5311,7 +5311,7 @@ dependencies = [
 [[package]]
 name = "hotshot-task-impls"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5349,7 +5349,7 @@ dependencies = [
 [[package]]
 name = "hotshot-testing"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5391,7 +5391,7 @@ dependencies = [
 [[package]]
 name = "hotshot-types"
 version = "0.1.11"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5451,7 +5451,7 @@ dependencies = [
 [[package]]
 name = "hotshot-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "tracing",
 ]
@@ -9215,7 +9215,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite 0.28.0",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "url",
 ]
 
@@ -9783,7 +9783,7 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 [[package]]
 name = "sequencer-utils"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "alloy",
  "anyhow",
@@ -11131,7 +11131,7 @@ dependencies = [
  "tracing-distributed",
  "tracing-futures",
  "tracing-log",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "url",
  "vbs",
 ]
@@ -11442,7 +11442,7 @@ dependencies = [
  "timeboost-crypto",
  "timeboost-types",
  "tracing",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -11905,7 +11905,7 @@ dependencies = [
  "itertools 0.9.0",
  "tracing",
  "tracing-core",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -11950,9 +11950,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.3.20"
+version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2054a14f5307d601f88daf0553e1cbf472acc4f2c51afab632431cdcd72124d5"
+checksum = "2f30143827ddab0d256fd843b7a66d164e9f271cfa0dde49142c5ca0ca291f1e"
 dependencies = [
  "matchers",
  "nu-ansi-term",
@@ -11976,7 +11976,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "557b891436fe0d5e0e363427fc7f217abf9ccd510d5136549847bdcbcd011d68"
 dependencies = [
  "tracing-core",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "tracing-test-macro",
 ]
 
@@ -12360,7 +12360,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vid"
 version = "0.1.0"
-source = "git+https://github.com/EspressoSystems/espresso-network.git#8b9fc4700031569032663e4d952e3ee5dccccc74"
+source = "git+https://github.com/EspressoSystems/espresso-network.git#61d465f7cb02d1aa9bd99605dfb153f0c329c8aa"
 dependencies = [
  "anyhow",
  "ark-bn254",
