@@ -56,14 +56,14 @@ constant_time_eq = "0.4"
 criterion = "0.8"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
-derive_more = { version = "2.0", features = ["full"] }
+derive_more = { version = "2.1", features = ["full"] }
 digest = "0.10"
 ed25519-compact = "2.2.0"
 either = { version = "1.13.0", features = ["serde"] }
 ethereum_ssz = "0.10.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
-http = "1.3.1"
+http = "1.4.0"
 ipnet = { version = "2.11.0", features = ["serde"] }
 jiff = { version = "0.2", default-features = false, features = ["serde", "std"] }
 minicbor = { version = "2.1.3", features = ["full"] }
@@ -102,7 +102,7 @@ tonic-prost-build = "0.14.1"
 tower = "0.5.2"
 tower-http = { version = "0.6.7", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 turmoil = "0.7.0"
 url = { version = "2.5.4", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
