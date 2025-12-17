@@ -30,7 +30,7 @@ variable "ssh_user" {
 source "amazon-ebs" "linux" {
   ami_name      = "tx-generator-${var.version}"
   instance_type = "t3a.micro"
-  region        = "eu-west-2"
+  region        = "eu-west-1"
   ami_regions   = var.regions
 
   source_ami_filter {

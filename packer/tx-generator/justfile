@@ -2,7 +2,7 @@ version         := shell('git rev-parse --short HEAD')
 vector-version  := "0.51.1"
 overlay-archive := "tx-generator-overlay.tar.gz"
 ssh_user        := "ec2-user"
-regions         := '["eu-west-2", "eu-west-3"]'
+regions         := '["eu-west-1"]'
 
 init:
     packer init .
