@@ -1181,8 +1181,15 @@ where
     /// we assume that the quorum has restarted and we are in a minority that
     /// did not. Then we should also restart to rejoin the others.
     fn is_restart_required(&self) -> bool {
-        let max = self.nodes.quorum_rev().copied().map(u64::from).unwrap_or(u64::MAX);
-        let min = self.committed_round.saturating_sub(self.committee.size().get() as u64);
+        let max = self
+            .nodes
+            .quorum_rev()
+            .copied()
+            .map(u64::from)
+            .unwrap_or(u64::MAX);
+        let min = self
+            .committed_round
+            .saturating_sub(self.committee.size().get() as u64);
         if max < min {
             error!(node = %self.public_key(), %min, %max, "restart required");
             true
