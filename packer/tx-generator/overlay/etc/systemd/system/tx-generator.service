@@ -6,15 +6,12 @@ Requires=network-online.target
 [Service]
 ExecStart=/usr/local/bin/tx-generator \
   -c /etc/tx-generator/chain.toml \
-  --namespace ${TX_NAMESPACE} \
-  --tps ${TX_TPS} \
-  --signers ${TX_SIGNERS}
+  --namespace {{TX_NAMESPACE}} \
+  --tps {{TX_TPS}} \
+  --signers {{TX_SIGNERS}}
   --nitro
 Environment=RUST_LOG_FORMAT=json
 Environment=RUST_LOG={{LOG_DIRECTIVES}}
-Environment=TX_NAMESPACE={{TX_NAMESPACE}}
-Environment=TX_TPS={{TX_TPS}}
-Environment=TX_SIGNERS={{TX_SIGNERS}}
 Restart=always
 RestartSec=5
 
