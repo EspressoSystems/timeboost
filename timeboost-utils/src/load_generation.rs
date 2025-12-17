@@ -34,28 +34,30 @@ pub enum TransactionVariant {
 }
 
 pub fn create_tx(
-    pubkey: &ThresholdEncKey,
+    pubkey: Option<&ThresholdEncKey>,
     txn: TxInfo,
     enc_ratio: f64,
 ) -> anyhow::Result<TransactionVariant> {
     let mut rng = rand::thread_rng();
     let tx = build_signed(txn)?;
 
-    if rng.gen_bool(enc_ratio) {
-        // encrypt bundle
-        let bytes = ssz::ssz_encode(&vec![tx]);
-        let plaintext = Plaintext::new(bytes);
-        let aad = b"threshold".to_vec();
-        let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
-        let encoded = serialize(&ciphertext)?;
-        return Ok(TransactionVariant::Encrypted(encoded.into()));
+    if let Some(pubkey) = pubkey {
+        if rng.gen_bool(enc_ratio) {
+            // encrypt bundle
+            let bytes = ssz::ssz_encode(&vec![tx]);
+            let plaintext = Plaintext::new(bytes);
+            let aad = b"threshold".to_vec();
+            let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
+            let encoded = serialize(&ciphertext)?;
+            return Ok(TransactionVariant::Encrypted(encoded.into()));
+        }
     }
 
     Ok(TransactionVariant::PlainText(tx))
 }
 
 pub fn create_bundle(
-    pubkey: &ThresholdEncKey,
+    pubkey: Option<&ThresholdEncKey>,
     auction: &Auction,
     txn: TxInfo,
     enc_ratio: f64,
@@ -65,14 +67,16 @@ pub fn create_bundle(
     let max_seqno = 10;
     let mut bundle = create_singleton_bundle(txn)?;
 
-    if rng.gen_bool(enc_ratio) {
-        // encrypt bundle
-        let data = bundle.data();
-        let plaintext = Plaintext::new(data.to_vec());
-        let aad = b"threshold".to_vec();
-        let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
-        let encoded = serialize(&ciphertext)?;
-        bundle.set_encrypted_data(encoded.into());
+    if let Some(pubkey) = pubkey {
+        if rng.gen_bool(enc_ratio) {
+            // encrypt bundle
+            let data = bundle.data();
+            let plaintext = Plaintext::new(data.to_vec());
+            let aad = b"threshold".to_vec();
+            let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
+            let encoded = serialize(&ciphertext)?;
+            bundle.set_encrypted_data(encoded.into());
+        }
     }
 
     if rng.gen_bool(prio_ratio) {
@@ -165,8 +169,8 @@ pub async fn prepare(
 }
 
 /// Transactions per second to milliseconds is 1000 / TPS
-pub fn tps_to_millis<N: Into<u64>>(tps: N) -> u64 {
-    1000 / tps.into()
+pub fn tps_to_millis(tps: f64) -> u64 {
+    (1000.0 / tps) as u64
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Bytes, EncodeError> {
