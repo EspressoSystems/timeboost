@@ -159,8 +159,13 @@ async fn gen_bundles(
             Signer::default().into(),
             timeboost_types::Address::default().into(),
         );
-        let Ok(b) = create_bundle(enc_key.read().await.pubkey(), &auction, t, 0.5f64, 0.5f64)
-        else {
+        let Ok(b) = create_bundle(
+            enc_key.get().map(|t| t.pubkey().clone()).as_ref(),
+            &auction,
+            t,
+            0.5f64,
+            0.5f64,
+        ) else {
             warn!("Failed to generate bundle");
             continue;
         };

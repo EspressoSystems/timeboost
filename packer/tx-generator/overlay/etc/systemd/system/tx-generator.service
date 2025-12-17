@@ -1,0 +1,19 @@
+[Unit]
+Description=Timeboost
+After=network.target
+Requires=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/tx-generator \
+  -c /etc/tx-generator/chain.toml \
+  --namespace {{TX_NAMESPACE}} \
+  --tps {{TX_TPS}} \
+  --signers {{TX_SIGNERS}}
+  --nitro
+Environment=RUST_LOG_FORMAT=json
+Environment=RUST_LOG={{LOG_DIRECTIVES}}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

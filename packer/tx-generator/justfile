@@ -1,9 +1,8 @@
 version         := shell('git rev-parse --short HEAD')
-vector-version  := "0.51.1"
-nitro-image     := "nitro-node:li-sequencer-catchup"
-overlay-archive := "timeboost-overlay.tar.gz"
+vector-version  := "0.52.0"
+overlay-archive := "tx-generator-overlay.tar.gz"
 ssh_user        := "ec2-user"
-regions         := '["eu-west-2", "eu-west-3"]'
+regions         := '["eu-west-1"]'
 
 init:
     packer init .
@@ -15,16 +14,7 @@ format:
     packer fmt .
 
 build:
-    cargo build --release --bin timeboost --features times
-
-[private]
-extract-nitro target:
-    #!/usr/bin/env bash
-    set -e
-    podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
-    MNT=$(podman image mount {{nitro-image}})
-    cp $MNT/usr/local/bin/nitro {{target}}
-    podman image unmount {{nitro-image}}
+    cargo build --release --bin tx-generator
 
 make-overlay: build
     #!/usr/bin/env bash
@@ -35,8 +25,7 @@ make-overlay: build
     dir=$(mktemp -d)
     cp -R overlay $dir/
     mkdir -p $dir/overlay/usr/local/bin
-    cp ../target/release/timeboost $dir/overlay/usr/local/bin/
-    run0 just extract-nitro $dir/overlay/usr/local/bin/
+    cp ../../target/release/tx-generator $dir/overlay/usr/local/bin/
     tar --owner 0 --group 0 -caf {{overlay-archive}} -C $dir/overlay/ .
 
 validate:
@@ -46,7 +35,7 @@ validate:
         --var overlay-archive={{overlay-archive}} \
         --var ssh_user={{ssh_user}} \
         --var regions='{{regions}}' \
-        timeboost.pkr.hcl
+        tx-generator.pkr.hcl
 
 make-image: validate
     packer build \
@@ -55,5 +44,4 @@ make-image: validate
         --var overlay-archive={{overlay-archive}} \
         --var ssh_user={{ssh_user}} \
         --var regions='{{regions}}' \
-        timeboost.pkr.hcl
-
+        tx-generator.pkr.hcl
