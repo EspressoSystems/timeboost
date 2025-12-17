@@ -1,5 +1,5 @@
 version         := shell('git rev-parse --short HEAD')
-vector-version  := "0.51.1"
+vector-version  := "0.52.0"
 overlay-archive := "tx-generator-overlay.tar.gz"
 ssh_user        := "ec2-user"
 regions         := '["eu-west-1"]'
