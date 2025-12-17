@@ -100,9 +100,5 @@ name = "assemble"
 path = "src/binaries/assemble.rs"
 
 [[bin]]
-name = "until"
-path = "src/binaries/until.rs"
-
-[[bin]]
 name = "tx-generator"
 path = "src/binaries/tx-generator.rs"
