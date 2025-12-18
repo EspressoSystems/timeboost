@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
 
 use alloy::network::Ethereum;
+use alloy::rpc::client::RpcClient;
 use alloy::{
     hex::ToHexExt,
     providers::{ProviderBuilder, RootProvider},
@@ -11,6 +12,7 @@ use anyhow::{Context, Result, bail, ensure};
 use bon::Builder;
 use clap::Parser;
 use futures::future::join_all;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Client, Url};
 use serde::Serialize;
 use timeboost::config::{ChainConfig, HTTP_API_PORT_OFFSET};
@@ -121,7 +123,8 @@ impl TxGenerator {
         );
         let duration = Duration::from_millis(tps_to_millis(self.config.tps));
         let mut interval = interval(duration);
-        let p = RootProvider::<Ethereum>::connect(self.config.node_urls[0].json_rpc_url.as_str())
+        let p = self
+            .new_provider(&self.config.node_urls[0].json_rpc_url)
             .await?;
         let auction = self.auction.as_ref().expect("auction is present");
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -176,7 +179,8 @@ impl TxGenerator {
         );
         let duration = Duration::from_millis(tps_to_millis(self.config.tps));
         let mut interval = interval(duration);
-        let p = RootProvider::<Ethereum>::connect(self.config.node_urls[0].json_rpc_url.as_str())
+        let p = self
+            .new_provider(&self.config.node_urls[0].json_rpc_url)
             .await?;
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut count = 0;
@@ -288,6 +292,18 @@ impl TxGenerator {
             Err(err) => {
                 warn!(%err, "failed to send bundle");
             }
+        }
+    }
+
+    async fn new_provider(&self, url: &Url) -> Result<RootProvider> {
+        if let Some(apikey) = &self.config.apikey {
+            let key = HeaderValue::from_str(apikey)?;
+            let hds = HeaderMap::from_iter([(AUTHORIZATION, key)]);
+            let clt = Client::builder().default_headers(hds).build()?;
+            let rpc = RpcClient::new_http_with_client(clt, url.clone());
+            Ok(RootProvider::<Ethereum>::new(rpc))
+        } else {
+            Ok(RootProvider::<Ethereum>::connect(url.as_str()).await?)
         }
     }
 }
