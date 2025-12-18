@@ -230,14 +230,18 @@ impl TxGenerator {
             }
         };
 
-        let req = JsonRpcRequest {
+        let jrpc = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: method.into(),
             params,
             id: 1,
         };
 
-        let result = self.client.post(url.clone()).json(&req).send().await;
+        let mut req = self.client.post(url.clone());
+        if let Some(apikey) = &self.config.apikey {
+            req = req.bearer_auth(apikey)
+        }
+        let result = req.json(&jrpc).send().await;
 
         match result {
             Ok(response) if !response.status().is_success() => {
@@ -253,23 +257,21 @@ impl TxGenerator {
     async fn send_bundle(&self, bundle: &BundleVariant, regular_url: &Url, priority_url: &Url) {
         let result = match bundle {
             BundleVariant::Regular(bundle) => {
-                let req = self.client.post(regular_url.clone()).json(&bundle);
+                let mut req = self.client.post(regular_url.clone()).json(&bundle);
                 if let Some(apikey) = &self.config.apikey {
-                    req.bearer_auth(apikey).send().await
-                } else {
-                    req.send().await
+                    req = req.bearer_auth(apikey)
                 }
+                req.send().await
             }
             BundleVariant::Priority(signed_priority_bundle) => {
-                let req = self
+                let mut req = self
                     .client
                     .post(priority_url.clone())
                     .json(&signed_priority_bundle);
                 if let Some(apikey) = &self.config.apikey {
-                    req.bearer_auth(apikey).send().await
-                } else {
-                    req.send().await
+                    req = req.bearer_auth(apikey)
                 }
+                req.send().await
             }
             _ => {
                 warn!("Unsupported bundle variant");
