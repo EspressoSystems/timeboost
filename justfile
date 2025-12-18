@@ -2,6 +2,7 @@ export RUSTDOCFLAGS := '-D warnings'
 
 log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
 run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
+apikey      := "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -153,7 +154,7 @@ register-key host:
         --index 0 \
         --rpc-url http://{{host}} \
         --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-        --apikey "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM=" \
+        --apikey "{{apikey}}" \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc
@@ -197,6 +198,7 @@ test-all: build-release build-test-utils
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
         --namespace 10101 \
+        --apikey "{{apikey}}" \
         --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
@@ -227,6 +229,7 @@ test-no-express: build-release build-test-utils
     --run   "8|just register-key 127.0.0.1:8545" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.no-express.toml \
+        --apikey "{{apikey}}" \
         --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
@@ -267,6 +270,7 @@ test-dyn-comm: build-release build-test-utils
         --spawn "13|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --enc-ratio 1.0 \
+            --apikey "{{apikey}}" \
             --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
