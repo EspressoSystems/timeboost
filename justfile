@@ -153,6 +153,7 @@ register-key host:
         --index 0 \
         --rpc-url http://{{host}} \
         --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        --apikey "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM=" \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc

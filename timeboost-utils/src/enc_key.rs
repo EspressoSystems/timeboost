@@ -4,8 +4,16 @@ use timeboost_crypto::prelude::ThresholdEncKey;
 
 use tracing::warn;
 
-async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<ThresholdEncKey> {
-    let response = match client.get(enckey_url.clone()).send().await {
+async fn fetch_encryption_key(
+    client: &Client,
+    apikey: Option<&str>,
+    enckey_url: &Url,
+) -> Option<ThresholdEncKey> {
+    let mut req = client.get(enckey_url.clone());
+    if let Some(apikey) = apikey {
+        req = req.bearer_auth(apikey)
+    }
+    let response = match req.send().await {
         Ok(response) => response,
         Err(err) => {
             warn!(%err, "failed to request encryption key");
@@ -36,6 +44,7 @@ pub struct ThresholdEncKeyCellAccumulator {
     output: Option<ThresholdEncKey>,
     // threshold for the accumulator to be considered as matured / finalized
     threshold: usize,
+    apikey: Option<String>,
 }
 
 impl ThresholdEncKeyCellAccumulator {
@@ -54,7 +63,12 @@ impl ThresholdEncKeyCellAccumulator {
             results,
             output: None,
             threshold,
+            apikey: None,
         }
+    }
+
+    pub fn set_apikey(&mut self, apikey: Option<String>) {
+        self.apikey = apikey
     }
 
     /// try to get the threshold encryption key, only available after a threshold of nodes
@@ -65,9 +79,9 @@ impl ThresholdEncKeyCellAccumulator {
             self.output.as_ref()
         } else {
             // first update DKG status for yet-finished nodes
-            for (url, res) in self.results.iter_mut() {
+            for (url, res) in &mut self.results {
                 if res.is_none() {
-                    *res = fetch_encryption_key(&self.client, url).await;
+                    *res = fetch_encryption_key(&self.client, self.apikey.as_deref(), url).await;
                 }
             }
 
