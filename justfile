@@ -332,6 +332,7 @@ netsim nodes: build-release build-test-utils
         --run   "8|just register-key 11.0.1.0:8545" \
         --spawn "9|target/release/tx-generator \
             --chain test-configs/chain.linux.toml \
+            --apikey "{{apikey}}" \
             --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.linux.toml \
