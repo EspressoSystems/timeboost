@@ -24,7 +24,7 @@ extract-nitro target:
     podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
     MNT=$(podman image mount {{nitro-image}})
     cp $MNT/usr/local/bin/nitro {{target}}
-    podman image unmount {{nitro-image}}
+    podman unshare podman image unmount {{nitro-image}}
 
 make-overlay: build
     #!/usr/bin/env bash
