@@ -139,8 +139,8 @@ impl TxGenerator {
             let tx = if self.nitro {
                 match prepare(&p, self.chain_id, sender, receiver.address()).await {
                     Ok(tx) => tx,
-                    Err(_) => {
-                        warn!("failed to prepare txn");
+                    Err(err) => {
+                        warn!(%err, "failed to prepare bundle txn");
                         continue;
                     }
                 }
@@ -188,8 +188,8 @@ impl TxGenerator {
             let tx = if self.nitro {
                 match prepare(&p, self.chain_id, sender, receiver.address()).await {
                     Ok(tx) => tx,
-                    Err(_) => {
-                        warn!("failed to prepare txn");
+                    Err(err) => {
+                        warn!(%err, "failed to prepare raw txn");
                         continue;
                     }
                 }
