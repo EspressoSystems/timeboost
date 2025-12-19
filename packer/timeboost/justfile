@@ -1,6 +1,6 @@
 version         := shell('git rev-parse --short HEAD')
 vector-version  := "0.51.1"
-nitro-image     := "nitro-node:li-sequencer-catchup"
+nitro-image     := "nitro-node:li-timeboost-hotshot-block"
 overlay-archive := "timeboost-overlay.tar.gz"
 ssh_user        := "ec2-user"
 regions         := '["eu-west-2", "eu-west-3"]'
