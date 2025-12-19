@@ -91,6 +91,10 @@ struct Args {
     /// Where to write the config file to.
     #[clap(long, short)]
     output: Option<PathBuf>,
+
+    /// Shared secret to access HTTP API.
+    #[clap(long, short)]
+    apikey: Option<String>,
 }
 
 impl Args {
@@ -122,6 +126,7 @@ impl Args {
             stamp: self
                 .stamp_dir
                 .join(format!("timeboost.{}.stamp", signing_keypair.public_key())),
+            apikey: self.apikey,
             net: Net {
                 bind: self.bind,
                 nitro: self.nitro,
