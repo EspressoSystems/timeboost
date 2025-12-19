@@ -46,7 +46,7 @@
                 "http://espresso-dev-node:41000",
                 "http://espresso-dev-node:41000"
             ],
-            "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+            "block-retry-duration": "0s"
         },
         "decentralized-timeboost-delayed-sequencer": {
             "enable": true
@@ -84,7 +84,6 @@
             "poll-interval-after-batch-post": "2s",
             "error-delay": "2s",
             "is-decentralized-timeboost": true,
-            "decentralized-timeboost-key-management-address": "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35",
             "decentralized-timeboost-batch-verifier": {
                 "wait-for-leader-delay": "1m20s"
             },

@@ -54,7 +54,7 @@ services:
       - timeboost
   rollup-creator:
     pid: host
-    image: ghcr.io/espressosystems/timeboost/rollup-creator:pr-529
+    image: ghcr.io/espressosystems/timeboost/rollup-creator:main
     volumes:
       - "config:/config"
     environment:
@@ -156,7 +156,7 @@ services:
         condition: service_completed_successfully
   nitro0:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-hotshot-block
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8547:8547"
@@ -177,7 +177,6 @@ services:
       - --graphql.enable
       - --graphql.vhosts=*
       - --graphql.corsdomain=*
-      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8004
       - --node.batch-poster.parent-chain-wallet.private-key=2837b8532d9be65995b377eae666b386143f1f211999a05444d395203640ef0f
     networks:
@@ -204,7 +203,7 @@ services:
       retries: 12
   nitro1:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-hotshot-block
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8557:8547"
@@ -220,7 +219,6 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro1:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
-      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8004
       - --node.batch-poster.parent-chain-wallet.private-key=8c2a14253df56cc16553a61406ec6da1e4ecfd7053f66e9e15367a6f1459f6a0
     networks:
@@ -247,7 +245,7 @@ services:
       retries: 12
   nitro2:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-hotshot-block
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8567:8547"
@@ -263,7 +261,6 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro2:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
-      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8004
       - --node.batch-poster.parent-chain-wallet.private-key=da0488a39b7e47c4677804a0911a2a4e4604ef9d0b3aefa44dca7de598866e3d
     networks:
@@ -290,7 +287,7 @@ services:
       retries: 12
   nitro3:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-sequencer-catchup
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-hotshot-block
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8577:8547"
@@ -306,7 +303,6 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro3:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
-      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8004
       - --node.batch-poster.parent-chain-wallet.private-key=ddaf9416def9dc9a2729d3ddd631508ff4e4d75e66451bb219ad42fb944223a0
     networks:
@@ -544,6 +540,8 @@ services:
         condition: service_completed_successfully
   tx-generator:
     image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    environment:
+      - RUST_LOG=info
     entrypoint: |
       bash -c '
         rpc="http://demo-l1-network:8545"
