@@ -49,6 +49,8 @@ enum Command {
         contract: alloy::primitives::Address,
         #[arg(long)]
         mnemonic: String,
+        #[arg(long)]
+        apikey: Option<String>,
     },
 }
 
@@ -110,6 +112,7 @@ async fn main() -> Result<()> {
             rpc_url,
             contract,
             mnemonic,
+            apikey,
         } => {
             let p = ProviderBuilder::new().connect_http(rpc_url.clone());
             let Some(committee) = active_committee(&p, &contract).await? else {
@@ -128,6 +131,7 @@ async fn main() -> Result<()> {
 
             let client = Client::builder().timeout(Duration::from_secs(5)).build()?;
             let mut acc = ThresholdEncKeyCellAccumulator::new(client, urls);
+            acc.set_apikey(apikey);
             let Some(key) = acc.enc_key().await else {
                 bail!("threshold enc key not available on enough nodes")
             };

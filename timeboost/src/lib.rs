@@ -86,6 +86,7 @@ impl Timeboost {
             .enc_key(self.config.threshold_dec_key.clone())
             .express_lane(self.config.chain_config.auction_contract.is_some())
             .metrics(self.prometheus.clone())
+            .maybe_secret(self.config.apikey.clone())
             .build()
     }
 

@@ -6,7 +6,7 @@ use clap::Parser;
 use multisig::CommitteeId;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
-use timeboost::config::{ChainConfig, CommitteeContract, HTTP_API_PORT_OFFSET};
+use timeboost::config::{ChainConfig, CommitteeContract};
 use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};
@@ -44,27 +44,8 @@ struct Args {
     #[clap(long, default_value = "/tmp")]
     tmp: PathBuf,
 
-    #[clap(flatten)]
-    until: UntilArgs,
-
     #[clap(long, short)]
     verbose: bool,
-}
-
-#[derive(Debug, clap::Args)]
-#[group(required = false)]
-pub struct UntilArgs {
-    #[clap(long)]
-    until_round: Option<u64>,
-
-    #[clap(long)]
-    until_decrypt_round: Option<u64>,
-
-    #[clap(long, default_value = "target/release/until")]
-    until: PathBuf,
-
-    #[clap(long, default_value_t = 60)]
-    until_timeout: u64,
 }
 
 #[tokio::main]
@@ -119,24 +100,6 @@ async fn main() -> Result<()> {
         let mut cmd = Cmd::new(&args.timeboost);
         cmd.with_arg("--config")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
-
-        if let Some(until) = &args.until.until_round {
-            let mut u = Cmd::new(args.until.until.clone());
-            u.with_arg("--api")
-                .with_arg(format!(
-                    "http://{}",
-                    m.address.clone().with_offset(HTTP_API_PORT_OFFSET)
-                ))
-                .with_arg("--timeout")
-                .with_arg(args.until.until_timeout.to_string())
-                .with_arg("--sailfish-rounds")
-                .with_arg(until.to_string());
-            if let Some(r) = args.until.until_decrypt_round {
-                u.with_arg("--decrypt-rounds").with_arg(r.to_string());
-            }
-            u.with_arg("--").with_arg(cmd.exe()).with_args(cmd.args());
-            cmd = u;
-        }
         commands.insert(m.signing_key, cmd);
     }
 

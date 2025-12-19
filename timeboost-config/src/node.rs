@@ -18,6 +18,7 @@ pub const GRPC_API_PORT_OFFSET: u16 = 4;
 #[serde(rename_all = "kebab-case")]
 pub struct NodeConfig {
     pub stamp: PathBuf,
+    pub apikey: Option<String>,
     pub net: Net,
     pub keys: NodeKeys,
     pub chain: ChainConfig,

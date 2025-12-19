@@ -96,6 +96,7 @@ async fn main() -> Result<()> {
         .namespace(config.espresso.namespace.into())
         .max_transaction_size(config.espresso.max_transaction_size)
         .chain_config(config.chain.clone())
+        .maybe_apikey(config.apikey.clone())
         .build();
 
     let committees = contract.subscribe(committee.id).await?;

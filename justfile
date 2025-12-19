@@ -2,6 +2,7 @@ export RUSTDOCFLAGS := '-D warnings'
 
 log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
 run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
+apikey      := "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -72,7 +73,7 @@ run *ARGS:
 bench *ARGS:
     cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig nodes seed="42": build-release
+mkconfig nodes apikey seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
         target/release/configure \
             --seed "$(({{seed}} + $i))" \
@@ -90,10 +91,11 @@ mkconfig nodes seed="42": build-release
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
+            --apikey "{{apikey}}" \
             --output "test-configs/nodes"; \
     done
 
-mkconfig-linux nodes seed="42": build-release
+mkconfig-linux nodes apikey seed="42": build-release
     for i in $(seq 0 $(({{nodes}} - 1))); do \
         target/release/configure \
             --seed "$(({{seed}} + $i))" \
@@ -111,6 +113,7 @@ mkconfig-linux nodes seed="42": build-release
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
             --stamp-dir "/tmp" \
+            --apikey "{{apikey}}" \
             --output "test-configs/linux"; \
     done
 
@@ -140,6 +143,7 @@ register-key host:
         --index 0 \
         --rpc-url http://{{host}} \
         --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        --apikey "{{apikey}}" \
         --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 
 test *ARGS: build-port-alloc
@@ -181,6 +185,7 @@ test-all: build-release build-test-utils
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
         --namespace 10101 \
+        --apikey "{{apikey}}" \
         --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
@@ -209,6 +214,7 @@ test-no-express: build-release build-test-utils
     --run   "8|just register-key 127.0.0.1:8545" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.no-express.toml \
+        --apikey "{{apikey}}" \
         --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
@@ -245,6 +251,7 @@ test-dyn-comm: build-release build-test-utils
         --spawn "13|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --enc-ratio 1.0 \
+            --apikey "{{apikey}}" \
             --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
@@ -306,6 +313,7 @@ netsim nodes: build-release build-test-utils
         --run   "8|just register-key 11.0.1.0:8545" \
         --spawn "9|target/release/tx-generator \
             --chain test-configs/chain.linux.toml \
+            --apikey "{{apikey}}" \
             --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
         target/release/block-checker -- \
             --chain test-configs/chain.linux.toml \

@@ -25,11 +25,14 @@ use tokio::{
     net::{TcpListener, ToSocketAddrs},
     sync::mpsc::Sender,
 };
-use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
+use tower::{ServiceBuilder, util::Either};
 use tower_http::{ServiceBuilderExt, request_id::MakeRequestUuid};
+use tower_http::{auth::AsyncRequireAuthorizationLayer, trace::TraceLayer};
 use tracing::{Level, Span, debug, error, span};
 
+use crate::api::auth::Authorize;
+
+mod auth;
 pub mod internal;
 
 #[derive(Debug, Clone, Builder)]
@@ -39,6 +42,7 @@ pub struct ApiServer {
     enc_key: ThresholdKeyCell,
     express_lane: bool,
     metrics: Arc<PrometheusMetrics>,
+    secret: Option<String>,
 }
 
 impl ApiServer {
@@ -50,35 +54,42 @@ impl ApiServer {
         } else {
             Router::new()
         };
-        router.route("/v1/", post(rpc))
-        .route("/v1/encryption-key", get(encryption_key))
-        .route("/i/health", get(health))
-        .route("/i/metrics", get(metrics))
-        .with_state(self.clone())
-        .layer(
-            ServiceBuilder::new()
-                .set_x_request_id(MakeRequestUuid)
-                .layer(TraceLayer::new_for_http()
-                    .make_span_with(|r: &Request<Body>| {
-                        span!(
-                            Level::DEBUG,
-                            "request",
-                            method = %r.method(),
-                            uri = %r.uri(),
-                            id = %r.headers()
-                                .get("x-request-id")
-                                .and_then(|id| id.to_str().ok())
-                                .unwrap_or("N/A")
-                        )
-                    })
-                    .on_request(|_r: &Request<Body>, _s: &Span| {
-                        debug!("request received")
-                    })
-                    .on_response(|r: &Response<Body>, d: Duration, _s: &Span| {
-                        debug!(status = %r.status().as_u16(), duration = ?d, "response created")
-                    })
-            )
-        )
+        router
+            .route("/v1/", post(rpc))
+            .route("/v1/encryption-key", get(encryption_key))
+            .route("/i/health", get(health))
+            .route("/i/metrics", get(metrics))
+            .with_state(self.clone())
+            .layer({
+                let builder = ServiceBuilder::new()
+                    .set_x_request_id(MakeRequestUuid)
+                    .layer(TraceLayer::new_for_http()
+                        .make_span_with(|r: &Request<Body>| {
+                            span!(
+                                Level::DEBUG,
+                                "request",
+                                method = %r.method(),
+                                uri = %r.uri(),
+                                id = %r.headers()
+                                    .get("x-request-id")
+                                    .and_then(|id| id.to_str().ok())
+                                    .unwrap_or("N/A")
+                            )
+                        })
+                        .on_request(|_r: &Request<Body>, _s: &Span| {
+                            debug!("request received")
+                        })
+                        .on_response(|r: &Response<Body>, d: Duration, _s: &Span| {
+                            debug!(status = %r.status().as_u16(), duration = ?d, "response created")
+                        })
+                    );
+                if let Some(secret) = &self.secret {
+                    let auth = AsyncRequireAuthorizationLayer::new(Authorize::new(secret.clone()));
+                    Either::Right(builder.layer(auth))
+                } else {
+                    Either::Left(builder)
+                }
+            })
     }
 
     pub async fn serve<A: ToSocketAddrs>(self, addr: A) -> io::Result<()> {

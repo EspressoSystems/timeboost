@@ -1,4 +1,5 @@
 stamp = "/tmp/timeboost.o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD.stamp"
+apikey = "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
 
 [net]
 bind = "11.0.0.8:8000"
@@ -23,7 +24,7 @@ websocket-url = "ws://11.0.1.0:8545/"
 key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 inbox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 inbox-block-tag = "finalized"
-auction-contract = "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1"
+auction-contract = "0x1a642f0e3c3af545e7acbd38b07251b3990914f1"
 
 [espresso]
 namespace = 10101
