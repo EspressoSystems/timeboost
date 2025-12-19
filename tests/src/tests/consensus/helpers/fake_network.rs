@@ -123,7 +123,6 @@ impl FakeNetwork {
             | Action::Deliver(_)
             | Action::Gc(_)
             | Action::Catchup(_)
-            | Action::RestartRequired
             | Action::UseCommittee(_) => {
                 return;
             }

@@ -422,12 +422,6 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
-
-    /// A minority node detected that the quorum has restarted.
-    ///
-    /// This action indicates that this node should restart asap to
-    /// join the quorum in processing.
-    RestartRequired,
 }
 
 impl<T: Committable> Action<T> {
@@ -480,7 +474,6 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
-            Action::RestartRequired => f.write_str("RestartRequired"),
         }
     }
 }

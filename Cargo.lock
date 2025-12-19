@@ -9555,7 +9555,6 @@ dependencies = [
  "committable 0.2.4",
  "minicbor",
  "multisig",
- "quickcheck",
  "serde",
  "thiserror 2.0.17",
  "tracing",

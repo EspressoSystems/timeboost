@@ -96,7 +96,7 @@ impl Certifier {
             .rx(cmd_rx)
             .info({
                 let c = cfg.committee.committee();
-                NodeInfo::new(c.one_honest_threshold())
+                NodeInfo::new(c, c.one_honest_threshold())
             })
             .history(cfg.committee.committee().quorum_size().get() as u64)
             .build();
@@ -263,7 +263,7 @@ struct Worker {
     clock: RoundNumber,
 
     /// Quorum of block numbers to use with garbage collection.
-    info: NodeInfo<KeyId, BlockNumber>,
+    info: NodeInfo<BlockNumber>,
 
     /// How many extra blocks to keep before GC.
     history: u64,
@@ -529,13 +529,7 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
-        let lower_bound: BlockNumber = self
-            .info
-            .quorum()
-            .copied()
-            .unwrap_or_default()
-            .saturating_sub(self.history)
-            .into();
+        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
 
         // Check if we need to catch up to the others.
         if self.next_block.unwrap_or_default() < lower_bound {

@@ -438,10 +438,6 @@ impl Task {
                         warn!(node = %self.label, id = %r.committee(), "committee not found");
                     }
                 }
-                Ok(Some(CoordinatorEvent::Restart)) => {
-                    error!(node = %self.label, "restart");
-                    return Err(TimeboostError::Restart);
-                }
                 Ok(None) => {}
                 Err(err) => {
                     error!(node = %self.label, %err, "coordinator error");
@@ -532,9 +528,6 @@ pub enum TimeboostError {
 
     #[error("dkg/reshare error: {0}")]
     Dkg(#[from] VessError),
-
-    #[error("restart")]
-    Restart,
 
     #[error("{0}: {0}")]
     Other(
