@@ -66,6 +66,7 @@ enum WorkerState {
     /// be sent out.
     Handshake {
         nonce: Nonce,
+        message: Option<cliquenet::Id>,
         rounds: HashMap<PublicKey, RoundNumber>
     },
     /// This is the normal running state.
@@ -196,6 +197,7 @@ impl<T: Committable> Worker<T> {
             state: if cfg.handshake {
                 WorkerState::Handshake {
                     nonce: Nonce::new(),
+                    message: None,
                     rounds: HashMap::new(),
                 }
             } else {
@@ -377,10 +379,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
     /// Request round number information when starting.
     async fn start(&mut self) -> RbcResult<()> {
-        if let WorkerState::Handshake { nonce, .. } = &mut self.state {
+        if let WorkerState::Handshake { nonce, message, .. } = &mut self.state {
+            debug_assert!(message.is_none());
             let req = Protocol::<'_, T, Validated>::HandshakeRequest(*nonce);
             let bytes = serialize(&req)?;
-            self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?;
+            *message = Some(self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?);
             debug!(node = %self.key, %nonce, "info request broadcasted");
         }
         Ok(())
@@ -506,7 +509,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn on_handshake_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, %r, "handshake response received");
 
-        let WorkerState::Handshake { nonce, rounds } = &mut self.state else {
+        let WorkerState::Handshake { nonce, message, rounds } = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
@@ -548,6 +551,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 .saturating_add(2)
                 .into()
             };
+
+        if let Some(id) = message {
+            self.comm.rm(overlay::MAX_BUCKET, *id);
+        } else {
+            error!(node = %self.key, "missing handshake request message id")
+        }
 
         self.state = WorkerState::Barrier(barrier);
 
