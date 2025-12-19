@@ -90,7 +90,6 @@ mkconfig nodes apikey seed="42": build-release
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
-            --stamp-dir "/tmp" \
             --apikey "{{apikey}}" \
             --output "test-configs/nodes"; \
     done
@@ -112,7 +111,6 @@ mkconfig-linux nodes apikey seed="42": build-release
             --inbox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
             --auction-contract "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1" \
-            --stamp-dir "/tmp" \
             --apikey "{{apikey}}" \
             --output "test-configs/linux"; \
     done

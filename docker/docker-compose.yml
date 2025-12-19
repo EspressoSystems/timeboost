@@ -111,7 +111,6 @@ services:
             --chain-id 1337 \
             --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
             --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-            --stamp-dir "/tmp" \
             --apikey "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM=" \
             --output "/config"
         done
