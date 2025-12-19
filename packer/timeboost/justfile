@@ -36,7 +36,7 @@ make-overlay: build
     cp -R overlay $dir/
     mkdir -p $dir/overlay/usr/local/bin
     cp ../../target/release/timeboost $dir/overlay/usr/local/bin/
-    run0 just extract-nitro $dir/overlay/usr/local/bin/
+    just extract-nitro $dir/overlay/usr/local/bin/
     tar --owner 0 --group 0 -caf {{overlay-archive}} -C $dir/overlay/ .
 
 validate:
