@@ -7,7 +7,7 @@ use multisig::{
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{CommitteeVec, Round, RoundNumber, Vertex};
+use crate::{CommitteeVec, GENESIS_ROUND, Round, RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -539,7 +539,7 @@ pub enum Evidence {
 impl Evidence {
     pub fn round(&self) -> RoundNumber {
         match self {
-            Self::Genesis => RoundNumber::genesis(),
+            Self::Genesis => GENESIS_ROUND,
             Self::Regular(x) => x.data().num(),
             Self::Timeout(x) => x.data().round().num(),
             Self::Handover(x) => x.data().round().num(),

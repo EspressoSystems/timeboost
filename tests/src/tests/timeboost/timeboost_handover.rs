@@ -408,7 +408,6 @@ async fn mk_configs(
             .maybe_previous_decrypt_committee(
                 set_prev.then(|| prev[0].1.decrypt_committee().clone()),
             )
-            .recover(false)
             .leash_len(1000)
             .threshold_dec_key(enc_key.clone())
             .namespace(ChainId::default())
@@ -436,7 +435,6 @@ async fn mk_configs(
             .sign_keypair(kpair)
             .dh_keypair(xpair.clone())
             .address(pa.clone())
-            .recover(false)
             .committee(prod_committee.clone())
             .build();
         nodes.push((enc_key, conf, pcf));

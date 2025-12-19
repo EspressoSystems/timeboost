@@ -31,16 +31,12 @@ use tokio::time::{Duration, sleep};
 use tracing::warn;
 use url::Url;
 
-async fn make_configs<R>(
+async fn make_configs(
     size: NonZeroUsize,
-    recover_index: R,
 ) -> (
     Vec<ThresholdKeyCell>,
     Vec<(SequencerConfig, CertifierConfig)>,
-)
-where
-    R: Into<Option<usize>>,
-{
+) {
     let mut parts = Vec::new();
     for _ in 0..size.into() {
         let [p1, p2, p3] = alloc_ports(3).await.unwrap().try_into().unwrap();
@@ -96,9 +92,8 @@ where
 
     let mut cfgs = Vec::new();
     let mut enc_keys = Vec::new();
-    let recover_index = recover_index.into();
 
-    for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
+    for (kpair, xpair, dkg_sk, sa, da, pa) in parts {
         let enc_key = ThresholdKeyCell::new();
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
@@ -108,7 +103,6 @@ where
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())
             .decrypt_committee((decrypt_committee.clone(), key_store.clone()))
-            .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .threshold_dec_key(enc_key.clone())
             .namespace(ChainId::default())
@@ -136,7 +130,6 @@ where
             .sign_keypair(kpair)
             .dh_keypair(xpair)
             .address(pa)
-            .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .committee(produce_committee.clone())
             .build();
         enc_keys.push(enc_key);

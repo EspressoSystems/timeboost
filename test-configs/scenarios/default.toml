@@ -1,17 +1,3 @@
-# Cleanup previous run:
-
-[[step]]
-action = {
-    kind  = "remove",
-    files = [
-        "/tmp/timeboost.21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.stamp",
-        "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp",
-        "/tmp/timeboost.23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.stamp",
-        "/tmp/timeboost.29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.stamp",
-        "/tmp/timeboost.eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.stamp"
-    ]
-}
-
 # Start whole committee one by one:
 
 [[step]]

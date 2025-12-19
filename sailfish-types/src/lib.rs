@@ -17,7 +17,7 @@ pub use message::{Handover, HandoverMessage};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use nodeinfo::NodeInfo;
 pub use payload::DataSource;
-pub use round::{Round, RoundNumber};
+pub use round::{GENESIS_ROUND, Round, RoundNumber};
 pub use time::{ConsensusTime, HasTime, Timestamp};
 pub use vertex::Vertex;
 

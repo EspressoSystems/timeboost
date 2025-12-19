@@ -1,5 +1,5 @@
 use core::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{ChainConfig, ConfigError, read_toml};
 use anyhow::Result;
@@ -17,7 +17,6 @@ pub const GRPC_API_PORT_OFFSET: u16 = 4;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct NodeConfig {
-    pub stamp: PathBuf,
     pub apikey: Option<String>,
     pub net: Net,
     pub keys: NodeKeys,

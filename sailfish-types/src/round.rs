@@ -34,12 +34,12 @@ impl RoundNumber {
         Self(val)
     }
 
-    pub fn u64(&self) -> u64 {
-        self.0
+    pub const fn genesis() -> Self {
+        GENESIS_ROUND
     }
 
-    pub fn genesis() -> Self {
-        GENESIS_ROUND
+    pub fn u64(&self) -> u64 {
+        self.0
     }
 
     pub fn is_genesis(self) -> bool {

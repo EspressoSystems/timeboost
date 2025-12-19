@@ -10,8 +10,6 @@ pub struct CertifierConfig {
     pub(crate) committee: AddressableCommittee,
     pub(crate) previous_committee: Option<AddressableCommittee>,
     pub(crate) address: Address,
-    #[builder(default = true)]
-    pub(crate) recover: bool,
 }
 
 impl CertifierConfig {

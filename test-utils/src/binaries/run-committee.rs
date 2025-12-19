@@ -46,9 +46,6 @@ struct Args {
 
     #[clap(long, short)]
     verbose: bool,
-
-    #[clap(long, default_value_t = false)]
-    ignore_stamp: bool,
 }
 
 #[tokio::main]
@@ -103,9 +100,6 @@ async fn main() -> Result<()> {
         let mut cmd = Cmd::new(&args.timeboost);
         cmd.with_arg("--config")
             .with_arg(args.nodes.join(format!("{}.toml", m.signing_key)));
-        if args.scenario.is_none() || args.ignore_stamp {
-            cmd.with_arg("--ignore-stamp");
-        }
         commands.insert(m.signing_key, cmd);
     }
 

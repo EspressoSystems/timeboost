@@ -84,10 +84,6 @@ struct Args {
     #[clap(long, default_value_t = 1024 * 1024)]
     max_transaction_size: usize,
 
-    /// Directory to store timeboost stamp file in.
-    #[clap(long, short)]
-    stamp_dir: PathBuf,
-
     /// Where to write the config file to.
     #[clap(long, short)]
     output: Option<PathBuf>,
@@ -123,9 +119,6 @@ impl Args {
         let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
         let config = NodeConfig {
-            stamp: self
-                .stamp_dir
-                .join(format!("timeboost.{}.stamp", signing_keypair.public_key())),
             apikey: self.apikey,
             net: Net {
                 bind: self.bind,

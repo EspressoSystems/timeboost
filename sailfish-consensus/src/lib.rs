@@ -8,7 +8,9 @@ use std::time::Instant;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use multisig::{CommitteeId, KeyId};
-use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
+use sailfish_types::{
+    Action, Evidence, GENESIS_ROUND, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage,
+};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use sailfish_types::{Info, math};
@@ -169,8 +171,8 @@ where
             clock: ConsensusTime(Default::default()),
             nodes: NodeInfo::new(&committee, committee.quorum_size()),
             dag: Dag::new(committee.size()),
-            round: RoundNumber::genesis(),
-            committed_round: RoundNumber::genesis(),
+            round: GENESIS_ROUND,
+            committed_round: GENESIS_ROUND,
             buffer: Dag::new(committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
@@ -193,7 +195,7 @@ where
     pub fn go(&mut self, d: Dag<T>, e: Evidence) -> Vec<Action<T>> {
         info!(node = %self.public_key(), round = %self.round(), "start consensus");
 
-        let r = d.max_round().unwrap_or(RoundNumber::genesis());
+        let r = d.max_round().unwrap_or(GENESIS_ROUND);
 
         self.dag = d;
         self.round = r;
@@ -953,7 +955,7 @@ where
             // This orders vertices by round and source.
             for to_deliver in self
                 .dag
-                .vertex_range(RoundNumber::genesis() + 1..)
+                .vertex_range(GENESIS_ROUND + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
                 let r = to_deliver.round().data();
@@ -1200,13 +1202,14 @@ where
 
         let round = Round::new(self.round, self.committee.id());
 
-        let vertex = Vertex::new(
+        let mut vertex = Vertex::new(
             round,
             Evidence::Handover(cert),
             self.datasource.next(self.round),
             self.key_id,
             &self.keypair,
         );
+        vertex.set_committed_round(r);
         let env = Envelope::signed(vertex, &self.keypair);
 
         #[cfg(feature = "times")]
