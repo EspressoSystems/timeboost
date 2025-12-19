@@ -6,7 +6,7 @@ use clap::Parser;
 use multisig::CommitteeId;
 use test_utils::process::Cmd;
 use test_utils::scenario::{Action, Scenario};
-use timeboost::config::{ChainConfig, CommitteeContract, HTTP_API_PORT_OFFSET};
+use timeboost::config::{ChainConfig, CommitteeContract};
 use timeboost::types::Timestamp;
 use tokio::time::sleep;
 use tokio::{fs, process::Command};

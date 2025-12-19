@@ -1,53 +1,61 @@
 # Cleanup previous run:
 
 [[step]]
-[step.action]
-kind  = "remove"
-files = [
-    "/tmp/timeboost.21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.stamp",
-    "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp",
-    "/tmp/timeboost.23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.stamp",
-    "/tmp/timeboost.29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.stamp",
-    "/tmp/timeboost.eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.stamp"
-]
+action = {
+    kind  = "remove",
+    files = [
+        "/tmp/timeboost.21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.stamp",
+        "/tmp/timeboost.23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.stamp",
+        "/tmp/timeboost.23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.stamp",
+        "/tmp/timeboost.29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU.stamp",
+        "/tmp/timeboost.eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX.stamp"
+    ]
+}
 
 # Start whole committee one by one:
 
 [[step]]
-[step.action]
-kind = "start-node"
-node = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
+action = {
+    kind = "start-node",
+    node = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
+}
 
 [[step]]
-[step.action]
-kind = "start-node"
-node = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+action = {
+    kind = "start-node",
+    node = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+}
 
 [[step]]
-[step.action]
-kind = "start-node"
-node = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
+action = {
+    kind = "start-node",
+    node = "23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij"
+}
 
 [[step]]
-[step.action]
-kind = "start-node"
-node = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
+action = {
+    kind = "start-node",
+    node = "29iGhwSi5p4zJn2XgGLCwWVU5rCw7aMM2Xk8aJnYnDweU"
+}
 
 [[step]]
-[step.action]
-kind = "start-node"
-node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+action = {
+    kind = "start-node",
+    node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+}
 
 # Stop and start one node:
 
 [[step]]
-delay = "+10s"
-[step.action]
-kind = "stop-node"
-node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+delay  = "+10s"
+action = {
+    kind = "stop-node",
+    node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+}
 
 [[step]]
-delay = "+10s"
-[step.action]
-kind = "start-node"
-node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+}
