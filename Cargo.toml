@@ -43,7 +43,7 @@ ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
 async-trait = "0.1"
-axum = "0.8.7"
+axum = "0.8.8"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
@@ -100,7 +100,7 @@ tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
 tower = "0.5.2"
-tower-http = { version = "0.6.7", features = ["auth", "trace", "request-id", "util"] }
+tower-http = { version = "0.6.8", features = ["auth", "trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 turmoil = "0.7.0"
