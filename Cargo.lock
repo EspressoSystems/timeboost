@@ -11315,7 +11315,7 @@ dependencies = [
 [[package]]
 name = "timeboost-contract"
 version = "0.0.0"
-source = "git+https://github.com/EspressoSystems/timeboost-contracts?branch=tw%2Fconfigure-retries#a90ef6244c2e4c765efbadfec97d7b4ed14e535a"
+source = "git+https://github.com/EspressoSystems/timeboost-contracts#d99fc43295bae0cc49c7e47cb298fa8e54c663f4"
 dependencies = [
  "alloy",
  "anyhow",
