@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::{ChainConfig, CommitteeConfig, CommitteeMember};
 use alloy::{eips::BlockNumberOrTag, primitives::Address, providers::ProviderBuilder};
@@ -7,7 +8,7 @@ use futures::StreamExt;
 use futures::stream::{self, BoxStream};
 use multisig::{CommitteeId, x25519};
 use timeboost_contract::KeyManager::{self, CommitteeCreated, CommitteeIdDoesNotExist};
-use timeboost_contract::provider::{HttpProvider, PubSubProvider};
+use timeboost_contract::provider::{HttpProvider, PubSubProvider, PubSubProviderConfig};
 use timeboost_crypto::prelude::DkgEncKey;
 use tracing::error;
 use url::Url;
@@ -63,7 +64,12 @@ impl CommitteeContract {
             available.push(c)
         }
 
-        let provider = Arc::new(PubSubProvider::new(self.websocket_url.clone()).await?);
+        let provider = {
+            let mut cfg = PubSubProviderConfig::new(self.websocket_url.clone());
+            cfg.max_retries = 60;
+            cfg.retry_interval = Duration::from_secs(15);
+            Arc::new(PubSubProvider::new(cfg).await?)
+        };
         let address = self.contract;
         let stream = provider
             .event_stream::<CommitteeCreated>(

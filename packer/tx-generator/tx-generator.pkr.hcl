@@ -31,6 +31,7 @@ source "amazon-ebs" "linux" {
   ami_name      = "tx-generator-${var.version}"
   instance_type = "t3a.micro"
   region        = "eu-west-1"
+  profile       = "timeboost-dev"
   ami_regions   = var.regions
 
   source_ami_filter {
