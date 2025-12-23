@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{str::FromStr, time::Duration};
 
 use alloy::network::Ethereum;
@@ -8,14 +9,17 @@ use alloy::{
     providers::{ProviderBuilder, RootProvider},
     signers::local::PrivateKeySigner,
 };
+use futures::StreamExt;
+
 use anyhow::{Context, Result, bail, ensure};
 use bon::Builder;
 use clap::Parser;
 use futures::future::join_all;
+use futures::stream::BoxStream;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Client, Url};
 use serde::Serialize;
-use timeboost::config::{ChainConfig, HTTP_API_PORT_OFFSET};
+use timeboost::config::{ChainConfig, CommitteeConfig, HTTP_API_PORT_OFFSET};
 use timeboost::{
     config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
 };
@@ -25,6 +29,7 @@ use timeboost_utils::load_generation::{
     TransactionVariant, create_bundle, create_tx, prepare, prepare_test, tps_to_millis,
 };
 use timeboost_utils::logging::init_logging;
+use tokio::time::{Instant, sleep_until};
 use tokio::{
     signal::{
         ctrl_c,
@@ -74,7 +79,6 @@ struct ApiUrl {
 
 #[derive(Debug, Clone, Builder)]
 struct TxGeneratorConfig {
-    node_urls: Vec<ApiUrl>,
     tps: f64,
     enc_ratio: f64,
     prio_ratio: f64,
@@ -86,138 +90,157 @@ struct TxGeneratorConfig {
     apikey: Option<String>,
 }
 
+struct TxGeneratorState {
+    current: CommitteeConfig,
+    next: Option<CommitteeConfig>,
+    provider: RootProvider,
+    node_urls: Vec<ApiUrl>,
+}
+
 struct TxGenerator {
     config: TxGeneratorConfig,
+    state: TxGeneratorState,
     client: Client,
     auction: Option<Auction>,
 }
 
 impl TxGenerator {
-    pub(crate) async fn new(cfg: TxGeneratorConfig) -> Result<Self> {
+    pub(crate) async fn new(cfg: TxGeneratorConfig, current: CommitteeConfig) -> Result<Self> {
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
         let auction = cfg.auction_contract.map(Auction::new);
+        let node_urls = urls_from_config(current.clone())?;
+        let provider = new_provider(&node_urls[0].json_rpc_url, cfg.apikey.as_ref()).await?;
+
+        let state = TxGeneratorState {
+            current,
+            next: None,
+            provider,
+            node_urls,
+        };
 
         Ok(Self {
             config: cfg,
+            state,
             client,
             auction,
         })
     }
 
-    pub(crate) async fn generate(&self) -> Result<()> {
-        if self.auction.is_some() {
-            self.generate_bundles().await
-        } else {
-            self.generate_raw_txs().await
-        }
-    }
+    pub(crate) async fn generate(
+        mut self,
+        mut committees: BoxStream<'static, CommitteeConfig>,
+    ) -> Result<()> {
+        let is_bundle = self.auction.is_some();
 
-    pub(crate) async fn generate_bundles(&self) -> Result<()> {
         info!(
-            r#type     = "bundle",
+            type       = if is_bundle { "bundle" } else { "raw-tx" },
             tps        = %self.config.tps,
             enc_ratio  = %self.config.enc_ratio,
             prio_ratio = %self.config.prio_ratio,
             nitro      = %self.config.nitro,
             "Starting"
         );
-        let duration = Duration::from_millis(tps_to_millis(self.config.tps));
-        let mut interval = interval(duration);
-        let p = self
-            .new_provider(&self.config.node_urls[0].json_rpc_url)
-            .await?;
-        let auction = self.auction.as_ref().expect("auction is present");
+
+        let mut interval = interval(Duration::from_millis(tps_to_millis(self.config.tps)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let mut count = 0;
         loop {
-            let len = self.config.signers.len();
-            let sender = self.config.signers[count % len].clone();
-            let receiver = self.config.signers[(count + 1) % len].clone();
-
-            let tx = if self.config.nitro {
-                match prepare(&p, self.config.chain_id, sender, receiver.address()).await {
-                    Ok(tx) => tx,
-                    Err(err) => {
-                        warn!(%err, "failed to prepare bundle txn");
-                        continue;
-                    }
+            let deadline = self
+                .state
+                .next
+                .clone()
+                .map(|c| unix_to_instant(c.effective.into()));
+            let timeout = async {
+                if let Some(d) = deadline {
+                    sleep_until(d).await;
+                } else {
+                    futures::future::pending::<()>().await;
                 }
-            } else {
-                prepare_test(self.config.chain_id, sender, receiver.address())
             };
+            tokio::select! {
+                _ = interval.tick() => {
+                    match self.submit(count).await {
+                        Ok(()) => { count += 1 },
+                        Err(err) => {
+                            warn!(
+                                error = %err,
+                                committee = %self.state.current.id,
+                                "failed to submit tx"
+                            );
+                        }
+                    }
+                },
+                Some(committee) = committees.next() => {
+                    info!("scheduled next committee: {}", committee.id);
+                    self.state.next = Some(committee)
+                },
+                _ = timeout => {
+                    self.update().await?;
+                }
+            }
+        }
+    }
 
+    async fn update(&mut self) -> Result<()> {
+        let Some(next) = self.state.next.take() else {
+            return Err(anyhow::anyhow!("no next committee"));
+        };
+        self.state.node_urls = urls_from_config(next.clone())?;
+        self.state.current = next;
+        self.state.provider = new_provider(
+            &self.state.node_urls[0].json_rpc_url,
+            self.config.apikey.as_ref(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn submit(&self, count: usize) -> Result<()> {
+        let signers = &self.config.signers;
+        let sender = signers[count % signers.len()].clone();
+        let receiver = signers[(count + 1) % signers.len()].clone();
+
+        let tx = if self.config.nitro {
+            prepare(
+                &self.state.provider,
+                self.config.chain_id,
+                sender,
+                receiver.address(),
+            )
+            .await?
+        } else {
+            prepare_test(self.config.chain_id, sender, receiver.address())
+        };
+
+        if let Some(auction) = &self.auction {
             let bundle = create_bundle(
                 self.config.enc_key.as_ref(),
                 auction,
                 tx,
                 self.config.enc_ratio,
                 self.config.prio_ratio,
-            )
-            .map_err(|_| warn!("failed to generate dev account bundle"))
-            .ok();
-            let Some(b) = bundle else { continue };
-
-            join_all(self.config.node_urls.iter().map(|urls| async {
-                self.send_bundle(&b, &urls.regular_url, &urls.priority_url)
-                    .await
-            }))
-            .await;
-
-            count += 1;
-            interval.tick().await;
-        }
-    }
-
-    pub(crate) async fn generate_raw_txs(&self) -> Result<()> {
-        info!(
-            r#type     = "raw-tx",
-            tps        = %self.config.tps,
-            enc_ratio  = %self.config.enc_ratio,
-            prio_ratio = %self.config.prio_ratio,
-            nitro      = %self.config.nitro,
-            "Starting"
-        );
-        let duration = Duration::from_millis(tps_to_millis(self.config.tps));
-        let mut interval = interval(duration);
-        let p = self
-            .new_provider(&self.config.node_urls[0].json_rpc_url)
-            .await?;
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut count = 0;
-        loop {
-            let len = self.config.signers.len();
-            let sender = self.config.signers[count % len].clone();
-            let receiver = self.config.signers[(count + 1) % len].clone();
-
-            let tx = if self.config.nitro {
-                match prepare(&p, self.config.chain_id, sender, receiver.address()).await {
-                    Ok(tx) => tx,
-                    Err(err) => {
-                        warn!(%err, "failed to prepare raw txn");
-                        continue;
-                    }
-                }
-            } else {
-                prepare_test(self.config.chain_id, sender, receiver.address())
-            };
-
-            let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)
-                .map_err(|_| warn!("failed to generate dev account txn"))
-                .ok();
-
-            let Some(tx) = tx else { continue };
+            )?;
 
             join_all(
-                self.config
+                self.state
                     .node_urls
                     .iter()
-                    .map(|urls| async { self.send_tx(tx.clone(), &urls.json_rpc_url).await }),
+                    .map(|u| self.send_bundle(&bundle, &u.regular_url, &u.priority_url)),
             )
             .await;
+        } else {
+            let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)?;
 
-            count += 1;
-            interval.tick().await;
+            join_all(
+                self.state
+                    .node_urls
+                    .iter()
+                    .map(|u| self.send_tx(tx.clone(), &u.json_rpc_url)),
+            )
+            .await;
         }
+        Ok(())
     }
 
     async fn send_tx(&self, txn: TransactionVariant, url: &Url) {
@@ -294,17 +317,43 @@ impl TxGenerator {
             }
         }
     }
+}
 
-    async fn new_provider(&self, url: &Url) -> Result<RootProvider> {
-        if let Some(apikey) = &self.config.apikey {
-            let key = HeaderValue::from_str(apikey)?;
-            let hds = HeaderMap::from_iter([(AUTHORIZATION, key)]);
-            let clt = Client::builder().default_headers(hds).build()?;
-            let rpc = RpcClient::new_http_with_client(clt, url.clone());
-            Ok(RootProvider::<Ethereum>::new(rpc))
-        } else {
-            Ok(RootProvider::<Ethereum>::connect(url.as_str()).await?)
-        }
+async fn new_provider(url: &Url, apikey: Option<&String>) -> Result<RootProvider> {
+    if let Some(apikey) = apikey {
+        let key = HeaderValue::from_str(apikey)?;
+        let hds = HeaderMap::from_iter([(AUTHORIZATION, key)]);
+        let clt = Client::builder().default_headers(hds).build()?;
+        let rpc = RpcClient::new_http_with_client(clt, url.clone());
+        Ok(RootProvider::<Ethereum>::new(rpc))
+    } else {
+        Ok(RootProvider::<Ethereum>::connect(url.as_str()).await?)
+    }
+}
+
+fn urls_from_config(committee: CommitteeConfig) -> Result<Vec<ApiUrl>> {
+    let mut urls = Vec::new();
+    for m in committee.members {
+        let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
+        let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
+        let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
+        let json_rpc_url = format!("http://{addr}/v1/").parse()?;
+        urls.push(ApiUrl {
+            regular_url,
+            priority_url,
+            json_rpc_url,
+        });
+    }
+    Ok(urls)
+}
+
+fn unix_to_instant(unix_secs: u64) -> Instant {
+    let target = UNIX_EPOCH + Duration::from_secs(unix_secs);
+    let now = SystemTime::now();
+
+    match target.duration_since(now) {
+        Ok(delta) => Instant::now() + delta,
+        Err(_) => Instant::now(),
     }
 }
 
@@ -337,30 +386,18 @@ async fn main() -> Result<()> {
     let chain_config = ChainConfig::read(&args.chain)
         .await
         .with_context(|| format!("could not read chain config {:?}", args.chain))?;
-
     let mut contract = CommitteeContract::from(&chain_config);
-    let Ok(committee) = contract.active().await else {
+
+    let Ok(active) = contract.active().await else {
         bail!("no active committee on contract")
     };
+    let committees = contract.subscribe(active.id).await?;
 
     let signers = args
         .signers
         .into_iter()
         .map(|k| PrivateKeySigner::from_str(&k))
         .collect::<Result<Vec<_>, _>>()?;
-
-    let mut urls = Vec::new();
-    for m in committee.members {
-        let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
-        let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
-        let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
-        let json_rpc_url = format!("http://{addr}/v1/").parse()?;
-        urls.push(ApiUrl {
-            regular_url,
-            priority_url,
-            json_rpc_url,
-        });
-    }
 
     let enc_key = if args.enc_ratio == 0f64 {
         None
@@ -373,7 +410,6 @@ async fn main() -> Result<()> {
     };
 
     let config = TxGeneratorConfig::builder()
-        .node_urls(urls)
         .tps(args.tps)
         .enc_ratio(args.enc_ratio)
         .prio_ratio(args.prio_ratio)
@@ -385,9 +421,9 @@ async fn main() -> Result<()> {
         .maybe_apikey(args.apikey)
         .build();
 
-    let tx_generator = TxGenerator::new(config).await?;
+    let tx_generator = TxGenerator::new(config, active).await?;
 
-    let mut jh = tokio::spawn(async move { tx_generator.generate().await });
+    let mut jh = tokio::spawn(async move { tx_generator.generate(committees).await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {

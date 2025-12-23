@@ -235,22 +235,23 @@ test-dyn-comm: build-release build-test-utils
             --committee 0 \
             --nodes test-configs/nodes/ \
             --verbose" \
+        --spawn "5|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
         --run   "6|sleep 3" \
         --run   "7|just register-key 127.0.0.1:8545" \
-        --run   "8|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-1.toml" \
-        --run   "9|sleep 3" \
-        --spawn "10|target/release/run-committee \
-            --chain test-configs/chain.toml \
-            --committee 1 \
-            --nodes test-configs/nodes/ \
-            --verbose" \
-        --run   "11|sleep 3" \
-        --spawn "12|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
-        --spawn "13|target/release/tx-generator \
+        --spawn "8|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --enc-ratio 1.0 \
             --apikey "{{apikey}}" \
             --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
+        --run   "9|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-1.toml" \
+        --run   "10|sleep 8" \
+        --spawn "11|target/release/run-committee \
+            --chain test-configs/chain.toml \
+            --committee 1 \
+            --nodes test-configs/nodes/ \
+            --verbose" \
+        --run   "12|sleep 3" \
+        --spawn "13|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55010" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
             --namespace 10101 \
