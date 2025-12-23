@@ -211,11 +211,11 @@ impl Decrypter {
 
     /// Send the inclusion list to the Worker for decryption.
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
-        #[cfg(feature = "times")]
-        times::record(DECRYPT_START, *incl.round());
         let round = incl.round();
         let is_encrypted = incl.is_encrypted();
         if is_encrypted {
+            #[cfg(feature = "times")]
+            times::record(DECRYPT_START, *incl.round());
             self.metrics.queued_encrypted.add(1);
         }
         debug!(node = %self.label, %round, %is_encrypted, "enqueuing inclusion list");
@@ -376,15 +376,15 @@ impl Decrypter {
                 );
 
                 if is_encrypted {
+                    #[cfg(feature = "times")]
+                    times::record(DECRYPT_END, *dec_incl.round());
+
                     debug_assert!(
                         !dec_incl.is_encrypted(),
                         "decrypter Worker returned non-decrypted inclusion list"
                     );
                     self.metrics.output_decrypted.add(1);
                 }
-
-                #[cfg(feature = "times")]
-                times::record(DECRYPT_END, *dec_incl.round());
 
                 return Ok(dec_incl);
             } else {
