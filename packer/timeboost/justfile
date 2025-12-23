@@ -1,6 +1,6 @@
 version         := shell('git rev-parse --short HEAD')
 vector-version  := "0.52.0"
-nitro-image     := "nitro-node:li-timeboost-hotshot-block"
+nitro-image     := "nitro-node:li-timeboost-systemd-notifier"
 overlay-archive := "timeboost-overlay.tar.gz"
 ssh_user        := "ec2-user"
 regions         := '["eu-west-2", "eu-west-3"]'
@@ -22,11 +22,19 @@ extract-nitro target:
     #!/usr/bin/env bash
     set -e
     podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
-    podman unshare bash -c '
-        MNT=$(podman image mount {{nitro-image}})
-        cp "$MNT/usr/local/bin/nitro" {{target}}
-        podman image unmount {{nitro-image}}
-    '
+    if [[ "${CI:-}" == "true" ]]; then
+        podman unshare bash -c '
+            MNT=$(podman image mount {{nitro-image}})
+            cp "$MNT/usr/local/bin/nitro" {{target}}
+            podman image unmount {{nitro-image}}
+        '
+    else
+        run0 bash -c '
+            MNT=$(podman image mount {{nitro-image}})
+            cp "$MNT/usr/local/bin/nitro" {{target}}
+            podman image unmount {{nitro-image}}
+        '
+    fi
 
 make-overlay: build
     #!/usr/bin/env bash

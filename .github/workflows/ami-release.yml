@@ -16,9 +16,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Install Podman
-        uses: gacts/install-podman@v1
-
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -46,7 +43,7 @@ jobs:
           cd packer/timeboost
           just init
           just build
-          just make-overlay
+          CI=true just make-overlay
           VERSION=${GITHUB_REF_NAME} just make-image
 
       - name: Build TxGenerator AMI
