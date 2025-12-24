@@ -2,7 +2,7 @@ apikey = "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
 
 [net]
 bind = "127.0.0.1:8050"
-nitro = "127.0.0.1:55000"
+nitro = "127.0.0.1:55010"
 
 [keys.signing]
 secret = "8rNjkteTcKonpHTGoQYNihfkd7YgAfWRixLKTXatsLq9"
