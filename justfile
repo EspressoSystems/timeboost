@@ -322,8 +322,8 @@ netsim nodes: build-release build-test-utils
         --gid $(id -g) \
         --spawn "1|anvil --host 11.0.1.0 --port 8545 --silent" \
         --run   "2|sleep 3" \
-        --run   "3|just deploy-contract 11.0.1.0:8545" \
-        --run   "4|just register-committee 11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
+        --run   "3|just deploy-contract http://11.0.1.0:8545" \
+        --run   "4|just register-committee http://11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
         --spawn "5|target/release/block-maker \
             --chain test-configs/chain.linux.toml \
             --bind 11.0.1.0:55000" \
@@ -337,7 +337,7 @@ netsim nodes: build-release build-test-utils
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
         --run   "7|sleep 3" \
-        --run   "8|just register-key 11.0.1.0:8545" \
+        --run   "8|just register-key http://11.0.1.0:8545" \
         --spawn "9|target/release/tx-generator \
             --chain test-configs/chain.linux.toml \
             --apikey "{{apikey}}"" \
