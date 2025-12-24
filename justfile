@@ -3,6 +3,12 @@ export RUSTDOCFLAGS := '-D warnings'
 log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
 run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
 apikey      := "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM="
+an_host     := "http://127.0.0.1:8545"
+an_mnemonic := "test test test test test test test test test test test junk"
+km_mnemonic := "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+km_addr     := "0x36561082951eed7ffd59cfd82d70570c57072d02"
+km_contract := "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+km_comm_abi := "getCommitteeById(uint64)((uint64,uint64,uint256,(bytes,bytes,bytes,address,string,string)[]))"
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -59,8 +65,8 @@ run-sailfish-demo: build-test-utils build-release
   target/release/run --verbose \
       --spawn "1|anvil --port 8545" \
       --run   "2|sleep 3" \
-      --run   "3|just deploy-contract 127.0.0.1:8545" \
-      --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+      --run   "3|just deploy-contract {{an_host}}" \
+      --run   "4|just register-committee {{an_host}} test-configs/nodes/committees/committee-0.toml" \
       --spawn "5|target/release/sailfish -c test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.toml" \
       --spawn "5|target/release/sailfish -c test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.toml" \
       --spawn "5|target/release/sailfish -c test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.toml" \
@@ -119,30 +125,56 @@ verify-blocks *ARGS: build-test-utils
     target/release/block-verifier {{ARGS}}
 
 deploy-contract host:
-    cast send --value 1ether \
-        --rpc-url http://{{host}} \
-        --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-        0x36561082951eed7ffD59cFD82D70570C57072d02
+    just fund {{host}} {{km_addr}} 1ether "{{an_mnemonic}}"
     target/release/contract deploy \
         --index 0 \
-        --rpc-url http://{{host}} \
-        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+        --rpc-url {{host}} \
+        --mnemonic "{{km_mnemonic}}"
 
 register-committee host path:
     target/release/contract register-committee \
         --committee {{path}} \
         --index 0 \
-        --rpc-url http://{{host}} \
-        --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+        --rpc-url {{host}} \
+        --contract {{km_contract}} \
+        --mnemonic "{{km_mnemonic}}"
 
 register-key host:
     target/release/contract register-key \
         --index 0 \
-        --rpc-url http://{{host}} \
-        --contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+        --rpc-url {{host}} \
+        --contract {{km_contract}} \
         --apikey "{{apikey}}" \
-        --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+        --mnemonic "{{km_mnemonic}}"
+
+fund host address amount mnemonic:
+    cast send --value {{amount}} \
+        --rpc-url {{host}} \
+        --mnemonic "{{mnemonic}}" \
+        --mnemonic-index 0 \
+        {{address}}
+
+bridge host inbox amount mnemonic:
+    cast send {{inbox}} "depositEth()" \
+        --value {{amount}} \
+        --rpc-url {{host}} \
+        --mnemonic "{{mnemonic}}" \
+        --mnemonic-index 0
+
+fetch-key host contract:
+    cast call {{contract}} "thresholdEncryptionKey()" --rpc-url {{host}}
+
+fetch-committee host contract committee_id:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    raw=$(cast call {{contract}} "getCommitteeById(uint64)" {{committee_id}} --rpc-url {{host}})
+    cast abi-decode --json "{{km_comm_abi}}" "$raw" | jq
+
+fetch-active host contract:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    committee_id=$(cast call {{contract}} "currentCommitteeId()(uint64)" --rpc-url {{host}})
+    just fetch-committee {{host}} {{contract}} $committee_id
 
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
@@ -169,8 +201,8 @@ test-all: build-release build-test-utils
     --timeout 120 \
     --spawn "1|anvil --port 8545 --silent" \
     --run   "2|sleep 3" \
-    --run   "3|just deploy-contract 127.0.0.1:8545" \
-    --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+    --run   "3|just deploy-contract {{an_host}}" \
+    --run   "4|just register-committee {{an_host}} test-configs/nodes/committees/committee-0.toml" \
     --spawn "5|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.toml \
@@ -179,12 +211,11 @@ test-all: build-release build-test-utils
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
     --run   "7|sleep 3" \
-    --run   "8|just register-key 127.0.0.1:8545" \
+    --run   "8|just register-key {{an_host}}" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.toml \
         --namespace 10101 \
-        --apikey "{{apikey}}" \
-        --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
+        --apikey "{{apikey}}"" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -199,8 +230,8 @@ test-no-express: build-release build-test-utils
     --timeout 180 \
     --spawn "1|anvil --port 8545 --silent" \
     --run   "2|sleep 3" \
-    --run   "3|just deploy-contract 127.0.0.1:8545" \
-    --run   "4|just register-committee 127.0.0.1:8545 test-configs/no-express/committees/committee-0.toml" \
+    --run   "3|just deploy-contract {{an_host}}" \
+    --run   "4|just register-committee {{an_host}} test-configs/no-express/committees/committee-0.toml" \
     --spawn "5|target/release/block-maker --chain test-configs/chain.no-express.toml --bind 127.0.0.1:55000" \
     --spawn "6|target/release/run-committee \
         --chain test-configs/chain.no-express.toml \
@@ -209,11 +240,10 @@ test-no-express: build-release build-test-utils
         --scenario test-configs/scenarios/rolling-restart.toml \
         --verbose" \
     --run   "7|sleep 3" \
-    --run   "8|just register-key 127.0.0.1:8545" \
+    --run   "8|just register-key {{an_host}}" \
     --spawn "9|target/release/tx-generator \
         --chain test-configs/chain.no-express.toml \
-        --apikey "{{apikey}}" \
-        --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
+        --apikey "{{apikey}}"" \
     target/release/block-checker -- \
         --chain test-configs/chain.toml \
         --namespace 10101 \
@@ -228,16 +258,16 @@ test-dyn-comm: build-release build-test-utils
         --timeout 120 \
         --spawn "1|anvil --port 8545 --silent --block-time 1" \
         --run   "2|sleep 3" \
-        --run   "3|just deploy-contract 127.0.0.1:8545" \
-        --run   "4|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-0.toml" \
+        --run   "3|just deploy-contract {{an_host}}" \
+        --run   "4|just register-committee {{an_host}} test-configs/nodes/committees/committee-0.toml" \
         --spawn "5|target/release/run-committee \
             --chain test-configs/chain.toml \
             --committee 0 \
             --nodes test-configs/nodes/ \
             --verbose" \
         --run   "6|sleep 3" \
-        --run   "7|just register-key 127.0.0.1:8545" \
-        --run   "8|just register-committee 127.0.0.1:8545 test-configs/nodes/committees/committee-1.toml" \
+        --run   "7|just register-key {{an_host}}" \
+        --run   "8|just register-committee {{an_host}} test-configs/nodes/committees/committee-1.toml" \
         --run   "9|sleep 3" \
         --spawn "10|target/release/run-committee \
             --chain test-configs/chain.toml \
@@ -249,8 +279,7 @@ test-dyn-comm: build-release build-test-utils
         --spawn "13|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --enc-ratio 1.0 \
-            --apikey "{{apikey}}" \
-            --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
+            --apikey "{{apikey}}"" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
             --namespace 10101 \
@@ -293,8 +322,8 @@ netsim nodes: build-release build-test-utils
         --gid $(id -g) \
         --spawn "1|anvil --host 11.0.1.0 --port 8545 --silent" \
         --run   "2|sleep 3" \
-        --run   "3|just deploy-contract 11.0.1.0:8545" \
-        --run   "4|just register-committee 11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
+        --run   "3|just deploy-contract http://11.0.1.0:8545" \
+        --run   "4|just register-committee http://11.0.1.0:8545 test-configs/linux/committees/linux-{{nodes}}.toml" \
         --spawn "5|target/release/block-maker \
             --chain test-configs/chain.linux.toml \
             --bind 11.0.1.0:55000" \
@@ -308,11 +337,10 @@ netsim nodes: build-release build-test-utils
             --scenario test-configs/scenarios/default.toml \
             --verbose" \
         --run   "7|sleep 3" \
-        --run   "8|just register-key 11.0.1.0:8545" \
+        --run   "8|just register-key http://11.0.1.0:8545" \
         --spawn "9|target/release/tx-generator \
             --chain test-configs/chain.linux.toml \
-            --apikey "{{apikey}}" \
-            --signers $(cast wallet new --json | jq -r '.[0].private_key')" \
+            --apikey "{{apikey}}"" \
         target/release/block-checker -- \
             --chain test-configs/chain.linux.toml \
             --namespace 10101 \
