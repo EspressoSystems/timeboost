@@ -29,5 +29,8 @@ target/
 # Vim
 bacon.toml
 
+# Zed
+.zed/settings.json
+
 __pycache__/
 *.DS_Store

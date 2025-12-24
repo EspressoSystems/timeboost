@@ -9,11 +9,10 @@ use alloy::{
     providers::{ProviderBuilder, RootProvider},
     signers::local::PrivateKeySigner,
 };
-use futures::StreamExt;
-
 use anyhow::{Context, Result, bail, ensure};
 use bon::Builder;
 use clap::Parser;
+use futures::StreamExt;
 use futures::future::join_all;
 use futures::stream::BoxStream;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
@@ -198,19 +197,13 @@ impl TxGenerator {
 
     async fn submit(&self, count: usize) -> Result<()> {
         let signers = &self.config.signers;
-        let sender = signers[count % signers.len()].clone();
-        let receiver = signers[(count + 1) % signers.len()].clone();
+        let s = signers[count % signers.len()].clone();
+        let r = signers[(count + 1) % signers.len()].clone();
 
         let tx = if self.config.nitro {
-            prepare(
-                &self.state.provider,
-                self.config.chain_id,
-                sender,
-                receiver.address(),
-            )
-            .await?
+            prepare(&self.state.provider, self.config.chain_id, s, r.address()).await?
         } else {
-            prepare_test(self.config.chain_id, sender, receiver.address())
+            prepare_test(self.config.chain_id, s, r.address())
         };
 
         if let Some(auction) = &self.auction {
