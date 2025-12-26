@@ -293,7 +293,7 @@ impl Network {
         }
 
         let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
-        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len());
+        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len() * 2);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
