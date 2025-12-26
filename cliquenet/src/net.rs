@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Interval, MissedTickBehavior, sleep, timeout};
 use tokio::{
     spawn,
@@ -75,7 +76,7 @@ pub struct Network {
     /// MPSC receiver of messages from a remote party.
     ///
     /// The public key identifies the remote.
-    rx: Receiver<(PublicKey, Bytes)>,
+    rx: Receiver<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// Handle of the server task that has been spawned by `Network`.
     srv: JoinHandle<Result<Empty>>,
@@ -123,7 +124,7 @@ struct Server<T: tcp::Listener> {
     /// MPSC sender for messages received over a connection to a party.
     ///
     /// (see `Network` for the accompanying receiver).
-    ibound: Sender<(PublicKey, Bytes)>,
+    ibound: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// MPSC receiver for server task instructions.
     ///
@@ -292,8 +293,19 @@ impl Network {
             );
         }
 
+        // Command channel from application to network.
         let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
-        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len() * 2);
+
+        // Channel of messages from peers to the application.
+        //
+        // Inbound messages from each peer are allowed to accumulate up to
+        // 2 * PEER_CAPACITY (see `spawn_io` below), leading to a total
+        // allowed inbound capacity of c = (n - 1) * 2 * PEER_CAPACITY
+        // (where n is the number of parties).
+        //
+        // This leaves room for n * 3 * PEER_CAPACITY - c messages we
+        // receive from ourselves.
+        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len() * 3);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -372,7 +384,8 @@ impl Network {
 
     /// Receive a message from a remote party.
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
-        self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
+        let (k, b, _) = self.rx.recv().await.ok_or(NetworkError::ChannelClosed)?;
+        Ok((k, b))
     }
 
     /// Add the given peers to the network.
@@ -650,7 +663,7 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m)).is_err() {
+                            if self.ibound.try_send((self.key, m, None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -689,7 +702,7 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -734,7 +747,7 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -904,6 +917,7 @@ where
         let ibound = self.ibound.clone();
         let to_write = to_remote.clone();
         let countdown = Countdown::new();
+        let budget = Arc::new(Semaphore::new(2 * PEER_CAPACITY));
         let rh = self.io_tasks.spawn(recv_loop(
             self.name,
             k,
@@ -912,6 +926,7 @@ where
             ibound,
             to_write,
             self.metrics.clone(),
+            budget,
             countdown.clone(),
         ));
         let wh = self
@@ -1056,9 +1071,10 @@ async fn recv_loop<R>(
     id: PublicKey,
     mut reader: R,
     state: Arc<Mutex<TransportState>>,
-    to_deliver: Sender<(PublicKey, Bytes)>,
+    to_deliver: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
     to_writer: chan::Sender<Message>,
     metrics: Arc<NetworkMetrics>,
+    budget: Arc<Semaphore>,
     mut countdown: Countdown,
 ) -> Result<()>
 where
@@ -1066,6 +1082,11 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
+        let permit = budget
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| NetworkError::BudgetClosed)?;
         let mut msg = BytesMut::new();
         loop {
             tokio::select! {
@@ -1112,7 +1133,11 @@ where
                 }
             }
         }
-        if to_deliver.send((id, msg.freeze())).await.is_err() {
+        if to_deliver
+            .send((id, msg.freeze(), Some(permit)))
+            .await
+            .is_err()
+        {
             break;
         }
     }

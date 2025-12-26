@@ -27,10 +27,8 @@ impl NetworkMetrics {
         let connects = parties
             .into_iter()
             .map(|k| {
-                (
-                    k,
-                    m.create_counter(&format!("{label}_{k}_connect_attempts"), None),
-                )
+                let c = m.create_counter(&format!("{label}_{k}_connect_attempts"), None);
+                (k, c)
             })
             .collect::<HashMap<_, _>>();
 
@@ -38,10 +36,8 @@ impl NetworkMetrics {
             .keys()
             .copied()
             .map(|k| {
-                (
-                    k,
-                    m.create_gauge(&format!("{label}_{k}_latency"), Some("ms")),
-                )
+                let g = m.create_gauge(&format!("{label}_{k}_latency"), Some("ms"));
+                (k, g)
             })
             .collect();
 
