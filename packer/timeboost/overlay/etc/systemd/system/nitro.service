@@ -5,7 +5,7 @@ Requires=network-online.target
 
 [Service]
 Type=notify
-NotifyAccess=all
+NotifyAccess=exec
 ExecStart=/usr/local/bin/nitro --log-type=json --conf.file=/etc/nitro/sequencer_config.json
 Environment=HOME=/home/ec2-user
 Restart=always
