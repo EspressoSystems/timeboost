@@ -458,6 +458,9 @@ where
                 oqueue     = %self.obound.capacity(),
             );
 
+            self.metrics.iqueue.set(self.ibound.capacity());
+            self.metrics.oqueue.set(self.obound.capacity());
+
             tokio::select! {
                 // Accepted a new connection.
                 i = listener.accept() => match i {
@@ -638,7 +641,6 @@ where
                         }
                     }
                     Some(Command::Unicast(to, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if to == self.key {
                             trace!(
                                 name  = %self.name,
@@ -678,7 +680,6 @@ where
                         }
                     }
                     Some(Command::Multicast(peers, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if peers.contains(&self.key) {
                             trace!(
                                 name  = %self.name,
@@ -724,7 +725,6 @@ where
                         }
                     }
                     Some(Command::Broadcast(id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if self.role.is_active() {
                             trace!(
                                 name  = %self.name,
@@ -914,13 +914,9 @@ where
             self.metrics.clone(),
             countdown.clone(),
         ));
-        let wh = self.io_tasks.spawn(send_loop(
-            w,
-            t2,
-            from_remote,
-            self.metrics.clone(),
-            countdown,
-        ));
+        let wh = self
+            .io_tasks
+            .spawn(send_loop(w, t2, from_remote, countdown));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -1090,7 +1086,7 @@ where
                                     let n = state.lock().read_message(&f, &mut buf)?;
                                     if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
                                         if let Some(delay) = Timestamp::now().diff(ping) {
-                                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+                                            metrics.set_latency(&id, delay)
                                         }
                                     }
                                 }
@@ -1119,7 +1115,6 @@ where
         if to_deliver.send((id, msg.freeze())).await.is_err() {
             break;
         }
-        metrics.received.add(1);
     }
     Ok(())
 }
@@ -1132,7 +1127,6 @@ async fn send_loop<W>(
     mut writer: W,
     state: Arc<Mutex<TransportState>>,
     rx: chan::Receiver<Message>,
-    metrics: Arc<NetworkMetrics>,
     countdown: Countdown,
 ) -> Result<()>
 where
@@ -1164,7 +1158,6 @@ where
                     };
                     send_frame(&mut writer, h, &buf[..n]).await?
                 }
-                metrics.sent.add(1);
             }
         }
     }
