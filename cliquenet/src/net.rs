@@ -667,7 +667,8 @@ where
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping unicast message"
                                 )
                             }
                             continue
@@ -706,7 +707,8 @@ where
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping multicast message"
                                 )
                             }
                         }
@@ -751,7 +753,8 @@ where
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping broadcast message"
                                 )
                             }
                         }
