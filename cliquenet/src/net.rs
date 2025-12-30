@@ -688,15 +688,7 @@ where
                             );
                             #[cfg(feature = "metrics")]
                             self.metrics.set_peer_oqueue_cap(&to, task.tx.capacity());
-                            if task.tx.try_send(id, Message::Data(m)).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                self.reconnect(to)
-                            }
+                            task.tx.send(id, Message::Data(m))
                         }
                     }
                     Some(Command::Multicast(peers, id, m)) => {
@@ -718,7 +710,6 @@ where
                                 )
                             }
                         }
-                        let mut reconnect = Vec::new();
                         for (to, task) in &self.active {
                             if !peers.contains(to) {
                                 continue
@@ -733,18 +724,7 @@ where
                             );
                             #[cfg(feature = "metrics")]
                             self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
-                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                reconnect.push(*to);
-                            }
-                        }
-                        for k in reconnect {
-                            self.reconnect(k)
+                            task.tx.send(id, Message::Data(m.clone()))
                         }
                     }
                     Some(Command::Broadcast(id, m)) => {
@@ -766,7 +746,6 @@ where
                                 )
                             }
                         }
-                        let mut reconnect = Vec::new();
                         for (to, task) in &self.active {
                             if Some(Role::Active) != self.peers.get(to).map(|p| p.role) {
                                 continue
@@ -781,18 +760,7 @@ where
                             );
                             #[cfg(feature = "metrics")]
                             self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
-                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                reconnect.push(*to);
-                            }
-                        }
-                        for k in reconnect {
-                            self.reconnect(k)
+                            task.tx.send(id, Message::Data(m.clone()))
                         }
                     }
                     None => {
@@ -802,7 +770,7 @@ where
                 _ = self.ping_interval.tick() => {
                     let now = Timestamp::now();
                     for task in self.active.values() {
-                        let _ = task.tx.try_send(None, Message::Ping(now));
+                        task.tx.send(None, Message::Ping(now))
                     }
                 }
             }
@@ -857,17 +825,6 @@ where
                 "i/o task was previously replaced"
             );
         }
-    }
-
-    /// Unless already connecting, drop the active connection and connect again.
-    fn reconnect(&mut self, k: PublicKey) {
-        if self.connecting.contains_key(&k) {
-            debug!(name = %self.name, node = %self.key, peer = %k, "connect task in progress");
-            return;
-        }
-        self.active.remove(&k);
-        debug!(name = %self.name, node = %self.key, peer = %k, "reconnecting");
-        self.spawn_connect(k)
     }
 
     /// Spawns a new connection task to a peer identified by public key.
@@ -1118,7 +1075,7 @@ where
                                     // Received ping message; sending pong to writer
                                     let n = state.lock().read_message(&f, &mut buf)?;
                                     if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
-                                        let _ = to_writer.try_send(None, Message::Pong(ping));
+                                        to_writer.send(None, Message::Pong(ping))
                                     }
                                 }
                                 Ok(Type::Pong) => {
