@@ -25,7 +25,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 pub mod time_series {
     pub const ROUND_START: &str = "round_start";
     pub const DELIVERED: &str = "delivered";

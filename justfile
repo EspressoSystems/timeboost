@@ -8,7 +8,7 @@ build *ARGS:
   cargo build {{ARGS}}
 
 build-release *ARGS:
-  cargo build --release --workspace --all-targets {{ARGS}}
+  cargo build --release --workspace --all-targets {{ARGS}} --features metrics
 
 [private]
 build-port-alloc:

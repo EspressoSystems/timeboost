@@ -6,16 +6,16 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-times = ["dep:times", "sailfish-types/times"]
-test  = []
+metrics = ["dep:prometheus", "dep:times", "sailfish-types/metrics"]
+test    = []
 
 [dependencies]
 committable = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 tracing = { workspace = true }
 # optional:
+prometheus = { workspace = true, optional = true }
 times = { path = "../times", optional = true }
 
 [dev-dependencies]

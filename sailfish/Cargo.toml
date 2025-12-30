@@ -6,8 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-test  = ["sailfish-consensus/test"]
-times = ["sailfish-consensus/times", "sailfish-rbc/times"]
+metrics = ["sailfish-consensus/metrics", "sailfish-rbc/metrics"]
+test    = ["sailfish-consensus/test"]
 
 [dependencies]
 arrayvec = { workspace = true }

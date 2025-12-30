@@ -26,7 +26,10 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY, Role};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, PEER_CAPACITY, Role};
+
+#[cfg(feature = "metrics")]
+use crate::metrics::NetworkMetrics;
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -156,11 +159,12 @@ struct Server<T: tcp::Listener> {
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
 
-    /// For gathering network metrics.
-    metrics: Arc<NetworkMetrics>,
-
     /// Interval at which to ping peers.
     ping_interval: Interval,
+
+    /// For gathering network metrics.
+    #[cfg(feature = "metrics")]
+    metrics: Arc<NetworkMetrics>,
 }
 
 #[derive(Debug)]
@@ -219,17 +223,14 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<tokio::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+        Self::generic_create::<tokio::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
+            .await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
@@ -242,17 +243,14 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
+            .await
     }
 
     async fn generic_create<T, P, A1, A2>(
@@ -261,7 +259,6 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
@@ -325,8 +322,12 @@ impl Network {
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
-            metrics: Arc::new(metrics),
             ping_interval: interval,
+            #[cfg(feature = "metrics")]
+            metrics: Arc::new(
+                NetworkMetrics::new(name, parties.keys().copied().filter(|k| *k != label))
+                    .expect("valid metrics definitions"),
+            ),
         };
 
         Ok(Self {
@@ -471,8 +472,11 @@ where
                 oqueue     = %self.obound.capacity(),
             );
 
-            self.metrics.iqueue.set(self.ibound.capacity());
-            self.metrics.oqueue.set(self.obound.capacity());
+            #[cfg(feature = "metrics")]
+            {
+                self.metrics.iqueue.set(self.ibound.capacity() as i64);
+                self.metrics.oqueue.set(self.obound.capacity() as i64);
+            }
 
             tokio::select! {
                 // Accepted a new connection.
@@ -682,6 +686,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(&to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m)).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -725,6 +731,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -771,6 +779,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -876,6 +886,7 @@ where
             (self.key, self.keypair.clone()),
             (k, *x),
             p.addr.clone(),
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
         ));
         assert!(self.task2key.insert(h.id(), k).is_none());
@@ -928,6 +939,7 @@ where
             t1,
             ibound,
             to_write,
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
             budget,
             countdown.clone(),
@@ -943,7 +955,8 @@ where
             tx: to_remote,
         };
         self.active.insert(k, io);
-        self.metrics.connections.set(self.active.len());
+        #[cfg(feature = "metrics")]
+        self.metrics.connections.set(self.active.len() as i64);
     }
 
     /// Get the public key of a party by their static X25519 public key.
@@ -976,7 +989,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
     addr: Address,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
 ) -> (T, TransportState) {
     use rand::prelude::*;
 
@@ -1000,6 +1013,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     {
         sleep(Duration::from_millis(d)).await;
         debug!(%name, node = %this.0, peer = %to.0, %addr, "connecting");
+        #[cfg(feature = "metrics")]
         metrics.add_connect_attempt(&to.0);
         match timeout(CONNECT_TIMEOUT, T::connect(&addr)).await {
             Ok(Ok(s)) => {
@@ -1076,7 +1090,7 @@ async fn recv_loop<R>(
     state: Arc<Mutex<TransportState>>,
     to_deliver: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
     to_writer: chan::Sender<Message>,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
     budget: Arc<Semaphore>,
     mut countdown: Countdown,
 ) -> Result<()>
@@ -1085,6 +1099,8 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
+        #[cfg(feature = "metrics")]
+        metrics.set_peer_iqueue_cap(&id, budget.available_permits());
         let permit = budget
             .clone()
             .acquire_owned()
@@ -1107,8 +1123,9 @@ where
                                 }
                                 Ok(Type::Pong) => {
                                     // Received pong message; measure elapsed time
-                                    let n = state.lock().read_message(&f, &mut buf)?;
-                                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                                    let _n = state.lock().read_message(&f, &mut buf)?;
+                                    #[cfg(feature = "metrics")]
+                                    if let Some(ping) = Timestamp::try_from_slice(&buf[.._n]) {
                                         if let Some(delay) = Timestamp::now().diff(ping) {
                                             metrics.set_latency(&id, delay)
                                         }

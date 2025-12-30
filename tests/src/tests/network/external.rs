@@ -2,7 +2,7 @@ pub mod test_simple_network;
 
 use std::collections::HashMap;
 
-use cliquenet::{Network, NetworkMetrics, Overlay};
+use cliquenet::{Network, Overlay};
 use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
@@ -61,7 +61,6 @@ impl TestableNetwork for BasicNetworkTest {
                 kpr.public_key(),
                 xpr.clone(),
                 self.group.peers.clone(),
-                NetworkMetrics::default(),
             )
             .await
             .expect("failed to make network");

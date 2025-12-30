@@ -1,9 +1,10 @@
 mod dag;
+
+#[cfg(feature = "metrics")]
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
-use std::time::Instant;
 
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
@@ -16,10 +17,12 @@ use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use sailfish_types::{Info, math};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
-pub use dag::Dag;
-pub use metrics::ConsensusMetrics;
+#[cfg(feature = "metrics")]
+use metrics::ConsensusMetrics;
 
-#[cfg(feature = "times")]
+pub use dag::Dag;
+
+#[cfg(feature = "metrics")]
 use sailfish_types::time_series::{DELIVERED, ROUND_START};
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
@@ -116,18 +119,11 @@ pub struct Consensus<T> {
     datasource: Box<dyn DataSource<Data = T> + Send>,
 
     /// The consensus metrics for this node.
+    #[cfg(feature = "metrics")]
     metrics: ConsensusMetrics,
-
-    /// The timer for recording metrics related to duration of consensus operations.
-    metrics_timer: std::time::Instant,
 }
 
 impl<T> Consensus<T> {
-    pub fn with_metrics(mut self, m: ConsensusMetrics) -> Self {
-        self.metrics = m;
-        self
-    }
-
     pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
@@ -183,8 +179,8 @@ where
             next_committee: None,
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
-            metrics: Default::default(),
-            metrics_timer: Instant::now(),
+            #[cfg(feature = "metrics")]
+            metrics: ConsensusMetrics::new().expect("valid metrics definitions"),
         }
     }
 
@@ -213,7 +209,7 @@ where
             );
             let env = Envelope::signed(vtx, &self.keypair);
             let rnd = Round::new(r, self.committee.id());
-            #[cfg(feature = "times")]
+            #[cfg(feature = "metrics")]
             times::record(ROUND_START, *env.data().round().data().num());
             vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
         } else {
@@ -347,7 +343,8 @@ where
         };
         let t = TimeoutMessage::new(self.committee.id(), e, &self.keypair);
         let e = Envelope::signed(t, &self.keypair);
-        self.metrics.rounds_timed_out.add(1);
+        #[cfg(feature = "metrics")]
+        self.metrics.rounds_timed_out.inc();
         vec![Action::SendTimeout(e)]
     }
 
@@ -404,7 +401,8 @@ where
         match self.try_to_add_to_dag(v) {
             Err(v) => {
                 self.buffer.add(v);
-                self.metrics.vertex_buffer.set(self.buffer.depth());
+                #[cfg(feature = "metrics")]
+                self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
             }
             Ok(a) => {
                 actions.extend(a);
@@ -572,7 +570,8 @@ where
             }
         }
 
-        self.metrics.timeout_buffer.set(self.timeouts.len());
+        #[cfg(feature = "metrics")]
+        self.metrics.timeout_buffer.set(self.timeouts.len() as i64);
 
         actions
     }
@@ -681,11 +680,8 @@ where
             let v = self.create_new_vertex(self.round, evidence);
             actions.extend(self.broadcast_vertex(v.0));
             self.clear_aggregators(self.round);
-            self.metrics
-                .round_duration
-                .add_point(self.metrics_timer.elapsed().as_secs_f64());
-            self.metrics_timer = std::time::Instant::now();
-            self.metrics.round.set(*self.round as usize);
+            #[cfg(feature = "metrics")]
+            self.metrics.round.set(*self.round as i64);
             return actions;
         }
 
@@ -716,11 +712,8 @@ where
             debug_assert!(v.evidence().is_timeout());
             actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
-            self.metrics
-                .round_duration
-                .add_point(self.metrics_timer.elapsed().as_secs_f64());
-            self.metrics_timer = std::time::Instant::now();
-            self.metrics.round.set(*self.round as usize);
+            #[cfg(feature = "metrics")]
+            self.metrics.round.set(*self.round as i64);
             return actions;
         }
 
@@ -762,11 +755,8 @@ where
         v.set_no_vote(nc);
         actions.extend(self.broadcast_vertex(v));
         self.clear_aggregators(self.round);
-        self.metrics
-            .round_duration
-            .add_point(self.metrics_timer.elapsed().as_secs_f64());
-        self.metrics_timer = std::time::Instant::now();
-        self.metrics.round.set(*self.round as usize);
+        #[cfg(feature = "metrics")]
+        self.metrics.round.set(*self.round as i64);
         actions
     }
 
@@ -774,7 +764,7 @@ where
     fn broadcast_vertex(&mut self, v: Vertex<T>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), vertex = %v, "broadcast vertex");
         let e = Envelope::signed(v, &self.keypair);
-        #[cfg(feature = "times")]
+        #[cfg(feature = "metrics")]
         times::record(ROUND_START, *e.data().round().data().num());
         vec![Action::SendProposal(e)]
     }
@@ -831,7 +821,8 @@ where
         let is_genesis_vertex = v.is_genesis() || v.is_first_after_handover();
 
         self.dag.add(v);
-        self.metrics.dag_depth.set(self.dag.depth());
+        #[cfg(feature = "metrics")]
+        self.metrics.dag_depth.set(self.dag.depth() as i64);
 
         if is_genesis_vertex {
             // A genesis vertex has no edges to prior rounds.
@@ -906,7 +897,8 @@ where
             }
         }
 
-        self.metrics.vertex_buffer.set(self.buffer.depth());
+        #[cfg(feature = "metrics")]
+        self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
         actions
     }
 
@@ -938,9 +930,10 @@ where
         }
         self.committed_round = v.round().data().num();
         trace!(node = %self.public_key(), commit = %self.committed_round, "committed round");
+        #[cfg(feature = "metrics")]
         self.metrics
             .committed_round
-            .set(*self.committed_round as usize);
+            .set(*self.committed_round as i64);
         self.order_vertices()
     }
 
@@ -966,7 +959,7 @@ where
                 let b = to_deliver.payload().clone();
                 let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                #[cfg(feature = "times")]
+                #[cfg(feature = "metrics")]
                 times::record_once(DELIVERED, *r.num());
                 actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
                 self.delivered.insert((r.num(), s));
@@ -1027,9 +1020,12 @@ where
             }
         }
 
-        self.metrics.dag_depth.set(self.dag.depth());
-        self.metrics.vertex_buffer.set(self.buffer.depth());
-        self.metrics.delivered.set(self.delivered.len());
+        #[cfg(feature = "metrics")]
+        {
+            self.metrics.dag_depth.set(self.dag.depth() as i64);
+            self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
+            self.metrics.delivered.set(self.delivered.len() as i64);
+        }
 
         actions.push(Action::Gc(Round::new(r, self.committee.id())));
         actions
@@ -1044,9 +1040,12 @@ where
         self.rounds = self.rounds.split_off(&(to - 1));
         self.timeouts = self.timeouts.split_off(&(to - 1));
         self.no_votes = self.no_votes.split_off(&(to - 1));
-        self.metrics.rounds_buffer.set(self.rounds.len());
-        self.metrics.timeout_buffer.set(self.timeouts.len());
-        self.metrics.novote_buffer.set(self.no_votes.len())
+        #[cfg(feature = "metrics")]
+        {
+            self.metrics.rounds_buffer.set(self.rounds.len() as i64);
+            self.metrics.timeout_buffer.set(self.timeouts.len() as i64);
+            self.metrics.novote_buffer.set(self.no_votes.len() as i64)
+        }
     }
 
     /// Validate an incoming vertex.
@@ -1212,7 +1211,7 @@ where
         vertex.set_committed_round(r);
         let env = Envelope::signed(vertex, &self.keypair);
 
-        #[cfg(feature = "times")]
+        #[cfg(feature = "metrics")]
         times::record(ROUND_START, *env.data().round().data().num());
 
         actions.extend([
