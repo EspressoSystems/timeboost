@@ -31,6 +31,7 @@ use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, PEER_CAPACITY, Role};
 #[cfg(feature = "metrics")]
 use crate::metrics::NetworkMetrics;
 
+type Budget = Arc<Semaphore>;
 type Result<T> = std::result::Result<T, NetworkError>;
 
 /// Max. message size using noise handshake.
@@ -171,6 +172,7 @@ struct Server<T: tcp::Listener> {
 struct Peer {
     addr: Address,
     role: Role,
+    budget: Budget,
 }
 
 /// A connect task.
@@ -286,6 +288,7 @@ impl Network {
                 Peer {
                     addr: a.into(),
                     role: Role::Active,
+                    budget: new_budget(),
                 },
             );
         }
@@ -492,7 +495,7 @@ where
                 // The handshake of an inbound connection completed.
                 Some(h) = self.handshake_tasks.join_next() => match h {
                     Ok(Ok((s, t))) => {
-                        let Some(k) = self.lookup_peer(&t) else {
+                        let Some((k, peer)) = self.lookup_peer(&t) else {
                             info!(
                                 name = %self.name,
                                 node = %self.key,
@@ -515,7 +518,7 @@ where
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
                         if k > self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(k, s, t)
+                            self.spawn_io(k, s, t, peer.budget.clone())
                         } else {
                             debug!(
                                 name = %self.name,
@@ -544,7 +547,7 @@ where
                     match tt {
                         Ok((id, (s, t))) => {
                             self.on_connect_task_end(id);
-                            let Some(k) = self.lookup_peer(&t) else {
+                            let Some((k, peer)) = self.lookup_peer(&t) else {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -557,7 +560,7 @@ where
                             // We only keep the connection if our key is larger than the remote,
                             // or if we do not have a connection for that key at the moment.
                             if k < self.key || !self.active.contains_key(&k) {
-                                self.spawn_io(k, s, t)
+                                self.spawn_io(k, s, t, peer.budget.clone())
                             } else {
                                 debug!(
                                     name = %self.name,
@@ -622,7 +625,11 @@ where
                                 peer = %k,
                                 "adding peer"
                             );
-                            let p = Peer { addr: a, role: Role::Passive };
+                            let p = Peer {
+                                addr: a,
+                                role: Role::Passive,
+                                budget: new_budget()
+                            };
                             self.peers.insert(k, p);
                             self.index.insert(k, x);
                             self.spawn_connect(k)
@@ -873,7 +880,7 @@ where
     /// Spawns a new I/O task for handling communication with a remote peer over
     /// a TCP connection using the noise framework to create an authenticated
     /// secure link.
-    fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState) {
+    fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState, b: Budget) {
         debug!(
             name = %self.name,
             node = %self.key,
@@ -888,7 +895,6 @@ where
         let ibound = self.ibound.clone();
         let to_write = to_remote.clone();
         let countdown = Countdown::new();
-        let budget = Arc::new(Semaphore::new(2 * PEER_CAPACITY));
         let rh = self.io_tasks.spawn(recv_loop(
             self.name,
             k,
@@ -898,7 +904,7 @@ where
             to_write,
             #[cfg(feature = "metrics")]
             self.metrics.clone(),
-            budget,
+            b,
             countdown.clone(),
         ));
         let wh = self
@@ -917,10 +923,11 @@ where
     }
 
     /// Get the public key of a party by their static X25519 public key.
-    fn lookup_peer(&self, t: &TransportState) -> Option<PublicKey> {
-        let k = t.get_remote_static()?;
-        let k = x25519::PublicKey::try_from(k).ok()?;
-        self.index.get_by_right(&k).copied()
+    fn lookup_peer(&self, t: &TransportState) -> Option<(PublicKey, &Peer)> {
+        let x = t.get_remote_static()?;
+        let x = x25519::PublicKey::try_from(x).ok()?;
+        let k = self.index.get_by_right(&x)?;
+        self.peers.get(k).map(|p| (*k, p))
     }
 
     /// Check if the socket's peer IP address corresponds to the configured one.
@@ -1187,4 +1194,8 @@ where
     w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
+}
+
+fn new_budget() -> Arc<Semaphore> {
+    Arc::new(Semaphore::new(2 * PEER_CAPACITY))
 }
