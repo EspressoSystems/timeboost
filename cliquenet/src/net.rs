@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bimap::BiHashMap;
+use bon::Builder;
 use bytes::{Bytes, BytesMut};
 use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
@@ -92,6 +93,55 @@ impl Drop for Network {
     }
 }
 
+#[derive(Debug, Builder)]
+pub struct NetConf {
+    /// Network name.
+    name: &'static str,
+
+    /// Network public key.
+    label: PublicKey,
+
+    /// DH keypair
+    keypair: x25519::Keypair,
+
+    /// Address to bind to.
+    bind: Address,
+
+    /// Committee members with key material and bind address.
+    #[builder(with = <_>::from_iter)]
+    parties: Vec<(PublicKey, x25519::PublicKey, Address)>,
+
+    /// Total egress channel capacity.
+    ///
+    /// Default is n⁴ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len() * parties.len())]
+    total_capacity_egress: usize,
+
+    /// Total ingress channel capacity.
+    ///
+    /// Default is n⁴ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len() * parties.len())]
+    total_capacity_ingress: usize,
+
+    /// Egress channel capacity per peer.
+    ///
+    /// Default is n³ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len())]
+    peer_capacity_egress: usize,
+
+    /// Ingress channel capacity per peer.
+    ///
+    /// Default is 2n² with n = number of parties.
+    #[builder(default = 2 * parties.len() * parties.len())]
+    peer_capacity_ingress: usize,
+}
+
+impl NetConf {
+    fn new_budget(&self) -> Budget {
+        Arc::new(Semaphore::new(self.peer_capacity_ingress))
+    }
+}
+
 /// Server task instructions.
 #[derive(Debug)]
 pub(crate) enum Command {
@@ -113,17 +163,10 @@ pub(crate) enum Command {
 /// maintaining connections with all parties.
 #[derive(Debug)]
 struct Server<T: tcp::Listener> {
-    /// Network name.
-    name: &'static str,
-
-    /// This server's public key.
-    key: PublicKey,
+    conf: NetConf,
 
     /// This server's role.
     role: Role,
-
-    /// The X25519 keypair, used with Noise.
-    keypair: x25519::Keypair,
 
     /// MPSC sender for messages received over a connection to a party.
     ///
@@ -219,99 +262,64 @@ enum Message {
 
 impl Network {
     /// Create a new `Network`.
-    pub async fn create<P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        Self::generic_create::<tokio::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
-            .await
+    pub async fn create(cfg: NetConf) -> Result<Self> {
+        Self::generic_create::<tokio::net::TcpListener>(cfg).await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
     ///
     /// *Requires feature* `"turmoil"`.
     #[cfg(feature = "turmoil")]
-    pub async fn create_turmoil<P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
-            .await
+    pub async fn create_turmoil(cfg: NetConf) -> Result<Self> {
+        Self::generic_create::<turmoil::net::TcpListener>(cfg).await
     }
 
-    async fn generic_create<T, P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-    ) -> Result<Self>
+    async fn generic_create<T>(cfg: NetConf) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
-        let bind_addr = bind_to.into();
-        let listener = T::bind(&bind_addr)
+        let listener = T::bind(&cfg.bind)
             .await
-            .map_err(|e| NetworkError::Bind(bind_addr, e))?;
+            .map_err(|e| NetworkError::Bind(cfg.bind.clone(), e))?;
 
-        debug!(%name, node = %label, addr = %listener.local_addr()?, "listening");
+        debug!(
+            name = %cfg.name,
+            node = %cfg.label,
+            addr = %listener.local_addr()?,
+            "listening"
+        );
 
         let mut parties = HashMap::new();
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
-        for (k, x, a) in group {
+        for (k, x, a) in cfg.parties.iter().cloned() {
             parties.insert(k, Role::Active);
             index.insert(k, x);
             peers.insert(
                 k,
                 Peer {
-                    addr: a.into(),
+                    addr: a,
                     role: Role::Active,
-                    budget: new_budget(0),
+                    budget: cfg.new_budget(),
                 },
             );
         }
 
-        for p in peers.values() {
-            p.budget.add_permits(2 * peers.len() * peers.len())
-        }
-
-        let cap = peers.len() * peers.len() * peers.len() * peers.len();
-
         // Command channel from application to network.
-        let (otx, orx) = mpsc::channel(cap);
+        let (otx, orx) = mpsc::channel(cfg.total_capacity_egress);
 
         // Channel of messages from peers to the application.
-        let (itx, irx) = mpsc::channel(cap);
+        let (itx, irx) = mpsc::channel(cfg.total_capacity_ingress);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        let name = cfg.name;
+        let label = cfg.label;
         let server = Server {
-            name,
-            keypair: xp,
-            key: label,
+            conf: cfg,
             role: Role::Active,
             ibound: itx,
             obound: orx,
@@ -457,7 +465,7 @@ where
         for k in self
             .peers
             .keys()
-            .filter(|k| **k != self.key)
+            .filter(|k| **k != self.conf.label)
             .copied()
             .collect::<Vec<_>>()
         {
@@ -466,8 +474,8 @@ where
 
         loop {
             trace!(
-                name       = %self.name,
-                node       = %self.key,
+                name       = %self.conf.name,
+                node       = %self.conf.label,
                 active     = %self.active.len(),
                 connects   = %self.connect_tasks.len(),
                 handshakes = %self.handshake_tasks.len().saturating_sub(1), // -1 for `pending()`
@@ -487,11 +495,21 @@ where
                 // Accepted a new connection.
                 i = listener.accept() => match i {
                     Ok((s, a)) => {
-                        debug!(name = %self.name, node = %self.key, addr = %a, "accepted connection");
+                        debug!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            addr = %a,
+                            "accepted connection"
+                        );
                         self.spawn_handshake(s)
                     }
                     Err(e) => {
-                        warn!(name = %self.name, node = %self.key, err = %e, "error accepting connection")
+                        warn!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            err  = %e,
+                            "error accepting connection"
+                        )
                     }
                 },
                 // The handshake of an inbound connection completed.
@@ -499,8 +517,8 @@ where
                     Ok(Ok((s, t))) => {
                         let Some((k, peer)) = self.lookup_peer(&t) else {
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
                                 addr = ?s.peer_addr().ok(),
                                 "unknown peer"
@@ -509,8 +527,8 @@ where
                         };
                         if !self.is_valid_ip(&k, &s) {
                             warn!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 addr = ?s.peer_addr().ok(), "invalid peer ip addr"
                             );
@@ -519,28 +537,33 @@ where
                         // We only accept connections whose party has a public key that
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
-                        if k > self.key || !self.active.contains_key(&k) {
+                        if k > self.conf.label || !self.active.contains_key(&k) {
                             self.spawn_io(k, s, t, peer.budget.clone())
                         } else {
                             debug!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "dropping accepted connection"
                             );
                         }
                     }
                     Ok(Err(e)) => {
-                        warn!(name = %self.name, node = %self.key, err = %e, "handshake failed")
+                        warn!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            err  = %e,
+                            "handshake failed"
+                        )
                     }
                     Err(e) => {
                         if !e.is_cancelled() {
                             error!(
-                                name = %self.name,
-                                node = %self.key,
-                                err = %e,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
+                                err  = %e,
                                 "handshake task panic"
-                            );
+                            )
                         }
                     }
                 },
@@ -551,8 +574,8 @@ where
                             self.on_connect_task_end(id);
                             let Some((k, peer)) = self.lookup_peer(&t) else {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
                                     addr = ?s.peer_addr().ok(),
                                     "connected to unknown peer"
@@ -561,25 +584,25 @@ where
                             };
                             // We only keep the connection if our key is larger than the remote,
                             // or if we do not have a connection for that key at the moment.
-                            if k < self.key || !self.active.contains_key(&k) {
+                            if k < self.conf.label || !self.active.contains_key(&k) {
                                 self.spawn_io(k, s, t, peer.budget.clone())
                             } else {
                                 debug!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     "dropping new connection"
-                                );
+                                )
                             }
                         }
                         Err(e) => {
                             if !e.is_cancelled() {
                                 error!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    err = %e,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    err  = %e,
                                     "connect task panic"
-                                );
+                                )
                             }
                             self.on_connect_task_end(e.id());
                         }
@@ -590,7 +613,12 @@ where
                     match io {
                         Ok((id, r)) => {
                             if let Err(e) = r {
-                                warn!(name = %self.name, node = %self.key, err = %e, "i/o error")
+                                warn!(
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    err  = %e,
+                                    "i/o error"
+                                )
                             }
                             self.on_io_task_end(id);
                         }
@@ -604,7 +632,12 @@ where
                                 continue
                             }
                             // If the task has not been cancelled, it must have panicked.
-                            error!(name = %self.name, node = %self.key, err = %e, "i/o task panic");
+                            error!(
+                                name = %self.conf.name,
+                                node = %self.conf.label,
+                                err  = %e,
+                                "i/o task panic"
+                            );
                             self.on_io_task_end(e.id())
                         }
                     };
@@ -614,23 +647,23 @@ where
                         for (k, x, a) in peers {
                             if self.peers.contains_key(&k) {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     "peer to add already exists"
                                 );
                                 continue
                             }
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "adding peer"
                             );
                             let p = Peer {
                                 addr: a,
                                 role: Role::Passive,
-                                budget: new_budget(self.peers.len())
+                                budget: self.conf.new_budget()
                             };
                             self.peers.insert(k, p);
                             self.index.insert(k, x);
@@ -640,8 +673,8 @@ where
                     Some(Command::Remove(peers)) => {
                         for k in &peers {
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "removing peer"
                             );
@@ -657,8 +690,8 @@ where
                                 p.role = role
                             } else {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     role = ?role,
                                     "peer to assign role to not found"
@@ -667,19 +700,19 @@ where
                         }
                     }
                     Some(Command::Unicast(to, id, m)) => {
-                        if to == self.key {
+                        if to == self.conf.label {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m, None)).is_err() {
+                            if self.ibound.try_send((self.conf.label, m, None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping unicast message"
                                 )
@@ -688,8 +721,8 @@ where
                         }
                         if let Some(task) = self.active.get(&to) {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
@@ -701,19 +734,19 @@ where
                         }
                     }
                     Some(Command::Multicast(peers, id, m)) => {
-                        if peers.contains(&self.key) {
+                        if peers.contains(&self.conf.label) {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
-                                to    = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
+                                to    = %self.conf.label,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
+                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping multicast message"
                                 )
@@ -724,8 +757,8 @@ where
                                 continue
                             }
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
@@ -739,17 +772,17 @@ where
                     Some(Command::Broadcast(id, m)) => {
                         if self.role.is_active() {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
-                                to    = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
+                                to    = %self.conf.label,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
+                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping broadcast message"
                                 )
@@ -760,8 +793,8 @@ where
                                 continue
                             }
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
@@ -789,7 +822,7 @@ where
     /// Handles a completed connect task.
     fn on_connect_task_end(&mut self, id: task::Id) {
         let Some(k) = self.task2key.remove(&id) else {
-            error!(name = %self.name, node = %self.key, "no key for connect task");
+            error!(name = %self.conf.name, node = %self.conf.label, "no key for connect task");
             return;
         };
         self.connecting.remove(&k);
@@ -802,7 +835,7 @@ where
     /// to the peer node it was interacting with.
     fn on_io_task_end(&mut self, id: task::Id) {
         let Some(k) = self.task2key.remove(&id) else {
-            error!(name = %self.name, node = %self.key, "no key for i/o task");
+            error!(name = %self.conf.name, node = %self.conf.label, "no key for i/o task");
             return;
         };
         let Some(task) = self.active.get(&k) else {
@@ -810,8 +843,8 @@ where
         };
         if task.rh.id() == id {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "read-half closed => dropping connection"
             );
@@ -819,8 +852,8 @@ where
             self.spawn_connect(k)
         } else if task.wh.id() == id {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "write-half closed => dropping connection"
             );
@@ -828,8 +861,8 @@ where
             self.spawn_connect(k)
         } else {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "i/o task was previously replaced"
             );
@@ -842,14 +875,19 @@ where
     /// and the remote address and then spawn a connection task.
     fn spawn_connect(&mut self, k: PublicKey) {
         if self.connecting.contains_key(&k) {
-            debug!(name = %self.name, node = %self.key, peer = %k, "connect task already started");
+            debug!(
+                name = %self.conf.name,
+                node = %self.conf.label,
+                peer = %k,
+                "connect task already started"
+            );
             return;
         }
         let x = self.index.get_by_left(&k).expect("known public key");
         let p = self.peers.get(&k).expect("known peer");
         let h = self.connect_tasks.spawn(connect(
-            self.name,
-            (self.key, self.keypair.clone()),
+            self.conf.name,
+            (self.conf.label, self.conf.keypair.clone()),
             (k, *x),
             p.addr.clone(),
             #[cfg(feature = "metrics")]
@@ -866,9 +904,9 @@ where
     /// to which it will respond.
     fn spawn_handshake(&mut self, s: T::Stream) {
         let h = Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
-            .local_private_key(&self.keypair.secret_key().as_bytes())
+            .local_private_key(&self.conf.keypair.secret_key().as_bytes())
             .expect("valid private key")
-            .prologue(self.name.as_bytes())
+            .prologue(self.conf.name.as_bytes())
             .expect("1st time we set the prologue")
             .build_responder()
             .expect("valid noise params yield valid handshake state");
@@ -884,14 +922,13 @@ where
     /// secure link.
     fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState, b: Budget) {
         debug!(
-            name = %self.name,
-            node = %self.key,
+            name = %self.conf.name,
+            node = %self.conf.label,
             peer = %k,
             addr = ?s.peer_addr().ok(),
             "starting i/o tasks"
         );
-        let cap = self.peers.len() * self.peers.len() * self.peers.len();
-        let (to_remote, from_remote) = chan::channel(cap);
+        let (to_remote, from_remote) = chan::channel(self.conf.peer_capacity_egress);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
@@ -899,7 +936,7 @@ where
         let to_write = to_remote.clone();
         let countdown = Countdown::new();
         let rh = self.io_tasks.spawn(recv_loop(
-            self.name,
+            self.conf.name,
             k,
             r,
             t1,
@@ -1197,8 +1234,4 @@ where
     w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
-}
-
-fn new_budget(parties: usize) -> Arc<Semaphore> {
-    Arc::new(Semaphore::new(2 * parties * parties))
 }

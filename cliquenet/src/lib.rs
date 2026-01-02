@@ -15,7 +15,7 @@ pub mod overlay;
 pub use addr::{Address, AddressableCommittee, InvalidAddress};
 pub use error::NetworkError;
 pub use id::Id;
-pub use net::Network;
+pub use net::{NetConf, NetConfBuilder, Network};
 pub use overlay::Overlay;
 
 /// Max. number of bytes for a message (potentially consisting of several frames).

@@ -11,6 +11,7 @@ metrics = ["dep:prometheus"]
 [dependencies]
 bimap = { workspace = true }
 bincode = { workspace = true }
+bon = { workspace = true }
 bytes = { workspace = true }
 multisig = { path = "../multisig" }
 nohash-hasher = { workspace = true }
