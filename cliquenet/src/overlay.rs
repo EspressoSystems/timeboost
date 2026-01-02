@@ -322,11 +322,9 @@ async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
                     remaining = m.remaining.clone();
                 }
 
-                for p in remaining {
-                    let _ = net
-                        .send(Command::Unicast(p, Some(id), message.clone()))
-                        .await;
-                }
+                let _ = net
+                    .send(Command::Multicast(remaining, Some(id), message.clone()))
+                    .await;
             }
         }
     }
