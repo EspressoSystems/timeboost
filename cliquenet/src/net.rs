@@ -26,7 +26,7 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, PEER_CAPACITY, Role};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, Role};
 
 #[cfg(feature = "metrics")]
 use crate::metrics::NetworkMetrics;
@@ -288,24 +288,22 @@ impl Network {
                 Peer {
                     addr: a.into(),
                     role: Role::Active,
-                    budget: new_budget(),
+                    budget: new_budget(0),
                 },
             );
         }
 
+        for p in peers.values() {
+            p.budget.add_permits(2 * peers.len() * peers.len())
+        }
+
+        let cap = peers.len() * peers.len() * peers.len() * peers.len();
+
         // Command channel from application to network.
-        let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
+        let (otx, orx) = mpsc::channel(cap);
 
         // Channel of messages from peers to the application.
-        //
-        // Inbound messages from each peer are allowed to accumulate up to
-        // 2 * PEER_CAPACITY (see `spawn_io` below), leading to a total
-        // allowed inbound capacity of c = (n - 1) * 2 * PEER_CAPACITY
-        // (where n is the number of parties).
-        //
-        // This leaves room for n * 3 * PEER_CAPACITY - c messages we
-        // receive from ourselves.
-        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len() * 3);
+        let (itx, irx) = mpsc::channel(cap);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -345,6 +343,10 @@ impl Network {
 
     pub fn public_key(&self) -> PublicKey {
         self.label
+    }
+
+    pub fn name(&self) -> &str {
+        self.name
     }
 
     pub fn parties(&self) -> impl Iterator<Item = (&PublicKey, &Role)> {
@@ -628,7 +630,7 @@ where
                             let p = Peer {
                                 addr: a,
                                 role: Role::Passive,
-                                budget: new_budget()
+                                budget: new_budget(self.peers.len())
                             };
                             self.peers.insert(k, p);
                             self.index.insert(k, x);
@@ -888,7 +890,8 @@ where
             addr = ?s.peer_addr().ok(),
             "starting i/o tasks"
         );
-        let (to_remote, from_remote) = chan::channel(PEER_CAPACITY);
+        let cap = self.peers.len() * self.peers.len() * self.peers.len();
+        let (to_remote, from_remote) = chan::channel(cap);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
@@ -1196,6 +1199,6 @@ where
     Ok(())
 }
 
-fn new_budget() -> Arc<Semaphore> {
-    Arc::new(Semaphore::new(2 * PEER_CAPACITY))
+fn new_budget(parties: usize) -> Arc<Semaphore> {
+    Arc::new(Semaphore::new(2 * parties * parties))
 }
