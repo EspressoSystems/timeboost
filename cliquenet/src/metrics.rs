@@ -1,17 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
-use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
+use metrics::{Counter, Gauge, Metrics, NoMetrics};
 use multisig::PublicKey;
 
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct NetworkMetrics {
     pub connections: Box<dyn Gauge>,
-    pub latency: Box<dyn Histogram>,
-    pub sent: Box<dyn Counter>,
-    pub received: Box<dyn Counter>,
-    pub sent_message_len: Box<dyn Histogram>,
+    pub iqueue: Box<dyn Gauge>,
+    pub oqueue: Box<dyn Gauge>,
+    // TODO: These should use prometheus labels to model multiple dimensions:
     connects: HashMap<PublicKey, Box<dyn Counter>>,
+    latencies: HashMap<PublicKey, Box<dyn Gauge>>,
 }
 
 impl Default for NetworkMetrics {
@@ -25,43 +25,41 @@ impl NetworkMetrics {
     where
         P: IntoIterator<Item = PublicKey>,
     {
-        let latencies = &[
-            0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 75.0, 100.0, 150.0,
-            200.0, 500.0,
-        ];
+        let connects = parties
+            .into_iter()
+            .map(|k| {
+                let c = m.create_counter(&format!("{label}_{k}_connect_attempts"), None);
+                (k, c)
+            })
+            .collect::<HashMap<_, _>>();
 
-        let sizes = &[
-            1024.0,
-            16.0 * 1024.0,
-            64.0 * 1024.0,
-            256.0 * 1024.0,
-            512.0 * 1024.0,
-            1024.0 * 1024.0,
-            2048.0 * 1024.0,
-            4096.0 * 1024.0,
-            5120.0 * 1024.0,
-        ];
+        let latencies = connects
+            .keys()
+            .copied()
+            .map(|k| {
+                let g = m.create_gauge(&format!("{label}_{k}_latency"), Some("ms"));
+                (k, g)
+            })
+            .collect();
 
         Self {
-            latency: m.create_histogram(&format!("{label}_latency"), Some("ms"), Some(latencies)),
             connections: m.create_gauge(&format!("{label}_connections"), None),
-            sent_message_len: m.create_histogram(
-                &format!("{label}_sent_msg_len"),
-                Some("bytes"),
-                Some(sizes),
-            ),
-            sent: m.create_counter(&format!("{label}_messages_sent"), None),
-            received: m.create_counter(&format!("{label}_messages_received"), None),
-            connects: parties
-                .into_iter()
-                .map(|k| (k, m.create_counter(&format!("{label}_peer_id_{k}"), None)))
-                .collect(),
+            iqueue: m.create_gauge(&format!("{label}_iqueue"), None),
+            oqueue: m.create_gauge(&format!("{label}_oqueue"), None),
+            connects,
+            latencies,
         }
     }
 
     pub fn add_connect_attempt(&self, key: &PublicKey) {
         if let Some(ctr) = self.connects.get(key) {
             ctr.add(1)
+        }
+    }
+
+    pub fn set_latency(&self, key: &PublicKey, d: Duration) {
+        if let Some(g) = self.latencies.get(key) {
+            g.set(d.as_millis() as usize)
         }
     }
 }
