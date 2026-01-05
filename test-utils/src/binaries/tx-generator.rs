@@ -18,10 +18,8 @@ use futures::stream::BoxStream;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Client, Url};
 use serde::Serialize;
-use timeboost::config::{ChainConfig, CommitteeConfig, HTTP_API_PORT_OFFSET};
-use timeboost::{
-    config::CommitteeContract, crypto::prelude::ThresholdEncKey, types::BundleVariant,
-};
+use timeboost::config::{ChainConfig, CommitteeConfig, CommitteeContract, HTTP_API_PORT_OFFSET};
+use timeboost::{crypto::prelude::ThresholdEncKey, types::BundleVariant};
 use timeboost_contract::KeyManager;
 use timeboost_types::{Auction, ChainId};
 use timeboost_utils::load_generation::{
@@ -84,31 +82,43 @@ struct TxGeneratorConfig {
     chain_id: ChainId,
     enc_key: Option<ThresholdEncKey>,
     signers: Vec<PrivateKeySigner>,
-    auction_contract: Option<alloy::primitives::Address>,
     nitro: bool,
     apikey: Option<String>,
 }
 
 struct TxGeneratorState {
     current: CommitteeConfig,
-    next: Option<CommitteeConfig>,
+    next: Option<(Instant, CommitteeConfig)>,
     provider: RootProvider,
     node_urls: Vec<ApiUrl>,
+}
+
+enum SubmissionStrategy {
+    Bundle(Auction),
+    RawTx,
 }
 
 struct TxGenerator {
     config: TxGeneratorConfig,
     state: TxGeneratorState,
     client: Client,
-    auction: Option<Auction>,
+    strategy: SubmissionStrategy,
 }
 
 impl TxGenerator {
-    pub(crate) async fn new(cfg: TxGeneratorConfig, current: CommitteeConfig) -> Result<Self> {
-        let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let auction = cfg.auction_contract.map(Auction::new);
-        let node_urls = urls_from_config(current.clone())?;
-        let provider = new_provider(&node_urls[0].json_rpc_url, cfg.apikey.as_ref()).await?;
+    pub(crate) async fn new(
+        cfg: TxGeneratorConfig,
+        current: CommitteeConfig,
+        auction: Option<Auction>,
+    ) -> Result<Self> {
+        let client = build_client(cfg.apikey.as_deref())?;
+        let node_urls = urls_from_config(&current)?;
+        let provider = build_provider(&node_urls[0].json_rpc_url, cfg.apikey.as_deref()).await?;
+
+        let strategy = match auction {
+            Some(auction) => SubmissionStrategy::Bundle(auction),
+            None => SubmissionStrategy::RawTx,
+        };
 
         let state = TxGeneratorState {
             current,
@@ -121,7 +131,7 @@ impl TxGenerator {
             config: cfg,
             state,
             client,
-            auction,
+            strategy,
         })
     }
 
@@ -129,7 +139,7 @@ impl TxGenerator {
         mut self,
         mut committees: BoxStream<'static, CommitteeConfig>,
     ) -> Result<()> {
-        let is_bundle = self.auction.is_some();
+        let is_bundle = matches!(self.strategy, SubmissionStrategy::Bundle(_));
 
         info!(
             type       = if is_bundle { "bundle" } else { "raw-tx" },
@@ -145,36 +155,33 @@ impl TxGenerator {
 
         let mut count = 0;
         loop {
-            let deadline = self
-                .state
-                .next
-                .clone()
-                .map(|c| unix_to_instant(c.effective.into()));
-            let timeout = async {
-                if let Some(d) = deadline {
-                    sleep_until(d).await;
-                } else {
-                    futures::future::pending::<()>().await;
-                }
-            };
             tokio::select! {
                 _ = interval.tick() => {
-                    match self.submit(count).await {
-                        Ok(()) => { count += 1 },
-                        Err(err) => {
-                            warn!(
-                                error = %err,
-                                committee = %self.state.current.id,
-                                "failed to submit tx"
-                            );
-                        }
+                    if let Err(err) = self.submit(count).await {
+                        warn!(
+                            error = %err,
+                            committee = %self.state.current.id,
+                            "failed to submit tx"
+                        );
+                    } else {
+                        count += 1;
                     }
                 },
                 Some(committee) = committees.next() => {
-                    info!("scheduled next committee: {}", committee.id);
-                    self.state.next = Some(committee)
+                    let deadline = unix_to_instant(committee.effective.into());
+                    info!(
+                        "scheduled next committee: {} (effective in {:?})",
+                        committee.id,
+                        deadline.saturating_duration_since(Instant::now())
+                    );
+                    self.state.next = Some((deadline, committee));
                 },
-                _ = timeout => {
+                _ = async {
+                    match &self.state.next {
+                        Some((deadline, _)) => sleep_until(*deadline).await,
+                        None => futures::future::pending().await,
+                    }
+                } => {
                     self.update().await?;
                 }
             }
@@ -182,62 +189,86 @@ impl TxGenerator {
     }
 
     async fn update(&mut self) -> Result<()> {
-        let Some(next) = self.state.next.take() else {
-            return Err(anyhow::anyhow!("no next committee"));
-        };
-        self.state.node_urls = urls_from_config(next.clone())?;
-        self.state.current = next;
-        self.state.provider = new_provider(
+        let next = self
+            .state
+            .next
+            .take()
+            .expect("update called without next committee scheduled")
+            .1;
+
+        info!("switching to committee {}", next.id);
+
+        self.state.node_urls = urls_from_config(&next)?;
+        self.state.provider = build_provider(
             &self.state.node_urls[0].json_rpc_url,
-            self.config.apikey.as_ref(),
+            self.config.apikey.as_deref(),
         )
         .await?;
+        self.state.current = next;
+        self.state.next = None;
+
         Ok(())
     }
 
     async fn submit(&self, count: usize) -> Result<()> {
         let signers = &self.config.signers;
-        let s = signers[count % signers.len()].clone();
-        let r = signers[(count + 1) % signers.len()].clone();
+        let sender = signers[count % signers.len()].clone();
+        let receiver = signers[(count + 1) % signers.len()].clone();
 
         let tx = if self.config.nitro {
-            prepare(&self.state.provider, self.config.chain_id, s, r.address()).await?
+            prepare(
+                &self.state.provider,
+                self.config.chain_id,
+                sender,
+                receiver.address(),
+            )
+            .await?
         } else {
-            prepare_test(self.config.chain_id, s, r.address())
+            prepare_test(self.config.chain_id, sender, receiver.address())
         };
 
-        if let Some(auction) = &self.auction {
-            let bundle = create_bundle(
-                self.config.enc_key.as_ref(),
-                auction,
-                tx,
-                self.config.enc_ratio,
-                self.config.prio_ratio,
-            )?;
-
-            join_all(
-                self.state
-                    .node_urls
-                    .iter()
-                    .map(|u| self.send_bundle(&bundle, &u.regular_url, &u.priority_url)),
-            )
-            .await;
-        } else {
-            let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)?;
-
-            join_all(
-                self.state
-                    .node_urls
-                    .iter()
-                    .map(|u| self.send_tx(tx.clone(), &u.json_rpc_url)),
-            )
-            .await;
+        match &self.strategy {
+            SubmissionStrategy::Bundle(auction) => {
+                let bundle = create_bundle(
+                    self.config.enc_key.as_ref(),
+                    auction,
+                    tx,
+                    self.config.enc_ratio,
+                    self.config.prio_ratio,
+                )?;
+                self.broadcast_bundle(&bundle).await;
+            }
+            SubmissionStrategy::RawTx => {
+                let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)?;
+                self.broadcast_tx(&tx).await;
+            }
         }
+
         Ok(())
     }
 
-    async fn send_tx(&self, txn: TransactionVariant, url: &Url) {
-        let (method, params) = match txn {
+    async fn broadcast_bundle(&self, bundle: &BundleVariant) {
+        join_all(
+            self.state
+                .node_urls
+                .iter()
+                .map(|u| self.send_bundle(bundle, &u.regular_url, &u.priority_url)),
+        )
+        .await;
+    }
+
+    async fn broadcast_tx(&self, tx: &TransactionVariant) {
+        join_all(
+            self.state
+                .node_urls
+                .iter()
+                .map(|u| self.send_tx(tx.clone(), &u.json_rpc_url)),
+        )
+        .await;
+    }
+
+    async fn send_tx(&self, tx: TransactionVariant, url: &Url) {
+        let (method, params) = match tx {
             TransactionVariant::PlainText(t) => {
                 ("eth_sendRawTransaction", vec![t.encode_hex_with_prefix()])
             }
@@ -250,18 +281,14 @@ impl TxGenerator {
             }
         };
 
-        let jrpc = JsonRpcRequest {
+        let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: method.into(),
             params,
             id: 1,
         };
 
-        let mut req = self.client.post(url.clone());
-        if let Some(apikey) = &self.config.apikey {
-            req = req.bearer_auth(apikey)
-        }
-        let result = req.json(&jrpc).send().await;
+        let result = self.client.post(url.clone()).json(&request).send().await;
 
         match result {
             Ok(response) if !response.status().is_success() => {
@@ -277,21 +304,18 @@ impl TxGenerator {
     async fn send_bundle(&self, bundle: &BundleVariant, regular_url: &Url, priority_url: &Url) {
         let result = match bundle {
             BundleVariant::Regular(bundle) => {
-                let mut req = self.client.post(regular_url.clone()).json(&bundle);
-                if let Some(apikey) = &self.config.apikey {
-                    req = req.bearer_auth(apikey)
-                }
-                req.send().await
+                self.client
+                    .post(regular_url.clone())
+                    .json(&bundle)
+                    .send()
+                    .await
             }
             BundleVariant::Priority(signed_priority_bundle) => {
-                let mut req = self
-                    .client
+                self.client
                     .post(priority_url.clone())
-                    .json(&signed_priority_bundle);
-                if let Some(apikey) = &self.config.apikey {
-                    req = req.bearer_auth(apikey)
-                }
-                req.send().await
+                    .json(&signed_priority_bundle)
+                    .send()
+                    .await
             }
             _ => {
                 warn!("Unsupported bundle variant");
@@ -312,7 +336,7 @@ impl TxGenerator {
     }
 }
 
-async fn new_provider(url: &Url, apikey: Option<&String>) -> Result<RootProvider> {
+async fn build_provider(url: &Url, apikey: Option<&str>) -> Result<RootProvider> {
     if let Some(apikey) = apikey {
         let key = HeaderValue::from_str(apikey)?;
         let hds = HeaderMap::from_iter([(AUTHORIZATION, key)]);
@@ -324,20 +348,38 @@ async fn new_provider(url: &Url, apikey: Option<&String>) -> Result<RootProvider
     }
 }
 
-fn urls_from_config(committee: CommitteeConfig) -> Result<Vec<ApiUrl>> {
-    let mut urls = Vec::new();
-    for m in committee.members {
-        let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
-        let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
-        let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
-        let json_rpc_url = format!("http://{addr}/v1/").parse()?;
-        urls.push(ApiUrl {
-            regular_url,
-            priority_url,
-            json_rpc_url,
-        });
+fn build_client(apikey: Option<&str>) -> Result<Client> {
+    let mut builder = Client::builder().timeout(Duration::from_secs(1));
+
+    if let Some(key) = apikey {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", key))?,
+        );
+        builder = builder.default_headers(headers);
     }
-    Ok(urls)
+
+    Ok(builder.build()?)
+}
+
+fn urls_from_config(committee: &CommitteeConfig) -> Result<Vec<ApiUrl>> {
+    committee
+        .members
+        .iter()
+        .cloned()
+        .map(|m| {
+            let addr = m.address.with_offset(HTTP_API_PORT_OFFSET);
+            let regular_url = format!("http://{addr}/v1/submit/regular").parse()?;
+            let priority_url = format!("http://{addr}/v1/submit/priority").parse()?;
+            let json_rpc_url = format!("http://{addr}/v1/").parse()?;
+            Ok(ApiUrl {
+                regular_url,
+                priority_url,
+                json_rpc_url,
+            })
+        })
+        .collect()
 }
 
 fn unix_to_instant(unix_secs: u64) -> Instant {
@@ -402,11 +444,12 @@ async fn main() -> Result<()> {
         )?)
     };
 
+    let auction = chain_config.auction_contract.map(Auction::new);
+
     let config = TxGeneratorConfig::builder()
         .tps(args.tps)
         .enc_ratio(args.enc_ratio)
         .prio_ratio(args.prio_ratio)
-        .maybe_auction_contract(chain_config.auction_contract)
         .chain_id(args.namespace.into())
         .maybe_enc_key(enc_key)
         .signers(signers)
@@ -414,7 +457,7 @@ async fn main() -> Result<()> {
         .maybe_apikey(args.apikey)
         .build();
 
-    let tx_generator = TxGenerator::new(config, active).await?;
+    let tx_generator = TxGenerator::new(config, active, auction).await?;
 
     let mut jh = tokio::spawn(async move { tx_generator.generate(committees).await });
 
