@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Interval, MissedTickBehavior, sleep, timeout};
 use tokio::{
     spawn,
@@ -25,7 +26,10 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY, Role};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, PEER_CAPACITY, Role};
+
+#[cfg(feature = "metrics")]
+use crate::metrics::NetworkMetrics;
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -75,7 +79,7 @@ pub struct Network {
     /// MPSC receiver of messages from a remote party.
     ///
     /// The public key identifies the remote.
-    rx: Receiver<(PublicKey, Bytes)>,
+    rx: Receiver<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// Handle of the server task that has been spawned by `Network`.
     srv: JoinHandle<Result<Empty>>,
@@ -123,7 +127,7 @@ struct Server<T: tcp::Listener> {
     /// MPSC sender for messages received over a connection to a party.
     ///
     /// (see `Network` for the accompanying receiver).
-    ibound: Sender<(PublicKey, Bytes)>,
+    ibound: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// MPSC receiver for server task instructions.
     ///
@@ -155,11 +159,12 @@ struct Server<T: tcp::Listener> {
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
 
-    /// For gathering network metrics.
-    metrics: Arc<NetworkMetrics>,
-
     /// Interval at which to ping peers.
     ping_interval: Interval,
+
+    /// For gathering network metrics.
+    #[cfg(feature = "metrics")]
+    metrics: Arc<NetworkMetrics>,
 }
 
 #[derive(Debug)]
@@ -218,17 +223,14 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<tokio::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+        Self::generic_create::<tokio::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
+            .await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
@@ -241,17 +243,14 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(name, bind_to, label, xp, group)
+            .await
     }
 
     async fn generic_create<T, P, A1, A2>(
@@ -260,7 +259,6 @@ impl Network {
         label: PublicKey,
         xp: x25519::Keypair,
         group: P,
-        metrics: NetworkMetrics,
     ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
@@ -292,8 +290,19 @@ impl Network {
             );
         }
 
+        // Command channel from application to network.
         let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
-        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len());
+
+        // Channel of messages from peers to the application.
+        //
+        // Inbound messages from each peer are allowed to accumulate up to
+        // 2 * PEER_CAPACITY (see `spawn_io` below), leading to a total
+        // allowed inbound capacity of c = (n - 1) * 2 * PEER_CAPACITY
+        // (where n is the number of parties).
+        //
+        // This leaves room for n * 3 * PEER_CAPACITY - c messages we
+        // receive from ourselves.
+        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len() * 3);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -313,8 +322,12 @@ impl Network {
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
-            metrics: Arc::new(metrics),
             ping_interval: interval,
+            #[cfg(feature = "metrics")]
+            metrics: Arc::new(
+                NetworkMetrics::new(name, parties.keys().copied().filter(|k| *k != label))
+                    .expect("valid metrics definitions"),
+            ),
         };
 
         Ok(Self {
@@ -372,7 +385,8 @@ impl Network {
 
     /// Receive a message from a remote party.
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
-        self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
+        let (k, b, _) = self.rx.recv().await.ok_or(NetworkError::ChannelClosed)?;
+        Ok((k, b))
     }
 
     /// Add the given peers to the network.
@@ -457,6 +471,12 @@ where
                 iqueue     = %self.ibound.capacity(),
                 oqueue     = %self.obound.capacity(),
             );
+
+            #[cfg(feature = "metrics")]
+            {
+                self.metrics.iqueue.set(self.ibound.capacity() as i64);
+                self.metrics.oqueue.set(self.obound.capacity() as i64);
+            }
 
             tokio::select! {
                 // Accepted a new connection.
@@ -638,7 +658,6 @@ where
                         }
                     }
                     Some(Command::Unicast(to, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if to == self.key {
                             trace!(
                                 name  = %self.name,
@@ -648,11 +667,12 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m)).is_err() {
+                            if self.ibound.try_send((self.key, m, None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping unicast message"
                                 )
                             }
                             continue
@@ -666,6 +686,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(&to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m)).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -678,7 +700,6 @@ where
                         }
                     }
                     Some(Command::Multicast(peers, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if peers.contains(&self.key) {
                             trace!(
                                 name  = %self.name,
@@ -688,11 +709,12 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping multicast message"
                                 )
                             }
                         }
@@ -709,6 +731,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -724,7 +748,6 @@ where
                         }
                     }
                     Some(Command::Broadcast(id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if self.role.is_active() {
                             trace!(
                                 name  = %self.name,
@@ -734,11 +757,12 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.key, m.clone(), None)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
-                                    "channel full => dropping message"
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping broadcast message"
                                 )
                             }
                         }
@@ -755,6 +779,8 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
                             if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
                                 warn!(
                                     name = %self.name,
@@ -860,6 +886,7 @@ where
             (self.key, self.keypair.clone()),
             (k, *x),
             p.addr.clone(),
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
         ));
         assert!(self.task2key.insert(h.id(), k).is_none());
@@ -904,6 +931,7 @@ where
         let ibound = self.ibound.clone();
         let to_write = to_remote.clone();
         let countdown = Countdown::new();
+        let budget = Arc::new(Semaphore::new(2 * PEER_CAPACITY));
         let rh = self.io_tasks.spawn(recv_loop(
             self.name,
             k,
@@ -911,16 +939,14 @@ where
             t1,
             ibound,
             to_write,
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
+            budget,
             countdown.clone(),
         ));
-        let wh = self.io_tasks.spawn(send_loop(
-            w,
-            t2,
-            from_remote,
-            self.metrics.clone(),
-            countdown,
-        ));
+        let wh = self
+            .io_tasks
+            .spawn(send_loop(w, t2, from_remote, countdown));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -929,7 +955,8 @@ where
             tx: to_remote,
         };
         self.active.insert(k, io);
-        self.metrics.connections.set(self.active.len());
+        #[cfg(feature = "metrics")]
+        self.metrics.connections.set(self.active.len() as i64);
     }
 
     /// Get the public key of a party by their static X25519 public key.
@@ -962,7 +989,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
     addr: Address,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
 ) -> (T, TransportState) {
     use rand::prelude::*;
 
@@ -986,6 +1013,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     {
         sleep(Duration::from_millis(d)).await;
         debug!(%name, node = %this.0, peer = %to.0, %addr, "connecting");
+        #[cfg(feature = "metrics")]
         metrics.add_connect_attempt(&to.0);
         match timeout(CONNECT_TIMEOUT, T::connect(&addr)).await {
             Ok(Ok(s)) => {
@@ -1060,9 +1088,10 @@ async fn recv_loop<R>(
     id: PublicKey,
     mut reader: R,
     state: Arc<Mutex<TransportState>>,
-    to_deliver: Sender<(PublicKey, Bytes)>,
+    to_deliver: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
     to_writer: chan::Sender<Message>,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
+    budget: Arc<Semaphore>,
     mut countdown: Countdown,
 ) -> Result<()>
 where
@@ -1070,6 +1099,13 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
+        #[cfg(feature = "metrics")]
+        metrics.set_peer_iqueue_cap(&id, budget.available_permits());
+        let permit = budget
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| NetworkError::BudgetClosed)?;
         let mut msg = BytesMut::new();
         loop {
             tokio::select! {
@@ -1087,10 +1123,11 @@ where
                                 }
                                 Ok(Type::Pong) => {
                                     // Received pong message; measure elapsed time
-                                    let n = state.lock().read_message(&f, &mut buf)?;
-                                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                                    let _n = state.lock().read_message(&f, &mut buf)?;
+                                    #[cfg(feature = "metrics")]
+                                    if let Some(ping) = Timestamp::try_from_slice(&buf[.._n]) {
                                         if let Some(delay) = Timestamp::now().diff(ping) {
-                                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+                                            metrics.set_latency(&id, delay)
                                         }
                                     }
                                 }
@@ -1116,10 +1153,13 @@ where
                 }
             }
         }
-        if to_deliver.send((id, msg.freeze())).await.is_err() {
+        if to_deliver
+            .send((id, msg.freeze(), Some(permit)))
+            .await
+            .is_err()
+        {
             break;
         }
-        metrics.received.add(1);
     }
     Ok(())
 }
@@ -1132,7 +1172,6 @@ async fn send_loop<W>(
     mut writer: W,
     state: Arc<Mutex<TransportState>>,
     rx: chan::Receiver<Message>,
-    metrics: Arc<NetworkMetrics>,
     countdown: Countdown,
 ) -> Result<()>
 where
@@ -1164,7 +1203,6 @@ where
                     };
                     send_frame(&mut writer, h, &buf[..n]).await?
                 }
-                metrics.sent.add(1);
             }
         }
     }

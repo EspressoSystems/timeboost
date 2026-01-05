@@ -11,9 +11,12 @@ use timeboost_types::{
 use tokio::{sync::Mutex, time::sleep};
 use tracing::debug;
 
-use crate::metrics::BuilderMetrics;
+#[cfg(feature = "metrics")]
+use prometheus::{IntCounter, IntGauge, register_int_gauge};
+#[cfg(feature = "metrics")]
+use timeboost_types::sailfish::time_series::ROUND_START;
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 use crate::time_series::VERIFIED;
 
 /// Verifies blocks and updates a sliding window of block numbers.
@@ -24,7 +27,8 @@ pub struct Verifier {
     client: Client,
     committees: Arc<Mutex<CommitteeVec<2>>>,
     verified: Verified<15_000>,
-    metrics: Arc<BuilderMetrics>,
+    #[cfg(feature = "metrics")]
+    blocks_verified_ctr: IntCounter,
 }
 
 impl Verifier {
@@ -45,7 +49,8 @@ impl Verifier {
             let numbers = self.client.verified(self.nsid, &h, &committees).await;
             let len = self.verified.insert(numbers);
             debug!(node = %self.label, blocks = %len, "blocks verified");
-            self.metrics.blocks_verified.add(len);
+            #[cfg(feature = "metrics")]
+            self.blocks_verified_ctr.inc_by(len as u64);
         }
     }
 }
@@ -54,15 +59,22 @@ impl Verifier {
 #[derive(Debug, Clone)]
 pub struct Verified<const MAX_SIZE: usize> {
     set: Arc<RwLock<BTreeSet<BlockNumber>>>,
-    #[allow(unused)]
-    metrics: Arc<BuilderMetrics>,
+    #[cfg(feature = "metrics")]
+    verified_gauge: Arc<IntGauge>,
 }
 
 impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
-    pub fn new(m: Arc<BuilderMetrics>) -> Self {
+    pub fn new() -> Self {
         Self {
             set: Default::default(),
-            metrics: m,
+            #[cfg(feature = "metrics")]
+            verified_gauge: Arc::new(
+                register_int_gauge!(
+                    "verified_duration_ms",
+                    "how long from start to verification"
+                )
+                .expect("valid metrics defintion"),
+            ),
         }
     }
 
@@ -82,10 +94,10 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
         let len = set.len();
         for b in it {
             set.insert(b.0);
-            #[cfg(feature = "times")]
+            #[cfg(feature = "metrics")]
             {
                 times::record(VERIFIED, *b.1);
-                self.metrics.update_verified_duration(b.1)
+                self.update_verified_duration(b.1)
             }
         }
         let len = set.len() - len;
@@ -93,5 +105,17 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
             set.pop_first();
         }
         len
+    }
+
+    #[cfg(feature = "metrics")]
+    fn update_verified_duration(&self, r: RoundNumber) {
+        let Some(a) = times::get(ROUND_START, r) else {
+            return;
+        };
+        let Some(b) = times::get(VERIFIED, r) else {
+            return;
+        };
+        let d = b.saturating_duration_since(a);
+        self.verified_gauge.set(d.as_millis() as i64)
     }
 }

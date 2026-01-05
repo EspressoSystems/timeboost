@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::BytesMut;
-use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
+use cliquenet::{Network, Overlay, overlay::Data};
 use multisig::{Keypair, PublicKey, x25519};
 use rand::{Rng, RngCore};
 use tokio::time::{Duration, timeout};
@@ -35,7 +35,6 @@ async fn multiple_frames() {
             party_a_sign.public_key(),
             party_a_dh,
             all_parties,
-            NetworkMetrics::default(),
         )
         .await
         .unwrap(),
@@ -47,7 +46,6 @@ async fn multiple_frames() {
             party_b_sign.public_key(),
             party_b_dh,
             all_parties,
-            NetworkMetrics::default(),
         )
         .await
         .unwrap(),

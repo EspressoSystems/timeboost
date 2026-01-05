@@ -5,10 +5,9 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
+use cliquenet::{Address, AddressableCommittee, Network, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
-use metrics::NoMetrics;
 use multisig::{Committee, CommitteeId, Keypair, x25519};
 use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
@@ -189,11 +188,6 @@ async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>
         cfg.sign_keypair().public_key(),
         cfg.dh_keypair().clone(),
         cfg.sailfish_committee().entries(),
-        NetworkMetrics::new(
-            "sailfish",
-            &NoMetrics,
-            cfg.sailfish_committee().parties().copied(),
-        ),
     )
     .await
     .unwrap();

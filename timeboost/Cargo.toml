@@ -6,11 +6,13 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-times = [
+metrics = [
+    "dep:prometheus",
     "dep:times",
-    "sailfish/times",
-    "timeboost-builder/times",
-    "timeboost-sequencer/times"
+    "cliquenet/metrics",
+    "sailfish/metrics",
+    "timeboost-builder/metrics",
+    "timeboost-sequencer/metrics"
 ]
 
 [dependencies]
@@ -24,7 +26,6 @@ cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
 rand = { workspace = true }
@@ -49,6 +50,7 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 # optional:
+prometheus = { workspace = true, optional = true }
 times = { path = "../times", optional = true }
 
 [dev-dependencies]

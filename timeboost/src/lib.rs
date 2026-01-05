@@ -1,9 +1,8 @@
 mod conf;
+
+#[cfg(feature = "metrics")]
 mod metrics;
 
-use std::sync::Arc;
-
-use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::{Result, bail};
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
@@ -29,6 +28,7 @@ pub use timeboost_types as types;
 use crate::api::ApiServer;
 use crate::api::internal::GrpcServer;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
+#[cfg(feature = "metrics")]
 use crate::metrics::TimeboostMetrics;
 
 pub mod api;
@@ -41,10 +41,10 @@ pub struct Timeboost {
     receiver: Receiver<BundleVariant>,
     sequencer: Sequencer,
     certifier: Certifier,
-    prometheus: Arc<PrometheusMetrics>,
     nitro_forwarder: NitroForwarder,
     submitter: Submitter,
     committees: BoxStream<'static, CommitteeConfig>,
+    #[cfg(feature = "metrics")]
     metrics: TimeboostMetrics,
 }
 
@@ -53,11 +53,11 @@ impl Timeboost {
     where
         S: Stream<Item = CommitteeConfig> + Send + 'static,
     {
-        let pro = Arc::new(PrometheusMetrics::default());
-        let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
-        let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
-        let sub = Submitter::new(cfg.submitter_config(), &*pro);
-        let met = TimeboostMetrics::new(&*pro);
+        let seq = Sequencer::new(cfg.sequencer_config()).await?;
+        let blk = Certifier::new(cfg.certifier_config()).await?;
+        let sub = Submitter::new(cfg.submitter_config());
+        #[cfg(feature = "metrics")]
+        let met = TimeboostMetrics::new().expect("valid metrics definitions");
 
         let nitro_forwarder =
             NitroForwarder::new(cfg.sign_keypair.public_key(), cfg.nitro_addr.clone())?;
@@ -71,10 +71,10 @@ impl Timeboost {
             receiver: rx,
             sequencer: seq,
             certifier: blk,
-            prometheus: pro,
             nitro_forwarder,
             submitter: sub,
             committees: stream.boxed(),
+            #[cfg(feature = "metrics")]
             metrics: met,
         })
     }
@@ -85,7 +85,6 @@ impl Timeboost {
             .bundles(self.sender.clone())
             .enc_key(self.config.threshold_dec_key.clone())
             .express_lane(self.config.chain_config.auction_contract.is_some())
-            .metrics(self.prometheus.clone())
             .maybe_secret(self.config.apikey.clone())
             .build()
     }
@@ -121,6 +120,7 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
+                        #[cfg(feature = "metrics")]
                         self.metrics.update(b.data().round());
                         if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;

@@ -74,8 +74,8 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = Sequencer::new(sc, &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cc, &NoMetrics).await.unwrap();
+            let mut s = Sequencer::new(sc).await.unwrap();
+            let mut c = Certifier::new(cc).await.unwrap();
             let mut r: Option<RoundNumber> = None;
             let c_handle = c.handle();
 
@@ -182,10 +182,10 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-          let mut s = Sequencer::new(seq_conf, &NoMetrics)
+          let mut s = Sequencer::new(seq_conf)
                 .await
                 .unwrap();
-            let mut c = Certifier::new(cert_conf, &NoMetrics)
+            let mut c = Certifier::new(cert_conf)
                 .await
                 .unwrap();
             let mut r: Option<sailfish_types::RoundNumber> = None;
