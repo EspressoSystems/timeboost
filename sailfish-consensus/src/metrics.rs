@@ -1,6 +1,6 @@
-use prometheus::{IntCounter, IntGauge, register_int_counter, register_int_gauge};
+use prometheus::{IntCounter, IntGauge, Result, register_int_counter, register_int_gauge};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ConsensusMetrics {
     pub committed_round: IntGauge,
@@ -15,7 +15,7 @@ pub struct ConsensusMetrics {
 }
 
 impl ConsensusMetrics {
-    pub fn new() -> prometheus::Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
             committed_round: register_int_gauge!("committed_round", "committed round number")?,
             dag_depth: register_int_gauge!("dag_depth", "number of rounds in a dag")?,

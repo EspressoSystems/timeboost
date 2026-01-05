@@ -17,10 +17,10 @@ use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use sailfish_types::{Info, math};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
-#[cfg(feature = "metrics")]
-use metrics::ConsensusMetrics;
-
 pub use dag::Dag;
+
+#[cfg(feature = "metrics")]
+pub use metrics::ConsensusMetrics;
 
 #[cfg(feature = "metrics")]
 use sailfish_types::time_series::{DELIVERED, ROUND_START};
@@ -120,10 +120,21 @@ pub struct Consensus<T> {
 
     /// The consensus metrics for this node.
     #[cfg(feature = "metrics")]
-    metrics: ConsensusMetrics,
+    metrics: Option<ConsensusMetrics>,
 }
 
 impl<T> Consensus<T> {
+    #[cfg(feature = "metrics")]
+    pub fn with_metrics(mut self, m: ConsensusMetrics) -> Self {
+        self.metrics = Some(m);
+        self
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn metrics(&self) -> Option<&ConsensusMetrics> {
+        self.metrics.as_ref()
+    }
+
     pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
@@ -180,7 +191,7 @@ where
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
             #[cfg(feature = "metrics")]
-            metrics: ConsensusMetrics::new().expect("valid metrics definitions"),
+            metrics: None,
         }
     }
 
@@ -344,7 +355,7 @@ where
         let t = TimeoutMessage::new(self.committee.id(), e, &self.keypair);
         let e = Envelope::signed(t, &self.keypair);
         #[cfg(feature = "metrics")]
-        self.metrics.rounds_timed_out.inc();
+        self.metrics.as_ref().map(|m| m.rounds_timed_out.inc());
         vec![Action::SendTimeout(e)]
     }
 
@@ -402,7 +413,9 @@ where
             Err(v) => {
                 self.buffer.add(v);
                 #[cfg(feature = "metrics")]
-                self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
+                self.metrics
+                    .as_ref()
+                    .map(|m| m.vertex_buffer.set(self.buffer.depth() as i64));
             }
             Ok(a) => {
                 actions.extend(a);
@@ -571,7 +584,9 @@ where
         }
 
         #[cfg(feature = "metrics")]
-        self.metrics.timeout_buffer.set(self.timeouts.len() as i64);
+        self.metrics
+            .as_ref()
+            .map(|m| m.timeout_buffer.set(self.timeouts.len() as i64));
 
         actions
     }
@@ -681,7 +696,9 @@ where
             actions.extend(self.broadcast_vertex(v.0));
             self.clear_aggregators(self.round);
             #[cfg(feature = "metrics")]
-            self.metrics.round.set(*self.round as i64);
+            self.metrics
+                .as_ref()
+                .map(|m| m.round.set(*self.round as i64));
             return actions;
         }
 
@@ -713,7 +730,9 @@ where
             actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
             #[cfg(feature = "metrics")]
-            self.metrics.round.set(*self.round as i64);
+            self.metrics
+                .as_ref()
+                .map(|m| m.round.set(*self.round as i64));
             return actions;
         }
 
@@ -756,7 +775,9 @@ where
         actions.extend(self.broadcast_vertex(v));
         self.clear_aggregators(self.round);
         #[cfg(feature = "metrics")]
-        self.metrics.round.set(*self.round as i64);
+        self.metrics
+            .as_ref()
+            .map(|m| m.round.set(*self.round as i64));
         actions
     }
 
@@ -822,7 +843,9 @@ where
 
         self.dag.add(v);
         #[cfg(feature = "metrics")]
-        self.metrics.dag_depth.set(self.dag.depth() as i64);
+        self.metrics
+            .as_ref()
+            .map(|m| m.dag_depth.set(self.dag.depth() as i64));
 
         if is_genesis_vertex {
             // A genesis vertex has no edges to prior rounds.
@@ -898,7 +921,9 @@ where
         }
 
         #[cfg(feature = "metrics")]
-        self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
+        self.metrics
+            .as_ref()
+            .map(|m| m.vertex_buffer.set(self.buffer.depth() as i64));
         actions
     }
 
@@ -932,8 +957,8 @@ where
         trace!(node = %self.public_key(), commit = %self.committed_round, "committed round");
         #[cfg(feature = "metrics")]
         self.metrics
-            .committed_round
-            .set(*self.committed_round as i64);
+            .as_ref()
+            .map(|m| m.committed_round.set(*self.committed_round as i64));
         self.order_vertices()
     }
 
@@ -1021,10 +1046,10 @@ where
         }
 
         #[cfg(feature = "metrics")]
-        {
-            self.metrics.dag_depth.set(self.dag.depth() as i64);
-            self.metrics.vertex_buffer.set(self.buffer.depth() as i64);
-            self.metrics.delivered.set(self.delivered.len() as i64);
+        if let Some(m) = &self.metrics {
+            m.dag_depth.set(self.dag.depth() as i64);
+            m.vertex_buffer.set(self.buffer.depth() as i64);
+            m.delivered.set(self.delivered.len() as i64);
         }
 
         actions.push(Action::Gc(Round::new(r, self.committee.id())));
@@ -1041,10 +1066,10 @@ where
         self.timeouts = self.timeouts.split_off(&(to - 1));
         self.no_votes = self.no_votes.split_off(&(to - 1));
         #[cfg(feature = "metrics")]
-        {
-            self.metrics.rounds_buffer.set(self.rounds.len() as i64);
-            self.metrics.timeout_buffer.set(self.timeouts.len() as i64);
-            self.metrics.novote_buffer.set(self.no_votes.len() as i64)
+        if let Some(m) = &self.metrics {
+            m.rounds_buffer.set(self.rounds.len() as i64);
+            m.timeout_buffer.set(self.timeouts.len() as i64);
+            m.novote_buffer.set(self.no_votes.len() as i64)
         }
     }
 
