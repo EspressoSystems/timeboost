@@ -17,6 +17,8 @@ use cliquenet::{AddressableCommittee, Network, NetworkError, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
 use sailfish::consensus::Consensus;
+#[cfg(feature = "metrics")]
+use sailfish::consensus::ConsensusMetrics;
 use sailfish::rbc::{Rbc, RbcError};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, CoordinatorEvent};
@@ -155,6 +157,12 @@ impl Sequencer {
                 cfg.sailfish_committee.committee().clone(),
                 queue.clone(),
             );
+
+            #[cfg(feature = "metrics")]
+            {
+                let m = ConsensusMetrics::new().expect("valid metrics definitions");
+                cons = cons.with_metrics(m)
+            }
 
             if let Some(prev) = &cfg.previous_sailfish_committee {
                 // Inform consensus about the previous committee.
@@ -355,7 +363,12 @@ impl Task {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let queue = self.bundles.clone();
-                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
+                            #[allow(unused_mut)]
+                            let mut cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
+                            #[cfg(feature = "metrics")]
+                            if let Some(m) = self.sailfish.current_consensus().metrics() {
+                                cons = cons.with_metrics(m.clone())
+                            }
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
