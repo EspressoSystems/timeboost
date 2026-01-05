@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-times = []
+metrics = []
 
 [dependencies]
 arbitrary = { workspace = true, optional = true, features = ["derive"] }

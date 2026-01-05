@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
 use cliquenet::{Address, AddressableCommittee};
-use metrics::NoMetrics;
 use multisig::Keypair;
 use multisig::{Committee, x25519};
 use parking_lot::Mutex;

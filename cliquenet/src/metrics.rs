@@ -1,65 +1,103 @@
 use std::{collections::HashMap, time::Duration};
 
-use metrics::{Counter, Gauge, Metrics, NoMetrics};
 use multisig::PublicKey;
+use prometheus::{IntCounter, IntGauge, opts, register_int_counter, register_int_gauge};
 
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct NetworkMetrics {
-    pub connections: Box<dyn Gauge>,
-    pub iqueue: Box<dyn Gauge>,
-    pub oqueue: Box<dyn Gauge>,
-    // TODO: These should use prometheus labels to model multiple dimensions:
-    connects: HashMap<PublicKey, Box<dyn Counter>>,
-    latencies: HashMap<PublicKey, Box<dyn Gauge>>,
-}
-
-impl Default for NetworkMetrics {
-    fn default() -> Self {
-        Self::new("default", &NoMetrics, std::iter::empty())
-    }
+    pub connections: IntGauge,
+    pub iqueue: IntGauge,
+    pub oqueue: IntGauge,
+    connects: HashMap<PublicKey, IntCounter>,
+    latencies: HashMap<PublicKey, IntGauge>,
+    peer_oqueues: HashMap<PublicKey, IntGauge>,
+    peer_iqueues: HashMap<PublicKey, IntGauge>,
 }
 
 impl NetworkMetrics {
-    pub fn new<M: Metrics, P>(label: &str, m: &M, parties: P) -> Self
+    pub fn new<P>(label: &str, parties: P) -> prometheus::Result<Self>
     where
         P: IntoIterator<Item = PublicKey>,
     {
         let connects = parties
             .into_iter()
             .map(|k| {
-                let c = m.create_counter(&format!("{label}_{k}_connect_attempts"), None);
-                (k, c)
+                let o = opts!("connect_attempts", "number of connect attempts")
+                    .const_label("label", label)
+                    .const_label("peer", k.to_string());
+                Ok::<_, prometheus::Error>((k, register_int_counter!(o)?))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Result<HashMap<_, _>, _>>()?;
 
         let latencies = connects
             .keys()
             .copied()
             .map(|k| {
-                let g = m.create_gauge(&format!("{label}_{k}_latency"), Some("ms"));
-                (k, g)
+                let o = opts!("latency_ms", "peer latency")
+                    .const_label("label", label)
+                    .const_label("peer", k.to_string());
+                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
-        Self {
-            connections: m.create_gauge(&format!("{label}_connections"), None),
-            iqueue: m.create_gauge(&format!("{label}_iqueue"), None),
-            oqueue: m.create_gauge(&format!("{label}_oqueue"), None),
+        let peer_oqueues = connects
+            .keys()
+            .copied()
+            .map(|k| {
+                let o = opts!("peer_oqueue_cap", "peer oqueue capacity")
+                    .const_label("label", label)
+                    .const_label("peer", k.to_string());
+                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
+            })
+            .collect::<Result<_, _>>()?;
+
+        let peer_iqueues = connects
+            .keys()
+            .copied()
+            .map(|k| {
+                let o = opts!("peer_iqueue_cap", "peer iqueue capacity")
+                    .const_label("label", label)
+                    .const_label("peer", k.to_string());
+                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self {
+            connections: register_int_gauge!(
+                &format!("{label}_connections"),
+                "number of peer connections"
+            )?,
+            iqueue: register_int_gauge!(&format!("{label}_iqueue_cap"), "inbound queue capacity")?,
+            oqueue: register_int_gauge!(&format!("{label}_oqueue_cap"), "outbound queue capacity")?,
             connects,
             latencies,
+            peer_oqueues,
+            peer_iqueues,
+        })
+    }
+
+    pub fn add_connect_attempt(&self, k: &PublicKey) {
+        if let Some(c) = self.connects.get(k) {
+            c.inc()
         }
     }
 
-    pub fn add_connect_attempt(&self, key: &PublicKey) {
-        if let Some(ctr) = self.connects.get(key) {
-            ctr.add(1)
+    pub fn set_latency(&self, k: &PublicKey, d: Duration) {
+        if let Some(g) = self.latencies.get(k) {
+            g.set(d.as_millis() as i64)
         }
     }
 
-    pub fn set_latency(&self, key: &PublicKey, d: Duration) {
-        if let Some(g) = self.latencies.get(key) {
-            g.set(d.as_millis() as usize)
+    pub fn set_peer_oqueue_cap(&self, k: &PublicKey, n: usize) {
+        if let Some(g) = self.peer_oqueues.get(k) {
+            g.set(n as i64)
+        }
+    }
+
+    pub fn set_peer_iqueue_cap(&self, k: &PublicKey, n: usize) {
+        if let Some(g) = self.peer_iqueues.get(k) {
+            g.set(n as i64)
         }
     }
 }

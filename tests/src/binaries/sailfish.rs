@@ -1,14 +1,13 @@
-use std::{iter::repeat_with, path::PathBuf, sync::Arc};
+use std::{iter::repeat_with, path::PathBuf};
 
 use anyhow::{Context, Result, bail};
-use cliquenet::{Network, NetworkMetrics, Overlay};
+use cliquenet::{Network, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use metrics::prometheus::PrometheusMetrics;
 use multisig::{Keypair, x25519};
 use sailfish::{
     Coordinator,
-    consensus::{Consensus, ConsensusMetrics},
-    rbc::{Rbc, RbcConfig, RbcMetrics},
+    consensus::Consensus,
+    rbc::{Rbc, RbcConfig},
     types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
@@ -76,21 +75,12 @@ async fn main() -> Result<()> {
         bail!("{sign_pubkey} not a member of the active committee")
     }
 
-    let prom = Arc::new(PrometheusMetrics::default());
-    let sf_metrics = ConsensusMetrics::new(prom.as_ref());
-    let net_metrics = NetworkMetrics::new(
-        "sailfish",
-        prom.as_ref(),
-        committee.members.iter().map(|m| m.signing_key),
-    );
-    let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
         conf.net.bind.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         committee.sailfish().entries(),
-        net_metrics,
     )
     .await?;
 
@@ -98,14 +88,9 @@ async fn main() -> Result<()> {
 
     let cfg = RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone());
 
-    let rbc = Rbc::new(
-        committee.size().get() * 5,
-        Overlay::new(network),
-        cfg.with_metrics(rbc_metrics),
-    );
+    let rbc = Rbc::new(committee.size().get() * 5, Overlay::new(network), cfg);
 
-    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
-        .with_metrics(sf_metrics);
+    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random));
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
     for a in coordinator.init() {

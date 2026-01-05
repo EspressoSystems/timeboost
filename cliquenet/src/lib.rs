@@ -3,17 +3,18 @@ mod chan;
 mod error;
 mod frame;
 mod id;
-mod metrics;
 mod net;
 mod tcp;
 mod time;
+
+#[cfg(feature = "metrics")]
+mod metrics;
 
 pub mod overlay;
 
 pub use addr::{Address, AddressableCommittee, InvalidAddress};
 pub use error::NetworkError;
 pub use id::Id;
-pub use metrics::NetworkMetrics;
 pub use net::Network;
 pub use overlay::Overlay;
 

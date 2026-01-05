@@ -22,7 +22,9 @@ use crate::digest::Digest;
 
 use super::{Command, Nonce, Protocol, RbcConfig, serialize};
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
+use crate::abraham::metrics::RbcMetrics;
+#[cfg(feature = "metrics")]
 use super::time_series::LEADER_INFO;
 
 type RbcResult<T> = std::result::Result<T, RbcError>;
@@ -51,6 +53,8 @@ pub struct Worker<T: Committable> {
     round: (RoundNumber, Evidence),
     /// Retry timer.
     timer: Interval,
+    #[cfg(feature = "metrics")]
+    metrics: RbcMetrics,
 }
 
 enum WorkerState {
@@ -209,6 +213,8 @@ impl<T: Committable> Worker<T> {
                 i.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
                 i
             },
+            #[cfg(feature = "metrics")]
+            metrics: RbcMetrics::new().expect("valid metrics definitions")
         }
     }
 }
@@ -225,6 +231,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return
         }
         loop {
+            #[cfg(feature = "metrics")]
+            {
+                self.metrics.tx_channel_cap.set(self.tx.capacity() as i64);
+                self.metrics.rx_channel_cap.set(self.rx.capacity() as i64);
+            }
+
             tokio::select! {
                 now = self.timer.tick() => {
                     match self.retry(now).await {
@@ -751,9 +763,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     .await
                     .map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered;
-                self.config
-                    .metrics
-                    .add_delivery_duration(tracker.start.elapsed());
                 debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
             }
             // Nothing to do here:
@@ -776,7 +785,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     .send(Event::Info(Info::LeaderThresholdReached(prev_round.into())))
                     .await
                     .map_err(|_| RbcError::Shutdown)?;
-                #[cfg(feature = "times")]
+                #[cfg(feature = "metrics")]
                 times::record_once(LEADER_INFO, prev_round);
                 messages.leader_threshold = true
             }
@@ -857,9 +866,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             .send(Event::Message(Message::Vertex(vertex.clone())))
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
-                        self.config
-                            .metrics
-                            .add_delivery_duration(tracker.start.elapsed());
                         debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
                         tracker.status = Status::Delivered
                     } else {
@@ -948,9 +954,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         .send(Event::Message(Message::Vertex(vertex.clone())))
                         .await
                         .map_err(|_| RbcError::Shutdown)?;
-                    self.config
-                        .metrics
-                        .add_delivery_duration(tracker.start.elapsed());
                     debug!(node = %self.key, vertex = %vertex.data(), %digest, "delivered");
                     tracker.status = Status::Delivered
                 } else {

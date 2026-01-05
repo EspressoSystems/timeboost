@@ -7,6 +7,8 @@ use std::{
 
 use bon::Builder;
 use multisig::{Committee, PublicKey, Validated};
+#[cfg(feature = "metrics")]
+use prometheus::register_int_counter;
 use rand::seq::IndexedRandom;
 use robusta::{Client, Config, espresso_types::NamespaceId};
 use timeboost_types::{
@@ -23,7 +25,10 @@ use tracing::{Level, debug, enabled, error, trace, warn};
 
 mod verify;
 
-use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
+use crate::config::SubmitterConfig;
+#[cfg(feature = "metrics")]
+use crate::metrics::BuilderMetrics;
+
 use verify::{Verified, Verifier};
 
 const DELAY: Duration = Duration::from_secs(30);
@@ -35,7 +40,8 @@ pub struct Submitter {
     sender: mpsc::Sender<CertifiedBlock<Validated>>,
     verify_task: JoinHandle<Empty>,
     sender_task: JoinHandle<()>,
-    metrics: Arc<BuilderMetrics>,
+    #[cfg(feature = "metrics")]
+    metrics: BuilderMetrics,
 }
 
 impl Drop for Submitter {
@@ -46,21 +52,35 @@ impl Drop for Submitter {
 }
 
 impl Submitter {
-    pub fn new<M>(cfg: SubmitterConfig, metrics: &M) -> Self
-    where
-        M: ::metrics::Metrics,
-    {
-        let metrics = Arc::new(BuilderMetrics::new(metrics));
-        let verified = Verified::new(metrics.clone());
+    pub fn new(cfg: SubmitterConfig) -> Self {
+        let verified = Verified::new();
         let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
+
+        #[cfg(feature = "metrics")]
+        let metrics = BuilderMetrics::new().expect("valid metrics definitions");
+
+        #[cfg(feature = "metrics")]
         let verifier = Verifier::builder()
             .label(cfg.pubkey)
             .nsid(cfg.namespace)
             .committees(committees.clone())
             .client(Client::new(cfg.robusta.0.clone()))
             .verified(verified.clone())
-            .metrics(metrics.clone())
+            .blocks_verified_ctr(
+                register_int_counter!("blocks_verified", "number of verified blocks")
+                    .expect("valid metrics defition"),
+            )
             .build();
+
+        #[cfg(not(feature = "metrics"))]
+        let verifier = Verifier::builder()
+            .label(cfg.pubkey)
+            .nsid(cfg.namespace)
+            .committees(committees.clone())
+            .client(Client::new(cfg.robusta.0.clone()))
+            .verified(verified.clone())
+            .build();
+
         let (tx, rx) = mpsc::channel(10_000);
         let sender = Sender::builder()
             .label(cfg.pubkey)
@@ -77,6 +97,7 @@ impl Submitter {
             config: cfg,
             verified,
             committees,
+            #[cfg(feature = "metrics")]
             metrics,
             sender: tx,
             verify_task: spawn(verifier.verify(configs.clone())),
@@ -93,7 +114,8 @@ impl Submitter {
     }
 
     pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) -> Result<(), SenderTaskDown> {
-        self.metrics.blocks_submitted.add(1);
+        #[cfg(feature = "metrics")]
+        self.metrics.blocks_submitted.inc();
         if self.verified.contains(cb.cert().data().num()) {
             return Ok(());
         }

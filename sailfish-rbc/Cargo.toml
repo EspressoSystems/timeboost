@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+metrics = ["dep:prometheus", "dep:times"]
+
 [dependencies]
 async-trait = { workspace = true }
 bincode = { workspace = true }
@@ -12,7 +15,6 @@ bs58 = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 rand = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
@@ -21,4 +23,5 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional:
+prometheus = { workspace = true, optional = true }
 times = { path = "../times", optional = true }

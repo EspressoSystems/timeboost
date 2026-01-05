@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use metrics::NoMetrics;
 use multisig::Certificate;
 use rand::random_range;
 use timeboost::builder::Certifier;
@@ -49,8 +48,8 @@ async fn block_order() {
         let r2b = round2block.clone();
         tasks.spawn(async move {
             sleep(Duration::from_secs(random_range(0..5))).await;
-            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
-            let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
+            let mut s = Sequencer::new(c).await.unwrap();
+            let mut p = Certifier::new(b).await.unwrap();
             let mut r = None;
 
             let handle = p.handle();

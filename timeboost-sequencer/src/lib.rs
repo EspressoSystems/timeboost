@@ -2,20 +2,24 @@ mod config;
 mod decrypt;
 mod delayed_inbox;
 mod include;
-mod metrics;
 mod queue;
 mod sort;
 
+#[cfg(feature = "metrics")]
+mod metrics;
+
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use cliquenet::MAX_MESSAGE_SIZE;
-use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
+use cliquenet::{AddressableCommittee, Network, NetworkError, Overlay};
+#[cfg(feature = "metrics")]
 use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
-use sailfish::consensus::{Consensus, ConsensusMetrics};
-use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
+use sailfish::consensus::Consensus;
+#[cfg(feature = "metrics")]
+use sailfish::consensus::ConsensusMetrics;
+use sailfish::rbc::{Rbc, RbcError};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, CoordinatorEvent};
 use timeboost_crypto::prelude::VessError;
@@ -36,7 +40,7 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 pub mod time_series {
     pub const DECRYPT_START: &str = "decrypt_start";
     pub const DECRYPT_END: &str = "decrypt_end";
@@ -83,7 +87,8 @@ struct Task {
     output: Sender<Output>,
     mode: Mode,
     round: RoundNumber,
-    metrics: Arc<SequencerMetrics>,
+    #[cfg(feature = "metrics")]
+    metrics: SequencerMetrics,
 }
 
 enum Command {
@@ -107,18 +112,14 @@ impl Mode {
 }
 
 impl Sequencer {
-    pub async fn new<M>(cfg: SequencerConfig, metrics: &M) -> Result<Self>
-    where
-        M: ::metrics::Metrics,
-    {
-        let cons_metrics = ConsensusMetrics::new(metrics);
-        let rbc_metrics = RbcMetrics::new(metrics);
-        let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
+    pub async fn new(cfg: SequencerConfig) -> Result<Self> {
+        #[cfg(feature = "metrics")]
+        let metrics = SequencerMetrics::new().expect("valid metrics definitions");
 
         let public_key = cfg.sign_keypair.public_key();
         let auction = cfg.chain_config.auction_contract.map(Auction::new);
 
-        let queue = BundleQueue::new(public_key, cfg.namespace, auction, seq_metrics.clone());
+        let queue = BundleQueue::new(public_key, cfg.namespace, auction);
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
@@ -128,19 +129,12 @@ impl Sequencer {
             .map_err(|e| TimeboostError::Other("delayed inbox connect failure", e.into()))?;
 
         let sailfish = {
-            let met = NetworkMetrics::new(
-                "sailfish",
-                metrics,
-                cfg.sailfish_committee.parties().copied(),
-            );
-
             let mut net = Network::create(
                 "sailfish",
                 cfg.sailfish_addr.clone(),
                 cfg.sign_keypair.public_key(),
                 cfg.dh_keypair.clone(),
                 cfg.sailfish_committee.entries(),
-                met,
             )
             .await?;
 
@@ -155,7 +149,6 @@ impl Sequencer {
                 5 * cfg.sailfish_committee.committee().size().get(),
                 Overlay::new(net),
                 cfg.rbc_config()
-                    .with_metrics(rbc_metrics)
                     .with_handshake(cfg.previous_sailfish_committee.is_none()),
             );
 
@@ -163,8 +156,13 @@ impl Sequencer {
                 cfg.sign_keypair.clone(),
                 cfg.sailfish_committee.committee().clone(),
                 queue.clone(),
-            )
-            .with_metrics(cons_metrics);
+            );
+
+            #[cfg(feature = "metrics")]
+            {
+                let m = ConsensusMetrics::new().expect("valid metrics definitions");
+                cons = cons.with_metrics(m)
+            }
 
             if let Some(prev) = &cfg.previous_sailfish_committee {
                 // Inform consensus about the previous committee.
@@ -174,15 +172,15 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter =
-            Decrypter::new(cfg.decrypter_config(), metrics, seq_metrics.clone()).await?;
+        let decrypter = Decrypter::new(cfg.decrypter_config()).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
 
-        seq_metrics
+        #[cfg(feature = "metrics")]
+        metrics
             .committee
-            .set(u64::from(cfg.sailfish_committee().committee().id()) as usize);
+            .set(u64::from(cfg.sailfish_committee().committee().id()) as i64);
 
         let task = Task {
             kpair: cfg.sign_keypair,
@@ -196,7 +194,8 @@ impl Sequencer {
             commands: cr,
             mode: Mode::Passive,
             round: RoundNumber::genesis(),
-            metrics: seq_metrics,
+            #[cfg(feature = "metrics")]
+            metrics,
         };
 
         Ok(Self {
@@ -333,6 +332,7 @@ impl Task {
                             let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
+                        #[cfg(feature = "metrics")]
                         self.metrics.update(round);
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -363,7 +363,12 @@ impl Task {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let queue = self.bundles.clone();
-                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
+                            #[allow(unused_mut)]
+                            let mut cons = Consensus::new(self.kpair.clone(), a.committee().clone(), queue);
+                            #[cfg(feature = "metrics")]
+                            if let Some(m) = self.sailfish.current_consensus().metrics() {
+                                cons = cons.with_metrics(m.clone())
+                            }
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts, &mut dkg_bundles).await?
                         }
@@ -428,8 +433,11 @@ impl Task {
                         if let Err(err) = self.decrypter.use_committee(r).await {
                             error!(node = %self.label, %err, "decrypt use committee error");
                         }
-                        let committee_id: u64 = r.committee().into();
-                        self.metrics.committee.set(committee_id as usize);
+                        #[cfg(feature = "metrics")]
+                        {
+                            let committee_id: u64 = r.committee().into();
+                            self.metrics.committee.set(committee_id as i64);
+                        }
                         self.output
                             .send(Output::UseCommittee(r))
                             .await
