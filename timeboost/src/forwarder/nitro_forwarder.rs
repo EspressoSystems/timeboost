@@ -47,14 +47,7 @@ impl NitroForwarder {
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
-            encoded_txns: txns
-                .iter()
-                .map(|tx| timeboost_proto::inclusion::Transaction {
-                    encoded_txn: tx.encoded_2718().into(),
-                    address: vec![],
-                    timestamp: 0,
-                })
-                .collect(),
+            encoded_txns: txns.iter().map(|tx| tx.encoded_2718()).collect(),
             consensus_timestamp: timestamp.into(),
             // we need to add 1 to the index
             // eg index 0 is really 1 delayed message read
