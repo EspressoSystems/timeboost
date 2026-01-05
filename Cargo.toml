@@ -94,7 +94,7 @@ timeboost-proto = { git = "https://github.com/EspressoSystems/timeboost-proto" }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots", "url"] }
-tokio-util = { version = "0.7.17", features = ["compat", "rt"] }
+tokio-util = { version = "0.7.18", features = ["compat", "rt"] }
 toml = "0.9.10"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
