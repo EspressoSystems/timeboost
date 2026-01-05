@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::num::NonZeroUsize;
 
 use multisig::{Committee, PublicKey, x25519};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -166,6 +167,10 @@ impl AddressableCommittee {
         };
         this.assert_shared_domain();
         this
+    }
+
+    pub fn size(&self) -> NonZeroUsize {
+        self.committee.size()
     }
 
     pub fn committee(&self) -> &Committee {

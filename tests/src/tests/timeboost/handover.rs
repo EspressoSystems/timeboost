@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee, Network, Overlay};
+use cliquenet::{Address, AddressableCommittee, NetConf, Network, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
 use multisig::{Committee, CommitteeId, Keypair, x25519};
@@ -183,11 +183,13 @@ where
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
     let mut net = Network::create(
-        "sailfish",
-        cfg.sailfish_address().clone(),
-        cfg.sign_keypair().public_key(),
-        cfg.dh_keypair().clone(),
-        cfg.sailfish_committee().entries(),
+        NetConf::builder()
+            .name("sailfish")
+            .label(cfg.sign_keypair().public_key())
+            .keypair(cfg.dh_keypair().clone())
+            .bind(cfg.sailfish_address().clone())
+            .parties(cfg.sailfish_committee().entries())
+            .build(),
     )
     .await
     .unwrap();

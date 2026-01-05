@@ -9,6 +9,8 @@ use bincode::{Decode, Encode};
 use bytes::{Bytes, BytesMut};
 use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
+#[cfg(feature = "metrics")]
+use prometheus::{IntGauge, register_int_gauge};
 use thiserror::Error;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
@@ -111,7 +113,18 @@ enum Target {
 impl Overlay {
     pub fn new(net: Network) -> Self {
         let buffer = Buffer::default();
-        let retry = spawn(retry(buffer.clone(), net.sender()));
+        #[cfg(feature = "metrics")]
+        let m_gauge = register_int_gauge!(
+            format!("{}_overlay_messages", net.name()),
+            "in-flight messages"
+        )
+        .expect("valid metric definition");
+        let retry = spawn(retry(
+            buffer.clone(),
+            net.sender(),
+            #[cfg(feature = "metrics")]
+            m_gauge,
+        ));
         Self {
             this: net.public_key(),
             sender: net.sender(),
@@ -274,7 +287,11 @@ impl Overlay {
     }
 }
 
-async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
+async fn retry(
+    buf: Buffer,
+    net: Sender<Command>,
+    #[cfg(feature = "metrics")] msg_gauge: IntGauge,
+) -> Infallible {
     const DELAYS: [u64; 4] = [1, 3, 5, 15];
 
     let mut i = time::interval(Duration::from_secs(1));
@@ -289,6 +306,9 @@ async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
         debug_assert!(buckets.is_empty());
         buckets.extend(buf.0.lock().keys().copied());
 
+        #[cfg(feature = "metrics")]
+        let mut ctr = 0;
+
         for b in buckets.drain(..) {
             debug_assert!(ids.is_empty());
             ids.extend(
@@ -300,6 +320,11 @@ async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
             );
 
             for id in ids.drain(..) {
+                #[cfg(feature = "metrics")]
+                {
+                    ctr += 1;
+                }
+
                 let message;
                 let remaining;
 
@@ -322,13 +347,14 @@ async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
                     remaining = m.remaining.clone();
                 }
 
-                for p in remaining {
-                    let _ = net
-                        .send(Command::Unicast(p, Some(id), message.clone()))
-                        .await;
-                }
+                let _ = net
+                    .send(Command::Multicast(remaining, Some(id), message.clone()))
+                    .await;
             }
         }
+
+        #[cfg(feature = "metrics")]
+        msg_gauge.set(ctr)
     }
 }
 

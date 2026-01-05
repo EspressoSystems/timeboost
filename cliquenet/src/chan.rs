@@ -7,7 +7,6 @@ use std::sync::Arc;
 use nohash_hasher::IntSet;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
-use tokio::sync::mpsc::error::TrySendError;
 
 use crate::Id;
 
@@ -54,26 +53,29 @@ pub fn channel<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
 }
 
 impl<T> Sender<T> {
-    pub fn try_send(&self, id: Option<Id>, val: T) -> Result<(), TrySendError<T>> {
+    pub fn send(&self, id: Option<Id>, val: T) {
         if let Some(id) = id {
             let mut buf = self.0.buf.lock();
             if buf.ids.contains(&id) {
-                return Ok(());
+                return;
             }
             if buf.xs.len() == self.0.cap {
-                return Err(TrySendError::Full(val));
+                if let Some((Some(id), _)) = buf.xs.pop_front() {
+                    buf.ids.remove(&id);
+                }
             }
             buf.xs.push_back((Some(id), val));
             buf.ids.insert(id);
         } else {
             let mut buf = self.0.buf.lock();
             if buf.xs.len() == self.0.cap {
-                return Err(TrySendError::Full(val));
+                if let Some((Some(id), _)) = buf.xs.pop_front() {
+                    buf.ids.remove(&id);
+                }
             }
             buf.xs.push_back((None, val));
         }
         self.0.sig.notify_waiters();
-        Ok(())
     }
 
     pub fn capacity(&self) -> usize {

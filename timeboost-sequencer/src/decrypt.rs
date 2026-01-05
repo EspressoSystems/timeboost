@@ -6,7 +6,7 @@ use ark_std::{UniformRand, rand::thread_rng};
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, Role};
+use cliquenet::{AddressableCommittee, MAX_MESSAGE_SIZE, NetConf, Network, NetworkError, Role};
 use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
 #[cfg(feature = "metrics")]
@@ -133,15 +133,16 @@ impl Decrypter {
         let (dec_tx, dec_rx) = channel(cfg.retain);
         let (addr_comm, key_store) = cfg.committee;
 
-        let mut net = Network::create(
-            "decrypt",
-            cfg.address,
-            cfg.label,
-            cfg.dh_keypair,
-            addr_comm.entries(),
-        )
-        .await
-        .map_err(DecrypterError::Net)?;
+        let mut net = {
+            let cfg = NetConf::builder()
+                .name("decrypt")
+                .label(cfg.label)
+                .keypair(cfg.dh_keypair)
+                .bind(cfg.address)
+                .parties(addr_comm.entries())
+                .build();
+            Network::create(cfg).await.map_err(DecrypterError::Net)?
+        };
 
         let committee = key_store.committee();
         let current = committee.id();
