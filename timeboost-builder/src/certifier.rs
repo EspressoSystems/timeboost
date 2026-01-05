@@ -156,7 +156,7 @@ impl Certifier {
         &mut self,
         mut c: AddressableCommittee,
     ) -> StdResult<(), CertifierDown> {
-        debug!(node = %self.label, committee = %c.committee().id(), "next committee");
+        info!(node = %self.label, committee = %c.committee().id(), "next committee");
         c.update_addresses(|a| a.clone().with_offset(CERTIFIER_PORT_OFFSET));
         self.worker_tx
             .send(Command::NextCommittee(c))
@@ -167,7 +167,7 @@ impl Certifier {
 
     /// Use a committee starting at the given round.
     pub async fn use_committee(&mut self, r: Round) -> StdResult<(), CertifierDown> {
-        debug!(node = %self.label, round = %r, "use committee");
+        info!(node = %self.label, round = %r, "use committee");
         self.worker_tx
             .send(Command::UseCommittee(r))
             .await
@@ -304,7 +304,7 @@ impl Worker {
                         }
                     Err(err) => {
                         let _: NetworkDown = err;
-                        debug!(node = %self.label, "network down");
+                        warn!(node = %self.label, "network down");
                         return EndOfPlay::NetworkDown
                     }
                 },
@@ -328,7 +328,7 @@ impl Worker {
                             Err(err) => warn!(node = %self.label, %err, "error on use committee")
                         }
                     None => {
-                        debug!(node = %self.label, "parent down");
+                        warn!(node = %self.label, "parent down");
                         return EndOfPlay::CertifierDown
                     }
                 }
@@ -533,7 +533,7 @@ impl Worker {
 
         // Check if we need to catch up to the others.
         if self.next_block.unwrap_or_default() < lower_bound {
-            debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
+            info!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
             // To catch up we first discard everything too old.
             self.next_block = Some(lower_bound);
             self.gc(lower_bound).await?;
