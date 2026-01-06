@@ -5,6 +5,7 @@ use std::io;
 use alloy::eips::Encodable2718;
 use cliquenet::Address;
 use multisig::PublicKey;
+use prost::bytes::Bytes;
 use sailfish::types::RoundNumber;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
@@ -47,7 +48,10 @@ impl NitroForwarder {
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
-            encoded_txns: txns.iter().map(|tx| tx.encoded_2718()).collect(),
+            encoded_txns: txns
+                .iter()
+                .map(|tx| Bytes::from(tx.encoded_2718()))
+                .collect(),
             consensus_timestamp: timestamp.into(),
             // we need to add 1 to the index
             // eg index 0 is really 1 delayed message read
