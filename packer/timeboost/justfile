@@ -21,15 +21,16 @@ build:
 extract-nitro target:
     #!/usr/bin/env bash
     set -e
-    podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
     if [[ "${CI:-}" == "true" ]]; then
         podman unshare bash -c '
+            podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
             MNT=$(podman image mount {{nitro-image}})
             cp "$MNT/usr/local/bin/nitro" {{target}}
             podman image unmount {{nitro-image}}
         '
     else
         run0 bash -c '
+            podman pull ghcr.io/espressosystems/nitro-espresso-integration/{{nitro-image}}
             MNT=$(podman image mount {{nitro-image}})
             cp "$MNT/usr/local/bin/nitro" {{target}}
             podman image unmount {{nitro-image}}
