@@ -12,11 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
 use cliquenet::{Address, AddressableCommittee};
-use metrics::NoMetrics;
-use multisig::{Committee, x25519};
-use multisig::{CommitteeId, Keypair};
+use multisig::{Committee, CommitteeId, Keypair, x25519};
 use parking_lot::Mutex;
-use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
+use sailfish_types::RoundNumber;
 use test_utils::ports::alloc_ports;
 use timeboost::builder::CertifierConfig;
 use timeboost::config::ChainConfig;
@@ -54,7 +52,7 @@ async fn make_configs(
     }
 
     let committee = Committee::new(
-        UNKNOWN_COMMITTEE_ID,
+        CommitteeId::from(1),
         parts
             .iter()
             .enumerate()
