@@ -132,7 +132,7 @@ where
         let e = Aead::encrypt(&cipher, &nonce, payload).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
         })?;
-        let u_hat = hash_to_curve::<C, H2C>(v, e.clone())?;
+        let u_hat = hash_to_curve::<C, H2C>(v, e.clone(), aad.clone())?;
 
         let w_hat = u_hat * beta;
 
@@ -156,8 +156,6 @@ where
         ciphertext: &Self::Ciphertext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, ThresholdEncError> {
-        // NOTE: our scheme can optionally reject decryption request based on the `aad` value
-        // e.g. `aad` includes an invalid credential, coming from an unauthorized prying combiner
         let generator = C::generator();
         let alpha = sk.share;
         let v = ciphertext.v;
@@ -259,21 +257,14 @@ where
     D: DuplexSpongeInterface,
     H2C: HashToCurve<C>,
 {
-    /// Check correctness of ciphertext against its associated data (or "Label" in [SG01])
-    /// through Dleq proof verification.
-    /// This check verifies integrity of the ciphertext w.r.t. the associated data: keyset_id
     fn ct_check(
         ct: &Ciphertext<C>,
-        _aad: &<Self as ThresholdEncScheme>::AssociatedData,
+        aad: &<Self as ThresholdEncScheme>::AssociatedData,
     ) -> Result<(), ThresholdEncError> {
         let g = C::generator();
         let (v, e, w_hat, pi) = (ct.v, ct.e.clone(), ct.w_hat, ct.pi.clone());
 
-        // dev note: currently our scheme binds the keyset_id associated data not through `aad`
-        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds
-        // `keyset_id`, which is why `aad` is left unused. Technically, keyset_id is part of
-        // aad, we should use aad to derive u_hat
-        let u_hat = hash_to_curve::<C, H2C>(v, e)
+        let u_hat = hash_to_curve::<C, H2C>(v, e, aad.clone())
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(g, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi).map_err(ThresholdEncError::DleqError)?;
@@ -282,7 +273,7 @@ where
     }
 }
 
-fn hash_to_curve<C, H2C>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
+fn hash_to_curve<C, H2C>(v: C, e: Vec<u8>, aad: Vec<u8>) -> Result<C, ThresholdEncError>
 where
     C: CurveGroup,
     H2C: HashToCurve<C>,
@@ -291,7 +282,8 @@ where
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
-    let _ = writer.write(&e);
+    writer.write(&e)?;
+    writer.write(&aad)?;
     writer.flush()?;
     drop(writer);
 
