@@ -2,6 +2,7 @@
 Description=Nitro
 After=network.target
 Requires=network-online.target
+BindsTo=timeboost.service
 
 [Service]
 Type=notify
