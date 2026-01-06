@@ -6,7 +6,6 @@ use multisig::{
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use sailfish::consensus::ConsensusMetrics;
 use sailfish::types::CommitteeVec;
 use sailfish::types::{
     Evidence, Round, RoundNumber, Timeout, TimeoutMessage, UNKNOWN_COMMITTEE_ID,
@@ -50,9 +49,7 @@ impl KeyManager {
         self.keys
             .values()
             .map(|kpair| {
-                let metrics = ConsensusMetrics::default();
-                let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
-                    .with_metrics(metrics);
+                let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
             .collect()

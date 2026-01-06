@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [features]
 arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
-times     = ["sailfish-types/times"]
+metrics   = ["sailfish-types/metrics"]
 
 [dependencies]
 adapters = { path = "../adapters" }

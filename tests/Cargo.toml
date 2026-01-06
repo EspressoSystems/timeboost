@@ -16,7 +16,6 @@ cliquenet = { path = "../cliquenet", features = ["turmoil"] }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
 futures = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rand = { workspace = true }

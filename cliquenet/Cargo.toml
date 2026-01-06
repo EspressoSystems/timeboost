@@ -5,11 +5,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+metrics = ["dep:prometheus"]
+
 [dependencies]
 bimap = { workspace = true }
 bincode = { workspace = true }
+bon = { workspace = true }
 bytes = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 nohash-hasher = { workspace = true }
 parking_lot = { workspace = true }
@@ -20,6 +23,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional:
+prometheus = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]

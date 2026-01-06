@@ -1,39 +1,34 @@
-use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
+use prometheus::{IntCounter, IntGauge, Result, register_int_counter, register_int_gauge};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ConsensusMetrics {
-    pub committed_round: Box<dyn Gauge>,
-    pub dag_depth: Box<dyn Gauge>,
-    pub delivered: Box<dyn Gauge>,
-    pub round: Box<dyn Gauge>,
-    pub round_duration: Box<dyn Histogram>,
-    pub timeout_buffer: Box<dyn Gauge>,
-    pub novote_buffer: Box<dyn Gauge>,
-    pub rounds_buffer: Box<dyn Gauge>,
-    pub vertex_buffer: Box<dyn Gauge>,
-    pub rounds_timed_out: Box<dyn Counter>,
-}
-
-impl Default for ConsensusMetrics {
-    fn default() -> Self {
-        Self::new(&NoMetrics)
-    }
+    pub committed_round: IntGauge,
+    pub dag_depth: IntGauge,
+    pub delivered: IntGauge,
+    pub round: IntGauge,
+    pub timeout_buffer: IntGauge,
+    pub novote_buffer: IntGauge,
+    pub rounds_buffer: IntGauge,
+    pub vertex_buffer: IntGauge,
+    pub rounds_timed_out: IntCounter,
 }
 
 impl ConsensusMetrics {
-    pub fn new<M: Metrics>(m: &M) -> Self {
-        Self {
-            committed_round: m.create_gauge("committed_round", None),
-            dag_depth: m.create_gauge("dag_depth", None),
-            delivered: m.create_gauge("delivered_filter", None),
-            round: m.create_gauge("round", None),
-            round_duration: m.create_histogram("round_duration", Some("seconds"), None),
-            timeout_buffer: m.create_gauge("timeout_buffer", None),
-            novote_buffer: m.create_gauge("novote_buffer", None),
-            rounds_buffer: m.create_gauge("rounds_buffer", None),
-            vertex_buffer: m.create_gauge("vertex_buffer", None),
-            rounds_timed_out: m.create_counter("rounds_timed_out", None),
-        }
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            committed_round: register_int_gauge!("committed_round", "committed round number")?,
+            dag_depth: register_int_gauge!("dag_depth", "number of rounds in a dag")?,
+            round: register_int_gauge!("round", "current round number")?,
+            delivered: register_int_gauge!("delivered_buffer", "size of delivered items buffer")?,
+            timeout_buffer: register_int_gauge!("timeout_buffer", "size of timeout buffer")?,
+            novote_buffer: register_int_gauge!("novote_buffer", "size of no-vote buffer")?,
+            rounds_buffer: register_int_gauge!("rounds_buffer", "size of rounds buffer")?,
+            vertex_buffer: register_int_gauge!("vertex_buffer", "size of vertex buffer")?,
+            rounds_timed_out: register_int_counter!(
+                "timeout_rounds",
+                "number of rounds that timed out"
+            )?,
+        })
     }
 }

@@ -6,7 +6,7 @@ use adapters::bytes::BytesWriter;
 use bon::Builder;
 use bytes::{Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Role};
+use cliquenet::{AddressableCommittee, NetConf, Network, NetworkError, Role};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use minicbor::{Decode, Encode};
 use multisig::{
@@ -25,7 +25,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::CertifierConfig;
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 use crate::time_series::{CERTIFY_END, CERTIFY_START};
 
 type Result<T> = StdResult<T, CertifierError>;
@@ -60,24 +60,20 @@ enum Command {
 }
 
 impl Certifier {
-    pub async fn new<M>(cfg: CertifierConfig, metrics: &M) -> Result<Self>
-    where
-        M: metrics::Metrics,
-    {
+    pub async fn new(cfg: CertifierConfig) -> Result<Self> {
         let (cmd_tx, cmd_rx) = channel(CAPACITY);
         let (crt_tx, crt_rx) = channel(CAPACITY);
 
-        let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
-
-        let mut net = Network::create(
-            "block",
-            cfg.address.clone(),
-            cfg.sign_keypair.public_key(),
-            cfg.dh_keypair.clone(),
-            cfg.committee.entries(),
-            net_metrics,
-        )
-        .await?;
+        let mut net = {
+            let cfg = NetConf::builder()
+                .name("block")
+                .keypair(cfg.dh_keypair.clone())
+                .label(cfg.sign_keypair.public_key())
+                .bind(cfg.address.clone())
+                .parties(cfg.committee.entries())
+                .build();
+            Network::create(cfg).await?
+        };
 
         if let Some(prev) = &cfg.previous_committee {
             // Add peers from the previous committee which are not members of
@@ -141,7 +137,7 @@ impl Certifier {
                         hash  = %b.data().hash(),
                         "certified block"
                     );
-                    #[cfg(feature = "times")]
+                    #[cfg(feature = "metrics")]
                     times::record(CERTIFY_END, *b.data().round());
                     return Ok(b)
                 }
@@ -192,7 +188,7 @@ impl Handle {
             hash  = %b.hash(),
             "enqueuing block"
         );
-        #[cfg(feature = "times")]
+        #[cfg(feature = "metrics")]
         times::record(CERTIFY_START, *b.round());
         self.worker_tx
             .send(Command::Certify(b))

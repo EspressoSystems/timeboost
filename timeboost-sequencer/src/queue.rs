@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use multisig::PublicKey;
 use parking_lot::Mutex;
+#[cfg(feature = "metrics")]
+use prometheus::{IntGauge, register_int_gauge};
 use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
     Auction, Bundle, BundleVariant, ChainId, DkgBundle, Epoch, RetryList, SeqNo,
@@ -16,7 +18,6 @@ use timeboost_types::{
 use tracing::{error, trace, warn};
 
 use super::Mode;
-use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
@@ -33,10 +34,15 @@ struct Inner {
     priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
     dkg: Option<DkgBundle>,
-    metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
     cache: HashSet<[u8; 32]>,
+    /// Number of priority bundles in queue.
+    #[cfg(feature = "metrics")]
+    queued_priority_gauge: IntGauge,
+    /// Number of regular bundles in queue.
+    #[cfg(feature = "metrics")]
+    queued_regular_gauge: IntGauge,
 }
 
 impl Inner {
@@ -46,18 +52,12 @@ impl Inner {
                 self.priority = self.priority.split_off(&time.into());
             }
             self.time = time;
-            self.metrics.time.set(u64::from(self.time) as usize);
         }
     }
 }
 
 impl BundleQueue {
-    pub fn new(
-        label: PublicKey,
-        chain_id: ChainId,
-        auction: Option<Auction>,
-        metrics: Arc<SequencerMetrics>,
-    ) -> Self {
+    pub fn new(label: PublicKey, chain_id: ChainId, auction: Option<Auction>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             label,
             chain_id,
@@ -67,10 +67,21 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             dkg: None,
-            metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
             cache: HashSet::new(),
+            #[cfg(feature = "metrics")]
+            queued_priority_gauge: register_int_gauge!(
+                "queued_prio_bundles",
+                "number of queued priority bundles"
+            )
+            .expect("valid integer gauge"),
+            #[cfg(feature = "metrics")]
+            queued_regular_gauge: register_int_gauge!(
+                "queued_reg_bundles",
+                "number of queued regular bundles"
+            )
+            .expect("valid integer gauge"),
         })))
     }
 
@@ -128,11 +139,13 @@ impl BundleQueue {
             }
         }
 
-        inner
-            .metrics
-            .queued_priority
-            .set(inner.priority.values().map(BTreeMap::len).sum());
-        inner.metrics.queued_regular.set(inner.regular.len());
+        #[cfg(feature = "metrics")]
+        {
+            inner
+                .queued_priority_gauge
+                .set(inner.priority.values().map(BTreeMap::len).sum::<usize>() as i64);
+            inner.queued_regular_gauge.set(inner.regular.len() as i64);
+        }
     }
 
     pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
@@ -199,11 +212,13 @@ impl BundleQueue {
             }
         }
 
-        inner
-            .metrics
-            .queued_priority
-            .set(inner.priority.values().map(BTreeMap::len).sum());
-        inner.metrics.queued_regular.set(inner.regular.len());
+        #[cfg(feature = "metrics")]
+        {
+            inner
+                .queued_priority_gauge
+                .set(inner.priority.values().map(BTreeMap::len).sum::<usize>() as i64);
+            inner.queued_regular_gauge.set(inner.regular.len() as i64);
+        }
     }
 }
 

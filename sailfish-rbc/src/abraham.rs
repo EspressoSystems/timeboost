@@ -11,10 +11,13 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::RbcError;
 use crate::digest::Digest;
-use crate::{RbcError, RbcMetrics};
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
+mod metrics;
+
+#[cfg(feature = "metrics")]
 pub mod time_series {
     pub const LEADER_INFO: &str = "leader_info";
 }
@@ -83,7 +86,6 @@ pub struct RbcConfig {
     committees: CommitteeVec<2>,
     committee_id: CommitteeId,
     handshake: bool,
-    metrics: RbcMetrics,
 }
 
 impl RbcConfig {
@@ -98,14 +100,7 @@ impl RbcConfig {
             committee_id: id,
             committees: c,
             handshake: true,
-            metrics: RbcMetrics::default(),
         }
-    }
-
-    /// Set the RBC metrics value to use.
-    pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
-        self.metrics = m;
-        self
     }
 
     /// Should we send a handshake first or start directly?
