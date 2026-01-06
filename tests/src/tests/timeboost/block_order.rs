@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use multisig::Certificate;
+use multisig::{Certificate, CommitteeId};
 use rand::random_range;
 use timeboost::builder::Certifier;
 use timeboost::sequencer::{Output, Sequencer};
@@ -29,7 +29,8 @@ async fn block_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
-    let (enc_keys, cfg) = make_configs(num).await;
+    let committee_id = CommitteeId::from(1);
+    let (enc_keys, cfg) = make_configs(num, committee_id).await;
 
     let chain_id = cfg[0].0.namespace();
     let auction = Auction::new(cfg[0].0.chain_config().auction_contract.unwrap());
@@ -100,6 +101,7 @@ async fn block_order() {
     tasks.spawn(gen_bundles(
         bcast.clone(),
         chain_id,
+        committee_id,
         enc_keys[0].clone(),
         auction,
     ));

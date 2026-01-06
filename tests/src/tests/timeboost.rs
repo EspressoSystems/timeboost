@@ -31,6 +31,7 @@ use url::Url;
 
 async fn make_configs(
     size: NonZeroUsize,
+    committee_id: CommitteeId,
 ) -> (
     Vec<ThresholdKeyCell>,
     Vec<(SequencerConfig, CertifierConfig)>,
@@ -52,7 +53,7 @@ async fn make_configs(
     }
 
     let committee = Committee::new(
-        CommitteeId::from(1),
+        committee_id,
         parts
             .iter()
             .enumerate()
@@ -141,6 +142,7 @@ async fn make_configs(
 async fn gen_bundles(
     tx: broadcast::Sender<BundleVariant>,
     chain_id: ChainId,
+    committee_id: CommitteeId,
     enc_key: ThresholdKeyCell,
     auction: Auction,
 ) {
@@ -152,7 +154,7 @@ async fn gen_bundles(
         );
         let Ok(b) = create_bundle(
             enc_key.get().map(|t| t.pubkey().clone()).as_ref(),
-            CommitteeId::from(1),
+            committee_id,
             &auction,
             t,
             0.5f64,
