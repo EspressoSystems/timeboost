@@ -1,7 +1,9 @@
 mod certifier;
 mod config;
-mod metrics;
 mod submit;
+
+#[cfg(feature = "metrics")]
+mod metrics;
 
 pub use robusta;
 
@@ -10,7 +12,7 @@ pub use config::{CertifierConfig, CertifierConfigBuilder};
 pub use config::{SubmitterConfig, SubmitterConfigBuilder};
 pub use submit::{SenderTaskDown, Submitter};
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 pub mod time_series {
     pub const VERIFIED: &str = "verified";
     pub const CERTIFY_START: &str = "certify_start";

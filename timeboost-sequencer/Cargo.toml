@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+metrics = ["dep:prometheus", "dep:times", "cliquenet/metrics", "sailfish/metrics"]
+
 [dependencies]
 alloy = { workspace = true }
 ark-std = { workspace = true }
@@ -14,7 +17,6 @@ bon = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
@@ -27,6 +29,7 @@ timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional:
+prometheus = { workspace = true, optional = true }
 times = { path = "../times", optional = true }
 
 [dev-dependencies]

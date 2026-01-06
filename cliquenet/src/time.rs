@@ -32,6 +32,7 @@ impl Timestamp {
         Some(Self::from_bytes(bytes))
     }
 
+    #[allow(unused)]
     pub fn diff(self, other: Self) -> Option<Duration> {
         self.0.checked_sub(other.0).map(Duration::from_micros)
     }

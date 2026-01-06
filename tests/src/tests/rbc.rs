@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use cliquenet::{Address, Network, NetworkMetrics, Overlay};
+use cliquenet::{Address, NetConf, Network, Overlay};
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
@@ -55,12 +55,13 @@ fn mk_host<A, const N: usize>(
         let p = peers.clone();
         async move {
             let comm = Network::create_turmoil(
-                "rbc",
-                a,
-                k.public_key(),
-                x.clone(),
-                p,
-                NetworkMetrics::default(),
+                NetConf::builder()
+                    .name("rbc")
+                    .label(k.public_key())
+                    .keypair(x.clone())
+                    .bind(a)
+                    .parties(p)
+                    .build(),
             )
             .await?;
             let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
@@ -109,7 +110,16 @@ fn small_committee() {
 
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
-        let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil(
+            NetConf::builder()
+                .name("rbc")
+                .label(k.public_key())
+                .keypair(x)
+                .bind(addr.into())
+                .parties(peers)
+                .build()
+        )
+        .await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -167,7 +177,15 @@ fn medium_committee() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil(
+            NetConf::builder()
+                .name("rbc")
+                .label(k.public_key())
+                .keypair(x)
+                .bind(addr.into())
+                .parties(peers)
+                .build()
+        ).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -224,7 +242,15 @@ fn medium_committee_partition_network() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("rbc", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil(
+            NetConf::builder()
+                .name("rbc")
+                .label(k.public_key())
+                .keypair(x)
+                .bind(addr.into())
+                .parties(peers)
+                .build()
+        ).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);

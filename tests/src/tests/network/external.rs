@@ -2,7 +2,7 @@ pub mod test_simple_network;
 
 use std::collections::HashMap;
 
-use cliquenet::{Network, NetworkMetrics, Overlay};
+use cliquenet::{NetConf, Network, Overlay};
 use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
@@ -55,16 +55,22 @@ impl TestableNetwork for BasicNetworkTest {
                 .iter()
                 .find_map(|(p, _, a)| (*p == kpr.public_key()).then_some(a))
                 .expect("own public key to be present");
-            let net = Network::create(
-                "test",
-                addr,
-                kpr.public_key(),
-                xpr.clone(),
-                self.group.peers.clone(),
-                NetworkMetrics::default(),
-            )
-            .await
-            .expect("failed to make network");
+            let net = {
+                let cfg = NetConf::builder()
+                    .name("test")
+                    .label(kpr.public_key())
+                    .keypair(xpr.clone())
+                    .bind(addr.into())
+                    .parties(
+                        self.group
+                            .peers
+                            .iter()
+                            .cloned()
+                            .map(|(k, x, a)| (k, x, a.into())),
+                    )
+                    .build();
+                Network::create(cfg).await.expect("failed to make network")
+            };
             let cfg = RbcConfig::new(kpr.clone(), committee.id(), committee.clone());
             let net = Rbc::new(committee.size().get() * 5, Overlay::new(net), cfg);
             tracing::debug!(%i, "created rbc");

@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use alloy::primitives::B256;
-use metrics::NoMetrics;
 use rand::random_range;
 use sailfish_types::RoundNumber;
 use timeboost::sequencer::{Output, Sequencer};
@@ -52,7 +51,7 @@ async fn transaction_order() {
         let label = c.sign_keypair().public_key();
         tasks.spawn(async move {
             sleep(Duration::from_secs(random_range(0..5))).await;
-            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
+            let mut s = Sequencer::new(c).await.unwrap();
             loop {
                 select! {
                     trx = brx.recv() => match trx {

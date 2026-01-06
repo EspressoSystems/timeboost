@@ -1,6 +1,5 @@
-use std::{io, sync::Arc, time::Duration};
+use std::{io, time::Duration};
 
-use ::metrics::prometheus::PrometheusMetrics;
 use alloy::{
     consensus::{Transaction, TxEnvelope},
     hex,
@@ -17,6 +16,8 @@ use axum::{
 use bon::Builder;
 use cliquenet::Address;
 use http::{Request, Response, StatusCode};
+#[cfg(feature = "metrics")]
+use prometheus::TextEncoder;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use timeboost_crypto::prelude::ThresholdEncKey;
@@ -41,7 +42,6 @@ pub struct ApiServer {
     bundles: Sender<BundleVariant>,
     enc_key: ThresholdKeyCell,
     express_lane: bool,
-    metrics: Arc<PrometheusMetrics>,
     secret: Option<String>,
 }
 
@@ -213,14 +213,17 @@ async fn encryption_key(server: State<ApiServer>) -> Json<ThresholdEncKey> {
     Json(server.enc_key.read().await.pubkey().clone())
 }
 
-async fn metrics(server: State<ApiServer>) -> Result<String> {
-    match server.metrics.export() {
+async fn metrics() -> Result<String> {
+    #[cfg(feature = "metrics")]
+    match TextEncoder::new().encode_to_string(&prometheus::gather()) {
         Ok(output) => Ok(output),
         Err(err) => {
             error!(%err, "metrics export error");
             Err(StatusCode::INTERNAL_SERVER_ERROR.into())
         }
     }
+    #[cfg(not(feature = "metrics"))]
+    Err(StatusCode::NO_CONTENT.into())
 }
 
 async fn health(server: State<ApiServer>) -> Result<()> {

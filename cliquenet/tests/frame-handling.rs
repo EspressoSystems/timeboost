@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::BytesMut;
-use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
+use cliquenet::{NetConf, Network, Overlay, overlay::Data};
 use multisig::{Keypair, PublicKey, x25519};
 use rand::{Rng, RngCore};
 use tokio::time::{Duration, timeout};
@@ -30,24 +30,26 @@ async fn multiple_frames() {
 
     let mut net_a = Overlay::new(
         Network::create(
-            "frames",
-            all_parties[0].2,
-            party_a_sign.public_key(),
-            party_a_dh,
-            all_parties,
-            NetworkMetrics::default(),
+            NetConf::builder()
+                .name("frames")
+                .label(party_a_sign.public_key())
+                .keypair(party_a_dh)
+                .bind(all_parties[0].2.into())
+                .parties(all_parties.into_iter().map(|(k, x, s)| (k, x, s.into())))
+                .build(),
         )
         .await
         .unwrap(),
     );
     let mut net_b = Overlay::new(
         Network::create(
-            "frames",
-            all_parties[1].2,
-            party_b_sign.public_key(),
-            party_b_dh,
-            all_parties,
-            NetworkMetrics::default(),
+            NetConf::builder()
+                .name("frames")
+                .label(party_b_sign.public_key())
+                .keypair(party_b_dh)
+                .bind(all_parties[1].2.into())
+                .parties(all_parties.into_iter().map(|(k, x, s)| (k, x, s.into())))
+                .build(),
         )
         .await
         .unwrap(),

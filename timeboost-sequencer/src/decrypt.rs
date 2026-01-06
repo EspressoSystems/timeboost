@@ -6,11 +6,11 @@ use ark_std::{UniformRand, rand::thread_rng};
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{
-    AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
-};
+use cliquenet::{AddressableCommittee, MAX_MESSAGE_SIZE, NetConf, Network, NetworkError, Role};
 use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
+#[cfg(feature = "metrics")]
+use prometheus::{IntCounter, IntGauge, register_int_counter, register_int_gauge};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::*;
 use sailfish::types::{Evidence, Round, RoundNumber};
@@ -30,9 +30,8 @@ use tokio::task::{JoinError, JoinHandle, spawn_blocking};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
-use crate::metrics::SequencerMetrics;
 
-#[cfg(feature = "times")]
+#[cfg(feature = "metrics")]
 use crate::time_series::{DECRYPT_END, DECRYPT_START};
 
 const DKG_AAD: &[u8] = b"dkg";
@@ -120,34 +119,30 @@ pub struct Decrypter {
     key_stores: Arc<RwLock<KeyStoreVec<2>>>,
     /// Current committee.
     current: CommitteeId,
-    /// Metrics to keep track of decrypter status.
-    metrics: Arc<SequencerMetrics>,
+    /// Number of encrypted inclusion lists.
+    #[cfg(feature = "metrics")]
+    queued_encrypted_gauge: IntGauge,
+    /// Total number of decrypted inclusion lists.
+    #[cfg(feature = "metrics")]
+    output_decrypted_ctr: IntCounter,
 }
 
 impl Decrypter {
-    pub async fn new<M>(
-        cfg: DecrypterConfig,
-        metrics: &M,
-        seq_metrics: Arc<SequencerMetrics>,
-    ) -> Result<Self>
-    where
-        M: metrics::Metrics,
-    {
+    pub async fn new(cfg: DecrypterConfig) -> Result<Self> {
         let (cmd_tx, cmd_rx) = channel(cfg.retain * 2); // incl and gc
         let (dec_tx, dec_rx) = channel(cfg.retain);
         let (addr_comm, key_store) = cfg.committee;
-        let net_metrics = NetworkMetrics::new("decrypt", metrics, addr_comm.parties().copied());
 
-        let mut net = Network::create(
-            "decrypt",
-            cfg.address,
-            cfg.label,
-            cfg.dh_keypair,
-            addr_comm.entries(),
-            net_metrics,
-        )
-        .await
-        .map_err(DecrypterError::Net)?;
+        let mut net = {
+            let cfg = NetConf::builder()
+                .name("decrypt")
+                .label(cfg.label)
+                .keypair(cfg.dh_keypair)
+                .bind(cfg.address)
+                .parties(addr_comm.entries())
+                .build();
+            Network::create(cfg).await.map_err(DecrypterError::Net)?
+        };
 
         let committee = key_store.committee();
         let current = committee.id();
@@ -189,7 +184,18 @@ impl Decrypter {
             dec_key: cfg.threshold_dec_key,
             key_stores: key_stores.clone(),
             current,
-            metrics: seq_metrics,
+            #[cfg(feature = "metrics")]
+            queued_encrypted_gauge: register_int_gauge!(
+                "queued_encrypted_ilist",
+                "number of encrypted inclusion lists"
+            )
+            .expect("valid integer gauge"),
+            #[cfg(feature = "metrics")]
+            output_decrypted_ctr: register_int_counter!(
+                "output_decrypted_ilist",
+                "number of decrypted inclusion lists"
+            )
+            .expect("valid integer gauge"),
         })
     }
 
@@ -214,9 +220,11 @@ impl Decrypter {
         let round = incl.round();
         let is_encrypted = incl.is_encrypted();
         if is_encrypted {
-            #[cfg(feature = "times")]
-            times::record(DECRYPT_START, *incl.round());
-            self.metrics.queued_encrypted.add(1);
+            #[cfg(feature = "metrics")]
+            {
+                times::record(DECRYPT_START, *incl.round());
+                self.queued_encrypted_gauge.set(self.incls.len() as i64);
+            }
         }
         debug!(node = %self.label, %round, %is_encrypted, "enqueuing inclusion list");
 
@@ -376,14 +384,16 @@ impl Decrypter {
                 );
 
                 if is_encrypted {
-                    #[cfg(feature = "times")]
-                    times::record(DECRYPT_END, *dec_incl.round());
+                    #[cfg(feature = "metrics")]
+                    {
+                        times::record(DECRYPT_END, *dec_incl.round());
+                        self.output_decrypted_ctr.inc();
+                    }
 
                     debug_assert!(
                         !dec_incl.is_encrypted(),
                         "decrypter Worker returned non-decrypted inclusion list"
                     );
-                    self.metrics.output_decrypted.add(1);
                 }
 
                 return Ok(dec_incl);
@@ -1545,12 +1555,10 @@ impl From<NetworkDown> for EndOfPlay {
 mod tests {
     use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use futures::future::try_join_all;
-    use metrics::NoMetrics;
     use serde::{Deserialize, de::value::StrDeserializer};
     use std::{
         collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
-        sync::Arc,
         time::Instant,
     };
     use test_utils::ports::alloc_port;
@@ -1569,7 +1577,6 @@ mod tests {
     use crate::{
         config::DecrypterConfig,
         decrypt::{DKG_AAD, Decrypter, THRES_AAD},
-        metrics::SequencerMetrics,
     };
 
     // Test constants
@@ -2331,13 +2338,7 @@ mod tests {
                 .threshold_dec_key(encryption_key_cell.clone())
                 .build();
 
-            let decrypter = Decrypter::new(
-                decrypter_config.clone(),
-                &NoMetrics,
-                Arc::new(SequencerMetrics::default()),
-            )
-            .await
-            .unwrap();
+            let decrypter = Decrypter::new(decrypter_config.clone()).await.unwrap();
             decrypters.push(decrypter);
             encryption_key_cells.push(encryption_key_cell);
         }

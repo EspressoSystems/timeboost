@@ -7,12 +7,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bimap::BiHashMap;
+use bon::Builder;
 use bytes::{Bytes, BytesMut};
 use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Interval, MissedTickBehavior, sleep, timeout};
 use tokio::{
     spawn,
@@ -25,8 +27,12 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY, Role};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, Role};
 
+#[cfg(feature = "metrics")]
+use crate::metrics::NetworkMetrics;
+
+type Budget = Arc<Semaphore>;
 type Result<T> = std::result::Result<T, NetworkError>;
 
 /// Max. message size using noise handshake.
@@ -75,7 +81,7 @@ pub struct Network {
     /// MPSC receiver of messages from a remote party.
     ///
     /// The public key identifies the remote.
-    rx: Receiver<(PublicKey, Bytes)>,
+    rx: Receiver<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// Handle of the server task that has been spawned by `Network`.
     srv: JoinHandle<Result<Empty>>,
@@ -84,6 +90,55 @@ pub struct Network {
 impl Drop for Network {
     fn drop(&mut self) {
         self.srv.abort()
+    }
+}
+
+#[derive(Debug, Builder)]
+pub struct NetConf {
+    /// Network name.
+    name: &'static str,
+
+    /// Network public key.
+    label: PublicKey,
+
+    /// DH keypair
+    keypair: x25519::Keypair,
+
+    /// Address to bind to.
+    bind: Address,
+
+    /// Committee members with key material and bind address.
+    #[builder(with = <_>::from_iter)]
+    parties: Vec<(PublicKey, x25519::PublicKey, Address)>,
+
+    /// Total egress channel capacity.
+    ///
+    /// Default is n⁴ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len() * parties.len())]
+    total_capacity_egress: usize,
+
+    /// Total ingress channel capacity.
+    ///
+    /// Default is n⁴ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len() * parties.len())]
+    total_capacity_ingress: usize,
+
+    /// Egress channel capacity per peer.
+    ///
+    /// Default is n³ with n = number of parties.
+    #[builder(default = parties.len() * parties.len() * parties.len())]
+    peer_capacity_egress: usize,
+
+    /// Ingress channel capacity per peer.
+    ///
+    /// Default is 2n² with n = number of parties.
+    #[builder(default = 2 * parties.len() * parties.len())]
+    peer_capacity_ingress: usize,
+}
+
+impl NetConf {
+    fn new_budget(&self) -> Budget {
+        Arc::new(Semaphore::new(self.peer_capacity_ingress))
     }
 }
 
@@ -108,22 +163,15 @@ pub(crate) enum Command {
 /// maintaining connections with all parties.
 #[derive(Debug)]
 struct Server<T: tcp::Listener> {
-    /// Network name.
-    name: &'static str,
-
-    /// This server's public key.
-    key: PublicKey,
+    conf: NetConf,
 
     /// This server's role.
     role: Role,
 
-    /// The X25519 keypair, used with Noise.
-    keypair: x25519::Keypair,
-
     /// MPSC sender for messages received over a connection to a party.
     ///
     /// (see `Network` for the accompanying receiver).
-    ibound: Sender<(PublicKey, Bytes)>,
+    ibound: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
 
     /// MPSC receiver for server task instructions.
     ///
@@ -155,17 +203,19 @@ struct Server<T: tcp::Listener> {
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
 
-    /// For gathering network metrics.
-    metrics: Arc<NetworkMetrics>,
-
     /// Interval at which to ping peers.
     ping_interval: Interval,
+
+    /// For gathering network metrics.
+    #[cfg(feature = "metrics")]
+    metrics: Arc<NetworkMetrics>,
 }
 
 #[derive(Debug)]
 struct Peer {
     addr: Address,
     role: Role,
+    budget: Budget,
 }
 
 /// A connect task.
@@ -212,96 +262,64 @@ enum Message {
 
 impl Network {
     /// Create a new `Network`.
-    pub async fn create<P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-        metrics: NetworkMetrics,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        Self::generic_create::<tokio::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+    pub async fn create(cfg: NetConf) -> Result<Self> {
+        Self::generic_create::<tokio::net::TcpListener>(cfg).await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
     ///
     /// *Requires feature* `"turmoil"`.
     #[cfg(feature = "turmoil")]
-    pub async fn create_turmoil<P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-        metrics: NetworkMetrics,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(
-            name, bind_to, label, xp, group, metrics,
-        )
-        .await
+    pub async fn create_turmoil(cfg: NetConf) -> Result<Self> {
+        Self::generic_create::<turmoil::net::TcpListener>(cfg).await
     }
 
-    async fn generic_create<T, P, A1, A2>(
-        name: &'static str,
-        bind_to: A1,
-        label: PublicKey,
-        xp: x25519::Keypair,
-        group: P,
-        metrics: NetworkMetrics,
-    ) -> Result<Self>
+    async fn generic_create<T>(cfg: NetConf) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
-        let bind_addr = bind_to.into();
-        let listener = T::bind(&bind_addr)
+        let listener = T::bind(&cfg.bind)
             .await
-            .map_err(|e| NetworkError::Bind(bind_addr, e))?;
+            .map_err(|e| NetworkError::Bind(cfg.bind.clone(), e))?;
 
-        debug!(%name, node = %label, addr = %listener.local_addr()?, "listening");
+        debug!(
+            name = %cfg.name,
+            node = %cfg.label,
+            addr = %listener.local_addr()?,
+            "listening"
+        );
 
         let mut parties = HashMap::new();
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
-        for (k, x, a) in group {
+        for (k, x, a) in cfg.parties.iter().cloned() {
             parties.insert(k, Role::Active);
             index.insert(k, x);
             peers.insert(
                 k,
                 Peer {
-                    addr: a.into(),
+                    addr: a,
                     role: Role::Active,
+                    budget: cfg.new_budget(),
                 },
             );
         }
 
-        let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
-        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len());
+        // Command channel from application to network.
+        let (otx, orx) = mpsc::channel(cfg.total_capacity_egress);
+
+        // Channel of messages from peers to the application.
+        let (itx, irx) = mpsc::channel(cfg.total_capacity_ingress);
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        let name = cfg.name;
+        let label = cfg.label;
         let server = Server {
-            name,
-            keypair: xp,
-            key: label,
+            conf: cfg,
             role: Role::Active,
             ibound: itx,
             obound: orx,
@@ -313,8 +331,12 @@ impl Network {
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
-            metrics: Arc::new(metrics),
             ping_interval: interval,
+            #[cfg(feature = "metrics")]
+            metrics: Arc::new(
+                NetworkMetrics::new(name, parties.keys().copied().filter(|k| *k != label))
+                    .expect("valid metrics definitions"),
+            ),
         };
 
         Ok(Self {
@@ -329,6 +351,10 @@ impl Network {
 
     pub fn public_key(&self) -> PublicKey {
         self.label
+    }
+
+    pub fn name(&self) -> &str {
+        self.name
     }
 
     pub fn parties(&self) -> impl Iterator<Item = (&PublicKey, &Role)> {
@@ -372,7 +398,8 @@ impl Network {
 
     /// Receive a message from a remote party.
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
-        self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
+        let (k, b, _) = self.rx.recv().await.ok_or(NetworkError::ChannelClosed)?;
+        Ok((k, b))
     }
 
     /// Add the given peers to the network.
@@ -438,7 +465,7 @@ where
         for k in self
             .peers
             .keys()
-            .filter(|k| **k != self.key)
+            .filter(|k| **k != self.conf.label)
             .copied()
             .collect::<Vec<_>>()
         {
@@ -447,8 +474,8 @@ where
 
         loop {
             trace!(
-                name       = %self.name,
-                node       = %self.key,
+                name       = %self.conf.name,
+                node       = %self.conf.label,
                 active     = %self.active.len(),
                 connects   = %self.connect_tasks.len(),
                 handshakes = %self.handshake_tasks.len().saturating_sub(1), // -1 for `pending()`
@@ -458,24 +485,40 @@ where
                 oqueue     = %self.obound.capacity(),
             );
 
+            #[cfg(feature = "metrics")]
+            {
+                self.metrics.iqueue.set(self.ibound.capacity() as i64);
+                self.metrics.oqueue.set(self.obound.capacity() as i64);
+            }
+
             tokio::select! {
                 // Accepted a new connection.
                 i = listener.accept() => match i {
                     Ok((s, a)) => {
-                        debug!(name = %self.name, node = %self.key, addr = %a, "accepted connection");
+                        debug!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            addr = %a,
+                            "accepted connection"
+                        );
                         self.spawn_handshake(s)
                     }
                     Err(e) => {
-                        warn!(name = %self.name, node = %self.key, err = %e, "error accepting connection")
+                        warn!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            err  = %e,
+                            "error accepting connection"
+                        )
                     }
                 },
                 // The handshake of an inbound connection completed.
                 Some(h) = self.handshake_tasks.join_next() => match h {
                     Ok(Ok((s, t))) => {
-                        let Some(k) = self.lookup_peer(&t) else {
+                        let Some((k, peer)) = self.lookup_peer(&t) else {
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
                                 addr = ?s.peer_addr().ok(),
                                 "unknown peer"
@@ -484,8 +527,8 @@ where
                         };
                         if !self.is_valid_ip(&k, &s) {
                             warn!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 addr = ?s.peer_addr().ok(), "invalid peer ip addr"
                             );
@@ -494,28 +537,33 @@ where
                         // We only accept connections whose party has a public key that
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
-                        if k > self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(k, s, t)
+                        if k > self.conf.label || !self.active.contains_key(&k) {
+                            self.spawn_io(k, s, t, peer.budget.clone())
                         } else {
                             debug!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "dropping accepted connection"
                             );
                         }
                     }
                     Ok(Err(e)) => {
-                        warn!(name = %self.name, node = %self.key, err = %e, "handshake failed")
+                        warn!(
+                            name = %self.conf.name,
+                            node = %self.conf.label,
+                            err  = %e,
+                            "handshake failed"
+                        )
                     }
                     Err(e) => {
                         if !e.is_cancelled() {
                             error!(
-                                name = %self.name,
-                                node = %self.key,
-                                err = %e,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
+                                err  = %e,
                                 "handshake task panic"
-                            );
+                            )
                         }
                     }
                 },
@@ -524,10 +572,10 @@ where
                     match tt {
                         Ok((id, (s, t))) => {
                             self.on_connect_task_end(id);
-                            let Some(k) = self.lookup_peer(&t) else {
+                            let Some((k, peer)) = self.lookup_peer(&t) else {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
                                     addr = ?s.peer_addr().ok(),
                                     "connected to unknown peer"
@@ -536,25 +584,25 @@ where
                             };
                             // We only keep the connection if our key is larger than the remote,
                             // or if we do not have a connection for that key at the moment.
-                            if k < self.key || !self.active.contains_key(&k) {
-                                self.spawn_io(k, s, t)
+                            if k < self.conf.label || !self.active.contains_key(&k) {
+                                self.spawn_io(k, s, t, peer.budget.clone())
                             } else {
                                 debug!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     "dropping new connection"
-                                );
+                                )
                             }
                         }
                         Err(e) => {
                             if !e.is_cancelled() {
                                 error!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    err = %e,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    err  = %e,
                                     "connect task panic"
-                                );
+                                )
                             }
                             self.on_connect_task_end(e.id());
                         }
@@ -565,7 +613,12 @@ where
                     match io {
                         Ok((id, r)) => {
                             if let Err(e) = r {
-                                warn!(name = %self.name, node = %self.key, err = %e, "i/o error")
+                                warn!(
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    err  = %e,
+                                    "i/o error"
+                                )
                             }
                             self.on_io_task_end(id);
                         }
@@ -579,7 +632,12 @@ where
                                 continue
                             }
                             // If the task has not been cancelled, it must have panicked.
-                            error!(name = %self.name, node = %self.key, err = %e, "i/o task panic");
+                            error!(
+                                name = %self.conf.name,
+                                node = %self.conf.label,
+                                err  = %e,
+                                "i/o task panic"
+                            );
                             self.on_io_task_end(e.id())
                         }
                     };
@@ -589,20 +647,24 @@ where
                         for (k, x, a) in peers {
                             if self.peers.contains_key(&k) {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     "peer to add already exists"
                                 );
                                 continue
                             }
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "adding peer"
                             );
-                            let p = Peer { addr: a, role: Role::Passive };
+                            let p = Peer {
+                                addr: a,
+                                role: Role::Passive,
+                                budget: self.conf.new_budget()
+                            };
                             self.peers.insert(k, p);
                             self.index.insert(k, x);
                             self.spawn_connect(k)
@@ -611,8 +673,8 @@ where
                     Some(Command::Remove(peers)) => {
                         for k in &peers {
                             info!(
-                                name = %self.name,
-                                node = %self.key,
+                                name = %self.conf.name,
+                                node = %self.conf.label,
                                 peer = %k,
                                 "removing peer"
                             );
@@ -628,8 +690,8 @@ where
                                 p.role = role
                             } else {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
                                     peer = %k,
                                     role = ?role,
                                     "peer to assign role to not found"
@@ -638,135 +700,109 @@ where
                         }
                     }
                     Some(Command::Unicast(to, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
-                        if to == self.key {
+                        if to == self.conf.label {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m)).is_err() {
+                            if self.ibound.try_send((self.conf.label, m, None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    "channel full => dropping message"
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping unicast message"
                                 )
                             }
                             continue
                         }
                         if let Some(task) = self.active.get(&to) {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
-                            if task.tx.try_send(id, Message::Data(m)).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                self.reconnect(to)
-                            }
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(&to, task.tx.capacity());
+                            task.tx.send(id, Message::Data(m))
                         }
                     }
                     Some(Command::Multicast(peers, id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
-                        if peers.contains(&self.key) {
+                        if peers.contains(&self.conf.label) {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
-                                to    = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
+                                to    = %self.conf.label,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    "channel full => dropping message"
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping multicast message"
                                 )
                             }
                         }
-                        let mut reconnect = Vec::new();
                         for (to, task) in &self.active {
                             if !peers.contains(to) {
                                 continue
                             }
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
-                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                reconnect.push(*to);
-                            }
-                        }
-                        for k in reconnect {
-                            self.reconnect(k)
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
+                            task.tx.send(id, Message::Data(m.clone()))
                         }
                     }
                     Some(Command::Broadcast(id, m)) => {
-                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if self.role.is_active() {
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
-                                to    = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
+                                to    = %self.conf.label,
                                 len   = %m.len(),
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
                                 warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    "channel full => dropping message"
+                                    name = %self.conf.name,
+                                    node = %self.conf.label,
+                                    cap  = %self.ibound.capacity(),
+                                    "channel full => dropping broadcast message"
                                 )
                             }
                         }
-                        let mut reconnect = Vec::new();
                         for (to, task) in &self.active {
                             if Some(Role::Active) != self.peers.get(to).map(|p| p.role) {
                                 continue
                             }
                             trace!(
-                                name  = %self.name,
-                                node  = %self.key,
+                                name  = %self.conf.name,
+                                node  = %self.conf.label,
                                 to    = %to,
                                 len   = %m.len(),
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
-                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
-                                warn!(
-                                    name = %self.name,
-                                    node = %self.key,
-                                    %to,
-                                    "channel full => reconnecting"
-                                );
-                                reconnect.push(*to);
-                            }
-                        }
-                        for k in reconnect {
-                            self.reconnect(k)
+                            #[cfg(feature = "metrics")]
+                            self.metrics.set_peer_oqueue_cap(to, task.tx.capacity());
+                            task.tx.send(id, Message::Data(m.clone()))
                         }
                     }
                     None => {
@@ -776,7 +812,7 @@ where
                 _ = self.ping_interval.tick() => {
                     let now = Timestamp::now();
                     for task in self.active.values() {
-                        let _ = task.tx.try_send(None, Message::Ping(now));
+                        task.tx.send(None, Message::Ping(now))
                     }
                 }
             }
@@ -786,7 +822,7 @@ where
     /// Handles a completed connect task.
     fn on_connect_task_end(&mut self, id: task::Id) {
         let Some(k) = self.task2key.remove(&id) else {
-            error!(name = %self.name, node = %self.key, "no key for connect task");
+            error!(name = %self.conf.name, node = %self.conf.label, "no key for connect task");
             return;
         };
         self.connecting.remove(&k);
@@ -799,7 +835,7 @@ where
     /// to the peer node it was interacting with.
     fn on_io_task_end(&mut self, id: task::Id) {
         let Some(k) = self.task2key.remove(&id) else {
-            error!(name = %self.name, node = %self.key, "no key for i/o task");
+            error!(name = %self.conf.name, node = %self.conf.label, "no key for i/o task");
             return;
         };
         let Some(task) = self.active.get(&k) else {
@@ -807,8 +843,8 @@ where
         };
         if task.rh.id() == id {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "read-half closed => dropping connection"
             );
@@ -816,8 +852,8 @@ where
             self.spawn_connect(k)
         } else if task.wh.id() == id {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "write-half closed => dropping connection"
             );
@@ -825,23 +861,12 @@ where
             self.spawn_connect(k)
         } else {
             debug!(
-                name = %self.name,
-                node = %self.key,
+                name = %self.conf.name,
+                node = %self.conf.label,
                 peer = %k,
                 "i/o task was previously replaced"
             );
         }
-    }
-
-    /// Unless already connecting, drop the active connection and connect again.
-    fn reconnect(&mut self, k: PublicKey) {
-        if self.connecting.contains_key(&k) {
-            debug!(name = %self.name, node = %self.key, peer = %k, "connect task in progress");
-            return;
-        }
-        self.active.remove(&k);
-        debug!(name = %self.name, node = %self.key, peer = %k, "reconnecting");
-        self.spawn_connect(k)
     }
 
     /// Spawns a new connection task to a peer identified by public key.
@@ -850,16 +875,22 @@ where
     /// and the remote address and then spawn a connection task.
     fn spawn_connect(&mut self, k: PublicKey) {
         if self.connecting.contains_key(&k) {
-            debug!(name = %self.name, node = %self.key, peer = %k, "connect task already started");
+            debug!(
+                name = %self.conf.name,
+                node = %self.conf.label,
+                peer = %k,
+                "connect task already started"
+            );
             return;
         }
         let x = self.index.get_by_left(&k).expect("known public key");
         let p = self.peers.get(&k).expect("known peer");
         let h = self.connect_tasks.spawn(connect(
-            self.name,
-            (self.key, self.keypair.clone()),
+            self.conf.name,
+            (self.conf.label, self.conf.keypair.clone()),
             (k, *x),
             p.addr.clone(),
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
         ));
         assert!(self.task2key.insert(h.id(), k).is_none());
@@ -873,9 +904,9 @@ where
     /// to which it will respond.
     fn spawn_handshake(&mut self, s: T::Stream) {
         let h = Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
-            .local_private_key(&self.keypair.secret_key().as_bytes())
+            .local_private_key(&self.conf.keypair.secret_key().as_bytes())
             .expect("valid private key")
-            .prologue(self.name.as_bytes())
+            .prologue(self.conf.name.as_bytes())
             .expect("1st time we set the prologue")
             .build_responder()
             .expect("valid noise params yield valid handshake state");
@@ -889,15 +920,15 @@ where
     /// Spawns a new I/O task for handling communication with a remote peer over
     /// a TCP connection using the noise framework to create an authenticated
     /// secure link.
-    fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState) {
+    fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState, b: Budget) {
         debug!(
-            name = %self.name,
-            node = %self.key,
+            name = %self.conf.name,
+            node = %self.conf.label,
             peer = %k,
             addr = ?s.peer_addr().ok(),
             "starting i/o tasks"
         );
-        let (to_remote, from_remote) = chan::channel(PEER_CAPACITY);
+        let (to_remote, from_remote) = chan::channel(self.conf.peer_capacity_egress);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
@@ -905,22 +936,20 @@ where
         let to_write = to_remote.clone();
         let countdown = Countdown::new();
         let rh = self.io_tasks.spawn(recv_loop(
-            self.name,
+            self.conf.name,
             k,
             r,
             t1,
             ibound,
             to_write,
+            #[cfg(feature = "metrics")]
             self.metrics.clone(),
+            b,
             countdown.clone(),
         ));
-        let wh = self.io_tasks.spawn(send_loop(
-            w,
-            t2,
-            from_remote,
-            self.metrics.clone(),
-            countdown,
-        ));
+        let wh = self
+            .io_tasks
+            .spawn(send_loop(w, t2, from_remote, countdown));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -929,14 +958,16 @@ where
             tx: to_remote,
         };
         self.active.insert(k, io);
-        self.metrics.connections.set(self.active.len());
+        #[cfg(feature = "metrics")]
+        self.metrics.connections.set(self.active.len() as i64);
     }
 
     /// Get the public key of a party by their static X25519 public key.
-    fn lookup_peer(&self, t: &TransportState) -> Option<PublicKey> {
-        let k = t.get_remote_static()?;
-        let k = x25519::PublicKey::try_from(k).ok()?;
-        self.index.get_by_right(&k).copied()
+    fn lookup_peer(&self, t: &TransportState) -> Option<(PublicKey, &Peer)> {
+        let x = t.get_remote_static()?;
+        let x = x25519::PublicKey::try_from(x).ok()?;
+        let k = self.index.get_by_right(&x)?;
+        self.peers.get(k).map(|p| (*k, p))
     }
 
     /// Check if the socket's peer IP address corresponds to the configured one.
@@ -962,7 +993,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
     addr: Address,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
 ) -> (T, TransportState) {
     use rand::prelude::*;
 
@@ -986,6 +1017,7 @@ async fn connect<T: tcp::Stream + Unpin>(
     {
         sleep(Duration::from_millis(d)).await;
         debug!(%name, node = %this.0, peer = %to.0, %addr, "connecting");
+        #[cfg(feature = "metrics")]
         metrics.add_connect_attempt(&to.0);
         match timeout(CONNECT_TIMEOUT, T::connect(&addr)).await {
             Ok(Ok(s)) => {
@@ -1060,9 +1092,10 @@ async fn recv_loop<R>(
     id: PublicKey,
     mut reader: R,
     state: Arc<Mutex<TransportState>>,
-    to_deliver: Sender<(PublicKey, Bytes)>,
+    to_deliver: Sender<(PublicKey, Bytes, Option<OwnedSemaphorePermit>)>,
     to_writer: chan::Sender<Message>,
-    metrics: Arc<NetworkMetrics>,
+    #[cfg(feature = "metrics")] metrics: Arc<NetworkMetrics>,
+    budget: Arc<Semaphore>,
     mut countdown: Countdown,
 ) -> Result<()>
 where
@@ -1070,6 +1103,13 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
+        #[cfg(feature = "metrics")]
+        metrics.set_peer_iqueue_cap(&id, budget.available_permits());
+        let permit = budget
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| NetworkError::BudgetClosed)?;
         let mut msg = BytesMut::new();
         loop {
             tokio::select! {
@@ -1082,15 +1122,16 @@ where
                                     // Received ping message; sending pong to writer
                                     let n = state.lock().read_message(&f, &mut buf)?;
                                     if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
-                                        let _ = to_writer.try_send(None, Message::Pong(ping));
+                                        to_writer.send(None, Message::Pong(ping))
                                     }
                                 }
                                 Ok(Type::Pong) => {
                                     // Received pong message; measure elapsed time
-                                    let n = state.lock().read_message(&f, &mut buf)?;
-                                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                                    let _n = state.lock().read_message(&f, &mut buf)?;
+                                    #[cfg(feature = "metrics")]
+                                    if let Some(ping) = Timestamp::try_from_slice(&buf[.._n]) {
                                         if let Some(delay) = Timestamp::now().diff(ping) {
-                                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+                                            metrics.set_latency(&id, delay)
                                         }
                                     }
                                 }
@@ -1116,10 +1157,13 @@ where
                 }
             }
         }
-        if to_deliver.send((id, msg.freeze())).await.is_err() {
+        if to_deliver
+            .send((id, msg.freeze(), Some(permit)))
+            .await
+            .is_err()
+        {
             break;
         }
-        metrics.received.add(1);
     }
     Ok(())
 }
@@ -1132,7 +1176,6 @@ async fn send_loop<W>(
     mut writer: W,
     state: Arc<Mutex<TransportState>>,
     rx: chan::Receiver<Message>,
-    metrics: Arc<NetworkMetrics>,
     countdown: Countdown,
 ) -> Result<()>
 where
@@ -1164,7 +1207,6 @@ where
                     };
                     send_frame(&mut writer, h, &buf[..n]).await?
                 }
-                metrics.sent.add(1);
             }
         }
     }

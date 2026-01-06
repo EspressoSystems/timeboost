@@ -46,6 +46,10 @@ pub enum NetworkError {
     #[error("channel closed")]
     ChannelClosed,
 
+    /// A receive budget has unexpectedly closed.
+    #[error("receive budget closed")]
+    BudgetClosed,
+
     /// An operation timed out.
     #[error("timeout")]
     Timeout,
