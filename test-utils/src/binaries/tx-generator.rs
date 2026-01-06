@@ -15,6 +15,7 @@ use clap::Parser;
 use futures::StreamExt;
 use futures::future::join_all;
 use futures::stream::BoxStream;
+use multisig::CommitteeId;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Client, Url};
 use serde::Serialize;
@@ -80,6 +81,7 @@ struct TxGeneratorConfig {
     enc_ratio: f64,
     prio_ratio: f64,
     chain_id: ChainId,
+    committee_id: CommitteeId,
     enc_key: Option<ThresholdEncKey>,
     signers: Vec<PrivateKeySigner>,
     nitro: bool,
@@ -451,6 +453,7 @@ async fn main() -> Result<()> {
         .enc_ratio(args.enc_ratio)
         .prio_ratio(args.prio_ratio)
         .chain_id(args.namespace.into())
+        .committee_id(committee.id)
         .maybe_enc_key(enc_key)
         .signers(signers)
         .nitro(args.nitro)

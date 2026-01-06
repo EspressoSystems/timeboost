@@ -12,8 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
 use cliquenet::{Address, AddressableCommittee};
-use multisig::Keypair;
+use metrics::NoMetrics;
 use multisig::{Committee, x25519};
+use multisig::{CommitteeId, Keypair};
 use parking_lot::Mutex;
 use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
 use test_utils::ports::alloc_ports;
@@ -153,6 +154,7 @@ async fn gen_bundles(
         );
         let Ok(b) = create_bundle(
             enc_key.get().map(|t| t.pubkey().clone()).as_ref(),
+            CommitteeId::from(1),
             &auction,
             t,
             0.5f64,

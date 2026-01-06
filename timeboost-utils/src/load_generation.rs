@@ -11,10 +11,11 @@ use anyhow::Context;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
+use multisig::CommitteeId;
 use serde::Serialize;
 use timeboost_crypto::prelude::{Plaintext, ThresholdEncKey, ThresholdEncScheme, ThresholdScheme};
 use timeboost_types::{
-    Auction, Bundle, BundleVariant, ChainId, Epoch, PriorityBundle, SeqNo, Signer,
+    Aad, Auction, Bundle, BundleVariant, ChainId, Epoch, PriorityBundle, SeqNo, Signer,
 };
 use tracing::warn;
 
@@ -35,6 +36,7 @@ pub enum TransactionVariant {
 
 pub fn create_tx(
     pubkey: Option<&ThresholdEncKey>,
+    committee_id: CommitteeId,
     txn: TxInfo,
     enc_ratio: f64,
 ) -> anyhow::Result<TransactionVariant> {
@@ -46,7 +48,7 @@ pub fn create_tx(
             // encrypt bundle
             let bytes = ssz::ssz_encode(&vec![tx]);
             let plaintext = Plaintext::new(bytes);
-            let aad = b"threshold".to_vec();
+            let aad = Aad::Threshold(committee_id).to_bytes();
             let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
             let encoded = serialize(&ciphertext)?;
             return Ok(TransactionVariant::Encrypted(encoded.into()));
@@ -58,6 +60,7 @@ pub fn create_tx(
 
 pub fn create_bundle(
     pubkey: Option<&ThresholdEncKey>,
+    committee_id: CommitteeId,
     auction: &Auction,
     txn: TxInfo,
     enc_ratio: f64,
@@ -72,7 +75,7 @@ pub fn create_bundle(
             // encrypt bundle
             let data = bundle.data();
             let plaintext = Plaintext::new(data.to_vec());
-            let aad = b"threshold".to_vec();
+            let aad = Aad::Threshold(committee_id).to_bytes();
             let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
             let encoded = serialize(&ciphertext)?;
             bundle.set_encrypted_data(encoded.into());

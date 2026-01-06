@@ -34,8 +34,7 @@ use crate::config::DecrypterConfig;
 #[cfg(feature = "metrics")]
 use crate::time_series::{DECRYPT_END, DECRYPT_START};
 
-const DKG_AAD: &[u8] = b"dkg";
-const THRES_AAD: &[u8] = b"threshold";
+use timeboost_types::Aad;
 
 type Result<T> = StdResult<T, DecrypterError>;
 
@@ -263,6 +262,7 @@ impl Decrypter {
         };
 
         let (ct, cm) = match spawn_blocking(move || {
+            let committee_id = current_store.committee().id();
             let vess = Vess::new_fast();
             let mut rng = thread_rng();
             let secret = VssSecret::rand(&mut rng);
@@ -270,7 +270,7 @@ impl Decrypter {
                 current_store.committee(),
                 current_store.sorted_keys(),
                 secret,
-                DKG_AAD,
+                &Aad::Dkg(committee_id).to_bytes(),
             )
         })
         .await
@@ -327,7 +327,7 @@ impl Decrypter {
                 next_store.committee(),
                 next_store.sorted_keys(),
                 *dec_key.privkey().share(),
-                DKG_AAD,
+                &Aad::Dkg(committee_id).to_bytes(),
             )
         })
         .await
@@ -957,9 +957,10 @@ impl Worker {
             .filter_map(|bytes| deserialize::<_, ThresholdCiphertext>(&bytes).ok())
             .collect();
 
+        let aad = Aad::Threshold(self.current).to_bytes();
         let dec_shares = ciphertexts
             .par_iter()
-            .map(|ct| ThresholdScheme::decrypt(dec_key.privkey(), ct, &THRES_AAD.to_vec()).ok())
+            .map(|ct| ThresholdScheme::decrypt(dec_key.privkey(), ct, &aad).ok())
             .collect::<Vec<_>>();
 
         Ok(DecShareBatch {
@@ -1117,6 +1118,7 @@ impl Worker {
         }
 
         // process each ciphertext in parallel using spawn_blocking
+        let aad = Aad::Threshold(self.current).to_bytes();
         let combine_results = spawn_blocking({
             let key_store = key_store.clone();
             let dec_key = dec_key.clone();
@@ -1151,7 +1153,7 @@ impl Worker {
                             dec_key.combkey(),
                             valid_shares.iter().collect(),
                             &ct,
-                            &THRES_AAD.to_vec(),
+                            &aad,
                         ) {
                             Ok(pt) => CombineResult::Success(pt),
                             Err(ThresholdEncError::FaultySubset(wrong_indices)) => {
@@ -1565,7 +1567,9 @@ mod tests {
     use timeboost_utils::logging;
 
     use cliquenet::AddressableCommittee;
-    use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use multisig::{
+        Committee, CommitteeId, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519,
+    };
     use sailfish::types::{Evidence, Round, RoundNumber};
     use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, Vess};
     use timeboost_crypto::prelude::{Plaintext, ThresholdEncScheme, ThresholdScheme, VssSecret};
@@ -1574,10 +1578,8 @@ mod tests {
         ThresholdKeyCell, Timestamp,
     };
 
-    use crate::{
-        config::DecrypterConfig,
-        decrypt::{DKG_AAD, Decrypter, THRES_AAD},
-    };
+    use crate::{config::DecrypterConfig, decrypt::Decrypter};
+    use timeboost_types::Aad;
 
     // Test constants
     const COMMITTEE_SIZE: usize = 5;
@@ -1620,13 +1622,14 @@ mod tests {
     fn test_local_dkg_e2e() {
         logging::init_logging();
         let mut rng = thread_rng();
-        let dkg_aad = DKG_AAD.to_vec();
+        let committee_id = CommitteeId::from(1);
+        let dkg_aad = Aad::Dkg(committee_id).to_bytes();
 
         // Setup committee with generated keypairs
         let committee_keys: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
             .collect();
-        let committee = Committee::new(1_u64, committee_keys);
+        let committee = Committee::new(committee_id, committee_keys);
         let threshold = committee.one_honest_threshold().get();
 
         // Generate DKG keypairs for secure communication between committee members
@@ -1733,12 +1736,27 @@ mod tests {
 
         // Test threshold encryption/decryption process
         let sample_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
-        let threshold_aad = THRES_AAD.to_vec();
+        let threshold_aad = Aad::Threshold(committee_id).to_bytes();
+
+        // Generate decryption shares with wrong aad
+        let wrong_ciphertext = ThresholdScheme::encrypt(
+            &mut rng,
+            expected_pubkey,
+            &sample_plaintext,
+            &Aad::Threshold(42u64.into()).to_bytes(),
+        )
+        .expect("encryption should succeed");
+        let decryption_share = threshold_decryption_keys
+            .first()
+            .map(|key| ThresholdScheme::decrypt(key.privkey(), &wrong_ciphertext, &threshold_aad))
+            .expect("obtain decrypt result");
+        assert!(decryption_share.is_err());
+
         let ciphertext =
             ThresholdScheme::encrypt(&mut rng, expected_pubkey, &sample_plaintext, &threshold_aad)
                 .expect("encryption should succeed");
 
-        // Generate decryption shares from all nodes
+        // Generate correct decryption shares from all nodes
         let decryption_shares: Vec<_> = threshold_decryption_keys
             .iter()
             .map(|key| {
@@ -1763,10 +1781,12 @@ mod tests {
             "Recovered plaintext must match the original plaintext"
         );
         // Setup second committee with generated keypairs
+        let second_committee_id = CommitteeId::from(2);
+        let second_dkg_aad = Aad::Dkg(second_committee_id).to_bytes();
         let second_committee_keys: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
             .collect();
-        let second_committee = Committee::new(2_u64, second_committee_keys.clone());
+        let second_committee = Committee::new(second_committee_id, second_committee_keys.clone());
 
         // Generate DKG keypairs for secure communication between committee members
         let second_dkg_private_keys: Vec<_> = (0..COMMITTEE_SIZE)
@@ -1788,7 +1808,7 @@ mod tests {
                         &second_committee,
                         &second_dkg_public_keys,
                         *k.privkey().share(),
-                        &dkg_aad,
+                        &second_dkg_aad,
                     )
                     .unwrap();
                 (i, share)
@@ -1808,7 +1828,7 @@ mod tests {
                 second_dkg_public_keys.iter(),
                 ct,
                 comm,
-                &dkg_aad,
+                &second_dkg_aad,
                 *expected_combkey.get_pub_share(*i).unwrap(),
             )
             .is_ok()
@@ -1845,7 +1865,7 @@ mod tests {
                             &committee,
                             &labeled_secret_key,
                             ciphertext,
-                            &dkg_aad,
+                            &second_dkg_aad,
                             pub_share,
                         )
                         .expect("DKG share decryption should succeed")
@@ -1906,15 +1926,20 @@ mod tests {
         );
 
         // Test threshold encryption/decryption process
-        let ciphertext =
-            ThresholdScheme::encrypt(&mut rng, second_pubkey, &sample_plaintext, &threshold_aad)
-                .expect("encryption should succeed");
+        let second_threshold_aad = Aad::Threshold(second_committee_id).to_bytes();
+        let ciphertext = ThresholdScheme::encrypt(
+            &mut rng,
+            second_pubkey,
+            &sample_plaintext,
+            &second_threshold_aad,
+        )
+        .expect("encryption should succeed");
 
         // Generate decryption shares from all nodes
         let mut decryption_shares: Vec<_> = second_decryption_keys
             .iter()
             .map(|key| {
-                ThresholdScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                ThresholdScheme::decrypt(key.privkey(), &ciphertext, &second_threshold_aad)
                     .expect("decryption share generation should succeed")
             })
             .collect();
@@ -1927,7 +1952,7 @@ mod tests {
             second_combkey,
             selected_shares,
             &ciphertext,
-            &threshold_aad,
+            &second_threshold_aad,
         )
         .expect("threshold decryption combination should succeed");
 
@@ -2152,18 +2177,20 @@ mod tests {
         priority_message: &[u8],
         regular_message: &[u8],
     ) -> InclusionList {
-        let previous_round = Round::new(round - 1, committee.id());
+        let committee_id = committee.id();
+        let previous_round = Round::new(round - 1, committee_id);
         let evidence = create_round_evidence(committee, signature_keys, previous_round);
 
         // Encrypt both message types
         let priority_plaintext = Plaintext::new(priority_message.to_vec());
         let regular_plaintext = Plaintext::new(regular_message.to_vec());
 
+        let threshold_aad = Aad::Threshold(committee_id).to_bytes();
         let priority_ciphertext = ThresholdScheme::encrypt(
             &mut test_rng(),
             encryption_key,
             &priority_plaintext,
-            &THRES_AAD.to_vec(),
+            &threshold_aad,
         )
         .expect("Priority transaction encryption should succeed");
 
@@ -2171,7 +2198,7 @@ mod tests {
             &mut test_rng(),
             encryption_key,
             &regular_plaintext,
-            &THRES_AAD.to_vec(),
+            &threshold_aad,
         )
         .expect("Regular transaction encryption should succeed");
 

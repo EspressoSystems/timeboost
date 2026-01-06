@@ -282,9 +282,8 @@ where
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
-    writer.write(&e)?;
-    writer.write(&aad)?;
-    writer.flush()?;
+    writer.write_all(&e)?;
+    writer.write_all(&aad)?;
     drop(writer);
 
     // Currently, we only support BLS12-381's G1 as its HashToCurve is available in arkworks,
