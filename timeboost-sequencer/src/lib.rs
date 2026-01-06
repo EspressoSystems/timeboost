@@ -11,8 +11,8 @@ mod metrics;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
-use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, Overlay};
+use cliquenet::{MAX_MESSAGE_SIZE, NetConf};
 #[cfg(feature = "metrics")]
 use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
@@ -129,14 +129,16 @@ impl Sequencer {
             .map_err(|e| TimeboostError::Other("delayed inbox connect failure", e.into()))?;
 
         let sailfish = {
-            let mut net = Network::create(
-                "sailfish",
-                cfg.sailfish_addr.clone(),
-                cfg.sign_keypair.public_key(),
-                cfg.dh_keypair.clone(),
-                cfg.sailfish_committee.entries(),
-            )
-            .await?;
+            let mut net = {
+                let cfg = NetConf::builder()
+                    .name("sailfish")
+                    .label(cfg.sign_keypair.public_key())
+                    .keypair(cfg.dh_keypair.clone())
+                    .bind(cfg.sailfish_addr.clone())
+                    .parties(cfg.sailfish_committee.entries())
+                    .build();
+                Network::create(cfg).await?
+            };
 
             if let Some(prev) = &cfg.previous_sailfish_committee {
                 // Add peers from the previous committee which are not members of

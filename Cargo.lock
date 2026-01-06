@@ -2827,6 +2827,7 @@ version = "0.1.0"
 dependencies = [
  "bimap",
  "bincode 2.0.1",
+ "bon",
  "bytes 1.11.0",
  "criterion",
  "multisig",

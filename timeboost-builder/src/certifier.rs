@@ -6,7 +6,7 @@ use adapters::bytes::BytesWriter;
 use bon::Builder;
 use bytes::{Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{AddressableCommittee, Network, NetworkError, Role};
+use cliquenet::{AddressableCommittee, NetConf, Network, NetworkError, Role};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use minicbor::{Decode, Encode};
 use multisig::{
@@ -64,14 +64,16 @@ impl Certifier {
         let (cmd_tx, cmd_rx) = channel(CAPACITY);
         let (crt_tx, crt_rx) = channel(CAPACITY);
 
-        let mut net = Network::create(
-            "block",
-            cfg.address.clone(),
-            cfg.sign_keypair.public_key(),
-            cfg.dh_keypair.clone(),
-            cfg.committee.entries(),
-        )
-        .await?;
+        let mut net = {
+            let cfg = NetConf::builder()
+                .name("block")
+                .keypair(cfg.dh_keypair.clone())
+                .label(cfg.sign_keypair.public_key())
+                .bind(cfg.address.clone())
+                .parties(cfg.committee.entries())
+                .build();
+            Network::create(cfg).await?
+        };
 
         if let Some(prev) = &cfg.previous_committee {
             // Add peers from the previous committee which are not members of

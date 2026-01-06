@@ -1,7 +1,7 @@
 use std::{iter::repeat_with, path::PathBuf};
 
 use anyhow::{Context, Result, bail};
-use cliquenet::{Network, Overlay};
+use cliquenet::{NetConf, Network, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Keypair, x25519};
 use sailfish::{
@@ -75,14 +75,16 @@ async fn main() -> Result<()> {
         bail!("{sign_pubkey} not a member of the active committee")
     }
 
-    let network = Network::create(
-        "sailfish",
-        conf.net.bind.clone(),
-        signing_keypair.public_key(),
-        dh_keypair.clone(),
-        committee.sailfish().entries(),
-    )
-    .await?;
+    let network = {
+        let cfg = NetConf::builder()
+            .name("sailfish")
+            .label(signing_keypair.public_key())
+            .keypair(dh_keypair.clone())
+            .bind(conf.net.bind.clone())
+            .parties(committee.sailfish().entries())
+            .build();
+        Network::create(cfg).await?
+    };
 
     let committee = committee.committee();
 
