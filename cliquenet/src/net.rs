@@ -644,6 +644,17 @@ where
                 },
                 cmd = self.obound.recv() => match cmd {
                     Some(Command::Add(peers)) => {
+                        #[cfg(feature = "metrics")]
+                        if let Err(err) = Arc::make_mut(&mut self.metrics)
+                            .add_parties(self.conf.name, peers.iter().map(|(k, ..)| k).copied())
+                        {
+                            error!(
+                                name = %self.conf.name,
+                                node = %self.conf.label,
+                                err  = %err,
+                                "could not add party to metrics collection"
+                            );
+                        }
                         for (k, x, a) in peers {
                             if self.peers.contains_key(&k) {
                                 warn!(
@@ -683,6 +694,8 @@ where
                             self.connecting.remove(k);
                             self.active.remove(k);
                         }
+                        #[cfg(feature = "metrics")]
+                        Arc::make_mut(&mut self.metrics).remove_parties(&peers)
                     }
                     Some(Command::Assign(role, peers)) => {
                         for k in &peers {

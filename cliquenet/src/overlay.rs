@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
@@ -8,6 +8,7 @@ use bincode::config::{Configuration, Limit, LittleEndian, Varint};
 use bincode::{Decode, Encode};
 use bytes::{Bytes, BytesMut};
 use multisig::{PublicKey, x25519};
+use nohash_hasher::IntMap;
 use parking_lot::Mutex;
 #[cfg(feature = "metrics")]
 use prometheus::{IntGauge, register_int_gauge};
@@ -81,7 +82,7 @@ pub struct Bucket(u64);
 /// Buckets often correspond to rounds elsewhere.
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::type_complexity)]
-struct Buffer(Arc<Mutex<BTreeMap<Bucket, HashMap<Id, Message>>>>);
+struct Buffer(Arc<Mutex<BTreeMap<Bucket, IntMap<Id, Message>>>>);
 
 #[derive(Debug)]
 struct Message {
