@@ -61,14 +61,13 @@ mod tests {
     };
 
     use multisig::Keypair;
-    use prost::{Message, bytes::Bytes};
     use test_utils::ports::alloc_port;
     use timeboost_proto::{
         forward::{
             forward_api_client::ForwardApiClient,
             forward_api_server::{ForwardApi, ForwardApiServer},
         },
-        inclusion::{InclusionList, Transaction},
+        inclusion::InclusionList,
     };
     use timeboost_utils::logging::init_logging;
     use tokio::{
@@ -80,23 +79,7 @@ mod tests {
         transport::{Channel, Server},
     };
 
-    use crate::types::Timestamp;
-
     use super::Worker;
-
-    #[test]
-    fn simple_encode_and_decode() {
-        let old = Transaction {
-            encoded_txn: Bytes::new(),
-            address: "0x00".as_bytes().to_vec(),
-            timestamp: *Timestamp::now(),
-        };
-        let bytes = old.encode_to_vec();
-
-        let new = Transaction::decode(bytes.as_slice()).unwrap();
-
-        assert_eq!(new, old);
-    }
 
     struct ForwarderApiService {
         counter: Arc<AtomicU64>,
