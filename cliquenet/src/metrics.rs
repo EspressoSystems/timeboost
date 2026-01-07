@@ -2,8 +2,9 @@ use std::{collections::HashMap, time::Duration};
 
 use multisig::PublicKey;
 use prometheus::{IntCounter, IntGauge, opts, register_int_counter, register_int_gauge};
+use prometheus::{Result, unregister};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct NetworkMetrics {
     pub connections: IntGauge,
@@ -16,52 +17,32 @@ pub struct NetworkMetrics {
 }
 
 impl NetworkMetrics {
-    pub fn new<P>(label: &str, parties: P) -> prometheus::Result<Self>
+    pub fn new<P>(label: &str, parties: P) -> Result<Self>
     where
         P: IntoIterator<Item = PublicKey>,
     {
         let connects = parties
             .into_iter()
-            .map(|k| {
-                let o = opts!("connect_attempts", "number of connect attempts")
-                    .const_label("label", label)
-                    .const_label("peer", k.to_string());
-                Ok::<_, prometheus::Error>((k, register_int_counter!(o)?))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+            .map(|k| Ok((k, reg_connect_attempts(label, &k)?)))
+            .collect::<Result<HashMap<_, _>>>()?;
 
         let latencies = connects
             .keys()
             .copied()
-            .map(|k| {
-                let o = opts!("latency_ms", "peer latency")
-                    .const_label("label", label)
-                    .const_label("peer", k.to_string());
-                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|k| Ok((k, reg_latency(label, &k)?)))
+            .collect::<Result<HashMap<_, _>>>()?;
 
         let peer_oqueues = connects
             .keys()
             .copied()
-            .map(|k| {
-                let o = opts!("peer_oqueue_cap", "peer oqueue capacity")
-                    .const_label("label", label)
-                    .const_label("peer", k.to_string());
-                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|k| Ok((k, reg_ocap(label, &k)?)))
+            .collect::<Result<HashMap<_, _>>>()?;
 
         let peer_iqueues = connects
             .keys()
             .copied()
-            .map(|k| {
-                let o = opts!("peer_iqueue_cap", "peer iqueue capacity")
-                    .const_label("label", label)
-                    .const_label("peer", k.to_string());
-                Ok::<_, prometheus::Error>((k, register_int_gauge!(o)?))
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|k| Ok((k, reg_icap(label, &k)?)))
+            .collect::<Result<HashMap<_, _>>>()?;
 
         Ok(Self {
             connections: register_int_gauge!(
@@ -100,4 +81,73 @@ impl NetworkMetrics {
             g.set(n as i64)
         }
     }
+
+    pub fn add_parties<P>(&mut self, label: &str, parties: P) -> Result<()>
+    where
+        P: IntoIterator<Item = PublicKey>,
+    {
+        for k in parties {
+            if !self.connects.contains_key(&k) {
+                self.connects.insert(k, reg_connect_attempts(label, &k)?);
+            }
+            if !self.latencies.contains_key(&k) {
+                self.latencies.insert(k, reg_latency(label, &k)?);
+            }
+            if !self.peer_oqueues.contains_key(&k) {
+                self.peer_oqueues.insert(k, reg_ocap(label, &k)?);
+            }
+            if !self.peer_iqueues.contains_key(&k) {
+                self.peer_iqueues.insert(k, reg_icap(label, &k)?);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn remove_parties<'a, P>(&mut self, parties: P)
+    where
+        P: IntoIterator<Item = &'a PublicKey>,
+    {
+        for k in parties {
+            if let Some(x) = self.connects.remove(k) {
+                let _ = unregister(Box::new(x));
+            }
+            if let Some(x) = self.latencies.remove(k) {
+                let _ = unregister(Box::new(x));
+            }
+            if let Some(x) = self.peer_oqueues.remove(k) {
+                let _ = unregister(Box::new(x));
+            }
+            if let Some(x) = self.peer_iqueues.remove(k) {
+                let _ = unregister(Box::new(x));
+            }
+        }
+    }
+}
+
+fn reg_connect_attempts(label: &str, k: &PublicKey) -> Result<IntCounter> {
+    let opt = opts!("connect_attempts", "number of connect attempts")
+        .const_label("label", label)
+        .const_label("peer", k.to_string());
+    register_int_counter!(opt)
+}
+
+fn reg_latency(label: &str, k: &PublicKey) -> Result<IntGauge> {
+    let opt = opts!("latency_ms", "peer latency")
+        .const_label("label", label)
+        .const_label("peer", k.to_string());
+    register_int_gauge!(opt)
+}
+
+fn reg_ocap(label: &str, k: &PublicKey) -> Result<IntGauge> {
+    let opt = opts!("peer_oqueue_cap", "peer oqueue capacity")
+        .const_label("label", label)
+        .const_label("peer", k.to_string());
+    register_int_gauge!(opt)
+}
+
+fn reg_icap(label: &str, k: &PublicKey) -> Result<IntGauge> {
+    let opt = opts!("peer_iqueue_cap", "peer iqueue capacity")
+        .const_label("label", label)
+        .const_label("peer", k.to_string());
+    register_int_gauge!(opt)
 }

@@ -46,25 +46,18 @@ pub fn get<T: Into<u64>>(name: &str, i: T) -> Option<Instant> {
 
 pub fn record(series: &'static str, key: u64) {
     let mut timers = TIMERS.lock();
-    if timers.len() == MAX_SIZE {
-        timers.pop_first();
+    let series = timers.entry(series).or_default();
+    if series.times.len() == MAX_SIZE {
+        series.times.pop_first();
     }
-    timers
-        .entry(series)
-        .or_default()
-        .times
-        .insert(key, Instant::now());
+    series.times.insert(key, Instant::now());
 }
 
 pub fn record_once(series: &'static str, key: u64) {
     let mut timers = TIMERS.lock();
-    if timers.len() == MAX_SIZE {
-        timers.pop_first();
+    let series = timers.entry(series).or_default();
+    if series.times.len() == MAX_SIZE {
+        series.times.pop_first();
     }
-    timers
-        .entry(series)
-        .or_default()
-        .times
-        .entry(key)
-        .or_insert_with(Instant::now);
+    series.times.entry(key).or_insert_with(Instant::now);
 }
