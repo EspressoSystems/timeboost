@@ -1,6 +1,6 @@
 version         := shell('git rev-parse --short HEAD')
 vector-version  := "0.52.0"
-nitro-image     := "nitro-node:li-update-proto"
+nitro-image     := "nitro-node:li-timeboost-systemd-notifier"
 overlay-archive := "timeboost-overlay.tar.gz"
 ssh_user        := "ec2-user"
 regions         := '["eu-west-2", "eu-west-3"]'

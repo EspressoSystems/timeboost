@@ -2,12 +2,16 @@
 Description=Nitro
 After=network.target
 Requires=network-online.target
+BindsTo=timeboost.service
 
 [Service]
+Type=notify
+NotifyAccess=exec
 ExecStart=/usr/local/bin/nitro --log-type=json --conf.file=/etc/nitro/sequencer_config.json
 Environment=HOME=/home/ec2-user
 Restart=always
 RestartSec=5
+TimeoutStartSec=infinity
 
 [Install]
 WantedBy=multi-user.target

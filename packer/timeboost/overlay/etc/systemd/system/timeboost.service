@@ -2,7 +2,7 @@
 Description=Timeboost
 After=network.target nitro.service
 Requires=network-online.target
-Wants=nitro.service
+BindsTo=nitro.service
 
 [Service]
 ExecStart=/usr/local/bin/timeboost -c /etc/timeboost/timeboost.toml
