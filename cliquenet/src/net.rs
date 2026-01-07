@@ -722,10 +722,11 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.conf.label, m, None)).is_err() {
+                            if let Err(err) = self.ibound.try_send((self.conf.label, m, None)) {
                                 warn!(
                                     name = %self.conf.name,
                                     node = %self.conf.label,
+                                    err  = %err,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping unicast message"
                                 )
@@ -756,10 +757,11 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
+                            if let Err(err) = self.ibound.try_send((self.conf.label, m.clone(), None)) {
                                 warn!(
                                     name = %self.conf.name,
                                     node = %self.conf.label,
+                                    err  = %err,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping multicast message"
                                 )
@@ -792,10 +794,11 @@ where
                                 queue = self.ibound.capacity(),
                                 "sending message"
                             );
-                            if self.ibound.try_send((self.conf.label, m.clone(), None)).is_err() {
+                            if let Err(err) = self.ibound.try_send((self.conf.label, m.clone(), None)) {
                                 warn!(
                                     name = %self.conf.name,
                                     node = %self.conf.label,
+                                    err  = %err,
                                     cap  = %self.ibound.capacity(),
                                     "channel full => dropping broadcast message"
                                 )
