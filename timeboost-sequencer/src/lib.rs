@@ -427,7 +427,7 @@ impl Task {
                     }
                 }
                 Ok(Some(CoordinatorEvent::Catchup(r))) => {
-                    warn!(node = %self.label, %r, "entered catchup");
+                    warn!(node = %self.label, round = %r, "entered catchup");
                     self.output
                         .send(Output::Catchup(r.num()))
                         .await
