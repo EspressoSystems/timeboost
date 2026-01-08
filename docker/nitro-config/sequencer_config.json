@@ -46,7 +46,8 @@
                 "http://espresso-dev-node:41000",
                 "http://espresso-dev-node:41000"
             ],
-            "block-retry-duration": "0s"
+            "block-retry-duration": "0s",
+            "hotshot-first-posting-block": 0
         },
         "decentralized-timeboost-delayed-sequencer": {
             "enable": true
