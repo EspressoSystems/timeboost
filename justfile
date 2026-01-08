@@ -286,7 +286,7 @@ test-dyn-comm: build-release build-test-utils
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --blocks 300
+            --blocks 200
 
 [linux]
 forward-ipv4 val: build-test-utils

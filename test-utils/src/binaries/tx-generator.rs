@@ -15,7 +15,6 @@ use clap::Parser;
 use futures::StreamExt;
 use futures::future::join_all;
 use futures::stream::BoxStream;
-use multisig::CommitteeId;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Client, Url};
 use serde::Serialize;
@@ -81,7 +80,6 @@ struct TxGeneratorConfig {
     enc_ratio: f64,
     prio_ratio: f64,
     chain_id: ChainId,
-    committee_id: CommitteeId,
     enc_key: Option<ThresholdEncKey>,
     signers: Vec<PrivateKeySigner>,
     nitro: bool,
@@ -233,6 +231,7 @@ impl TxGenerator {
             SubmissionStrategy::Bundle(auction) => {
                 let bundle = create_bundle(
                     self.config.enc_key.as_ref(),
+                    self.state.current.id,
                     auction,
                     tx,
                     self.config.enc_ratio,
@@ -241,7 +240,12 @@ impl TxGenerator {
                 self.broadcast_bundle(&bundle).await;
             }
             SubmissionStrategy::RawTx => {
-                let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)?;
+                let tx = create_tx(
+                    self.config.enc_key.as_ref(),
+                    self.state.current.id,
+                    tx,
+                    self.config.enc_ratio,
+                )?;
                 self.broadcast_tx(&tx).await;
             }
         }
@@ -453,7 +457,6 @@ async fn main() -> Result<()> {
         .enc_ratio(args.enc_ratio)
         .prio_ratio(args.prio_ratio)
         .chain_id(args.namespace.into())
-        .committee_id(committee.id)
         .maybe_enc_key(enc_key)
         .signers(signers)
         .nitro(args.nitro)

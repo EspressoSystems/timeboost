@@ -21,8 +21,8 @@ use timeboost_crypto::prelude::{
     ThresholdEncError, ThresholdEncScheme, ThresholdScheme, Vess, VssSecret,
 };
 use timeboost_types::{
-    AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, DkgSubsetRef, InclusionList, KeyStore,
-    KeyStoreVec, ThresholdKey, ThresholdKeyCell,
+    Aad, AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, DkgSubsetRef, InclusionList,
+    KeyStore, KeyStoreVec, ThresholdKey, ThresholdKeyCell,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -33,8 +33,6 @@ use crate::config::DecrypterConfig;
 
 #[cfg(feature = "metrics")]
 use crate::time_series::{DECRYPT_END, DECRYPT_START};
-
-use timeboost_types::Aad;
 
 type Result<T> = StdResult<T, DecrypterError>;
 
@@ -376,10 +374,18 @@ impl Decrypter {
                     continue;
                 }
 
-                debug!(
+                let num_priority = dec_incl.priority_bundles().len();
+                let num_regular = dec_incl.regular_bundles().len();
+                let total_bundles = num_priority + num_regular;
+
+                info!(
                     node = %self.label,
                     round = %round,
                     epoch = %dec_incl.epoch(),
+                    is_encrypted = %is_encrypted,
+                    num_priority = %num_priority,
+                    num_regular = %num_regular,
+                    total = %total_bundles,
                     "received inclusion list from Worker"
                 );
 
@@ -1107,8 +1113,7 @@ impl Worker {
             Success(Plaintext),
             FaultySubset(BTreeSet<u32>),
             Error(ThresholdEncError),
-            InsufficientShares,
-            InvalidCiphertext,
+            InvalidShares,
         }
 
         // process each ciphertext in parallel using spawn_blocking
@@ -1136,18 +1141,18 @@ impl Worker {
                         let threshold: usize = key_store.committee().one_honest_threshold().into();
                         let quorum: usize = key_store.committee().quorum_size().into();
 
-                        // check None shares (failed decryptions)
+                        // check None shares (failed to produce decryption share)
                         if none_count >= quorum {
-                            return CombineResult::InvalidCiphertext;
+                            return CombineResult::InvalidShares;
                         }
 
                         // check if we have enough valid shares to combine
                         if valid_shares.len() < threshold {
-                            return CombineResult::InsufficientShares;
+                            return CombineResult::InvalidShares;
                         }
 
                         let Some(ct) = maybe_ct else {
-                            return CombineResult::InsufficientShares;
+                            return CombineResult::InvalidShares;
                         };
 
                         match ThresholdScheme::combine(
@@ -1189,12 +1194,8 @@ impl Worker {
                     warn!(node = %self.label, error = ?e, "error in combine");
                     return Err(DecrypterError::Decryption(e));
                 }
-                CombineResult::InvalidCiphertext => {
-                    debug!(node = %self.label, "invalid ciphertext");
+                CombineResult::InvalidShares => {
                     decrypted.push(None);
-                }
-                CombineResult::InsufficientShares => {
-                    return Ok(None);
                 }
             }
         }
