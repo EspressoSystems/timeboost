@@ -7,6 +7,7 @@ use cliquenet::Address;
 use multisig::PublicKey;
 use prost::bytes::Bytes;
 use sailfish::types::RoundNumber;
+use timeboost_proto::forward::CatchupRound;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
@@ -14,8 +15,14 @@ use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
 use worker::Worker;
 
+#[derive(Debug)]
+pub enum Output {
+    Inclusion(InclusionList),
+    Catchup(CatchupRound),
+}
+
 pub struct NitroForwarder {
-    incls_tx: Sender<InclusionList>,
+    tx: Sender<Output>,
     jh: JoinHandle<()>,
 }
 
@@ -32,9 +39,9 @@ impl NitroForwarder {
         let chan = endpoint.connect_lazy();
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
-        let w = Worker::new(key, c, rx);
+        let w = Worker::new(key, c.clone(), rx);
         Ok(Self {
-            incls_tx: tx,
+            tx,
             jh: tokio::spawn(w.go()),
         })
     }
@@ -57,8 +64,19 @@ impl NitroForwarder {
             // eg index 0 is really 1 delayed message read
             delayed_messages_read: u64::from(index) + 1,
         };
-        self.incls_tx
-            .send(incl)
+        self.tx
+            .send(Output::Inclusion(incl))
+            .await
+            .map_err(|_| Error::WorkerStopped)?;
+        Ok(())
+    }
+
+    pub async fn catchup(&mut self, round: RoundNumber) -> Result<(), Error> {
+        let r = CatchupRound {
+            round: round.into(),
+        };
+        self.tx
+            .send(Output::Catchup(r))
             .await
             .map_err(|_| Error::WorkerStopped)?;
         Ok(())

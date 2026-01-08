@@ -113,6 +113,10 @@ impl Timeboost {
                             return Err(e.into())
                         }
                     }
+                    Ok(Output::Catchup(r)) => {
+                        self.nitro_forwarder
+                            .catchup(r).await?
+                    }
                     Err(err) => {
                         return Err(err.into())
                     }
