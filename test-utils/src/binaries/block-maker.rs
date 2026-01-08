@@ -14,6 +14,7 @@ use quick_cache::sync::Cache;
 use sailfish::types::RoundNumber;
 use timeboost::config::{ChainConfig, CommitteeContract, GRPC_API_PORT_OFFSET};
 use timeboost::proto::block::Block;
+use timeboost::proto::forward::CatchupRound;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost::proto::inclusion::InclusionList;
 use timeboost::proto::internal::internal_api_client::InternalApiClient;
@@ -123,6 +124,10 @@ impl ForwardApi for Service {
             error!(%err, "failed to send block to {sender:?}");
             exit(1)
         }
+        Ok(Response::new(()))
+    }
+
+    async fn catchup(&self, _: Request<CatchupRound>) -> Result<Response<()>, Status> {
         Ok(Response::new(()))
     }
 }

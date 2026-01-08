@@ -6,23 +6,21 @@ use tokio::{sync::mpsc::Receiver, time::sleep};
 use tonic::{Request, metadata::AsciiMetadataValue, transport::Channel};
 use tracing::warn;
 
+use crate::forwarder::nitro_forwarder::Output;
+
 pub struct Worker {
     key: PublicKey,
     client: ForwardApiClient<Channel>,
-    incls_rx: Receiver<InclusionList>,
+    rx: Receiver<Output>,
     sender: AsciiMetadataValue,
 }
 
 impl Worker {
-    pub fn new(
-        key: PublicKey,
-        client: ForwardApiClient<Channel>,
-        incls_rx: Receiver<InclusionList>,
-    ) -> Self {
+    pub fn new(key: PublicKey, client: ForwardApiClient<Channel>, rx: Receiver<Output>) -> Self {
         Self {
             key,
             client,
-            incls_rx,
+            rx,
             sender: {
                 let mut k = key.to_string();
                 k.retain(|c| c.is_ascii());
@@ -38,12 +36,24 @@ impl Worker {
             r.metadata_mut().insert("src", self.sender.clone());
             r
         };
-        while let Some(incl) = self.incls_rx.recv().await {
-            let mut d = delays();
-            while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
-                warn!(node = %self.key, %err, "failed to forward data to nitro");
-                let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
-                sleep(t).await;
+        while let Some(o) = self.rx.recv().await {
+            match o {
+                Output::Inclusion(incl) => {
+                    let mut d = delays();
+                    while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
+                        warn!(node = %self.key, %err, "failed to forward inclusion list to nitro");
+                        let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+                        sleep(t).await;
+                    }
+                }
+                Output::Catchup(r) => {
+                    let mut d = delays();
+                    while let Err(err) = self.client.catchup(Request::new(r)).await {
+                        warn!(node = %self.key, %err, "failed to forward catchup to nitro");
+                        let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+                        sleep(t).await;
+                    }
+                }
             }
         }
     }
@@ -64,6 +74,7 @@ mod tests {
     use test_utils::ports::alloc_port;
     use timeboost_proto::{
         forward::{
+            CatchupRound,
             forward_api_client::ForwardApiClient,
             forward_api_server::{ForwardApi, ForwardApiServer},
         },
@@ -78,6 +89,8 @@ mod tests {
         Request, Response, Status,
         transport::{Channel, Server},
     };
+
+    use crate::forwarder::nitro_forwarder::Output;
 
     use super::Worker;
 
@@ -101,6 +114,10 @@ mod tests {
             assert_eq!(incl.round, current);
             assert_eq!(incl.consensus_timestamp, current);
             self.counter.fetch_add(1, Ordering::Relaxed);
+            return Ok(Response::new(()));
+        }
+
+        async fn catchup(&self, _: Request<CatchupRound>) -> Result<Response<()>, Status> {
             return Ok(Response::new(()));
         }
     }
@@ -151,7 +168,9 @@ mod tests {
                 encoded_txns: Vec::new(),
                 delayed_messages_read: 0,
             };
-            tx.send(incl).await.expect("inclusion to be sent");
+            tx.send(Output::Inclusion(incl))
+                .await
+                .expect("inclusion to be sent");
             sleep(Duration::from_millis(10)).await;
             assert_eq!(tx.capacity(), cap - i as usize);
             assert_eq!(0, counter.load(Ordering::Relaxed));
@@ -171,7 +190,9 @@ mod tests {
             consensus_timestamp: max,
             delayed_messages_read: 0,
         };
-        tx.send(incl).await.expect("inclusion to be sent");
+        tx.send(Output::Inclusion(incl))
+            .await
+            .expect("inclusion to be sent");
         let f = async {
             loop {
                 let c = counter.load(Ordering::Relaxed);

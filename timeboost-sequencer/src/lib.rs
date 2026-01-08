@@ -58,6 +58,7 @@ pub enum Output {
         delayed_inbox_index: DelayedInboxIndex,
     },
     UseCommittee(Round),
+    Catchup(RoundNumber),
 }
 
 pub struct Sequencer {
@@ -425,7 +426,12 @@ impl Task {
                         warn!(node = %self.label, %err, "decrypt gc error");
                     }
                 }
-                Ok(Some(CoordinatorEvent::Catchup(_))) => {
+                Ok(Some(CoordinatorEvent::Catchup(r))) => {
+                    warn!(node = %self.label, round = %r, "entered catchup");
+                    self.output
+                        .send(Output::Catchup(r.num()))
+                        .await
+                        .map_err(|_| TimeboostError::ChannelClosed)?;
                     self.includer.clear_cache();
                 }
                 Ok(Some(CoordinatorEvent::UseCommittee(r))) => {
