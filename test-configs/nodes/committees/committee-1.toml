@@ -1,17 +1,17 @@
 id = 1
-start = "+5s"
-
-[[member]]
-config = "test-configs/nodes/21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e.public.toml"
-
-[[member]]
-config = "test-configs/nodes/23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud.public.toml"
-
-[[member]]
-config = "test-configs/nodes/23oAdU4acQbwSuC6aTEXqwkvQRVCjySzX18JfBNEbHgij.public.toml"
+start = "+10s"
 
 [[member]]
 config = "test-configs/nodes/h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq.public.toml"
 
 [[member]]
 config = "test-configs/nodes/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.public.toml"
+
+[[member]]
+config = "test-configs/nodes/mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8.public.toml"
+
+[[member]]
+config = "test-configs/nodes/o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD.public.toml"
+
+[[member]]
+config = "test-configs/nodes/pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3.public.toml"
