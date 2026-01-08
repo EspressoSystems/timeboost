@@ -23,3 +23,9 @@ run-integration-ci: build
 run-integration-main:
   docker network create timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+
+run-integration-committee-change:
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -p docker -f docker-compose-committee-change.yml up -d
+
+run-integration-committee-change-main:
+  docker compose -p docker -f docker-compose-committee-change.yml up -d

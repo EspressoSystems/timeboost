@@ -142,7 +142,8 @@ impl Timeboost {
                         let comm = committee.sailfish();
                         let store = committee.dkg_key_store();
                         self.sequencer.set_next_committee(time, comm.clone(), store).await?;
-                        self.certifier.set_next_committee(comm).await?
+                        self.certifier.set_next_committee(comm.clone()).await?;
+                        self.submitter.add_committee(committee.committee()).await;
                     }
                     None => {
                         error!(node = %self.label, "committee config stream ended");
