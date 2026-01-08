@@ -53,6 +53,7 @@ pub struct Overlay {
     buffer: Buffer,
     encoded: [u8; Trailer::MAX_LEN],
     retry: JoinHandle<Infallible>,
+    cutoff: Bucket,
 }
 
 impl Drop for Overlay {
@@ -134,6 +135,7 @@ impl Overlay {
             encoded: [0; Trailer::MAX_LEN],
             id: Id::from(0),
             retry,
+            cutoff: Bucket(0),
         }
     }
 
@@ -197,6 +199,9 @@ impl Overlay {
                     .send(Command::Unicast(src, None, trailer_bytes))
                     .await
                     .map_err(|_| NetworkDown(()))?;
+                if trailer.bucket < self.cutoff {
+                    continue;
+                }
                 return Ok((src, bytes));
             }
 
@@ -215,6 +220,7 @@ impl Overlay {
 
     pub fn gc<B: Into<Bucket>>(&mut self, bucket: B) {
         let bucket = bucket.into();
+        self.cutoff = bucket;
         self.buffer.0.lock().retain(|b, _| *b >= bucket);
     }
 
