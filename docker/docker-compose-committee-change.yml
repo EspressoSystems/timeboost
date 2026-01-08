@@ -71,7 +71,7 @@ services:
         condition: service_completed_successfully
   nitro4:
     pid: host
-    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-update-proto
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-systemd-notifier
     entrypoint: /usr/local/bin/nitro
     ports:
       - "127.0.0.1:8587:8547"
