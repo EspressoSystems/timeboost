@@ -39,7 +39,7 @@ impl NitroForwarder {
         let chan = endpoint.connect_lazy();
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
-        let w = Worker::new(key, c.clone(), rx);
+        let w = Worker::new(key, c, rx);
         Ok(Self {
             tx,
             jh: tokio::spawn(w.go()),
