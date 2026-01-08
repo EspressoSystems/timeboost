@@ -887,9 +887,6 @@ impl Worker {
 
         if is_encrypted {
             let dec_shares = self.decrypt(&incl).await?;
-            if dec_shares.is_empty() {
-                return Err(DecrypterError::EmptyDecShares);
-            }
             self.net
                 .broadcast(
                     round.u64(),
@@ -972,10 +969,6 @@ impl Worker {
 
     /// Insert decrypted shares into the local cache.
     fn insert_shares(&mut self, batch: DecShareBatch) -> Result<()> {
-        if batch.is_empty() {
-            trace!(node = %self.label, "empty decryption share batch, skipped");
-            return Err(DecrypterError::EmptyDecShares);
-        }
         let round = batch.round;
 
         if !self
@@ -1115,6 +1108,7 @@ impl Worker {
             FaultySubset(BTreeSet<u32>),
             Error(ThresholdEncError),
             InsufficientShares,
+            InvalidCiphertext,
         }
 
         // process each ciphertext in parallel using spawn_blocking
@@ -1137,8 +1131,17 @@ impl Worker {
                             .cloned()
                             .collect();
 
-                        // check if we have enough shares
+                        let none_count = decryption_shares.iter().filter(|s| s.is_none()).count();
+
                         let threshold: usize = key_store.committee().one_honest_threshold().into();
+                        let quorum: usize = key_store.committee().quorum_size().into();
+
+                        // check None shares (failed decryptions)
+                        if none_count >= quorum {
+                            return CombineResult::InvalidCiphertext;
+                        }
+
+                        // check if we have enough valid shares to combine
                         if valid_shares.len() < threshold {
                             return CombineResult::InsufficientShares;
                         }
@@ -1186,8 +1189,12 @@ impl Worker {
                     warn!(node = %self.label, error = ?e, "error in combine");
                     return Err(DecrypterError::Decryption(e));
                 }
-                CombineResult::InsufficientShares => {
+                CombineResult::InvalidCiphertext => {
+                    debug!(node = %self.label, "invalid ciphertext");
                     decrypted.push(None);
+                }
+                CombineResult::InsufficientShares => {
+                    return Ok(None);
                 }
             }
         }
@@ -1438,17 +1445,6 @@ struct DecShareBatch {
     dec_shares: Vec<Option<ThresholdDecShare>>,
     /// round evidence to justify `round`, avoiding unbounded worker buffer w/ future rounds data
     evidence: Evidence,
-}
-
-impl DecShareBatch {
-    /// Returns true if there's no *valid* decryption share. There are three sub-cases this may be
-    /// true
-    /// - empty set of ciphertext/encrypted bundle
-    /// - ciphertexts are malformed and cannot be deserialized
-    /// - ciphertexts are invalid and fail to be decrypted
-    pub fn is_empty(&self) -> bool {
-        self.dec_shares.is_empty() || self.dec_shares.iter().all(|s| s.is_none())
-    }
 }
 
 /// A response with the agreed-upon subset of DKG bundles.

@@ -157,7 +157,13 @@ async fn run_handover(
         }
     });
 
-    // wait for the current to become active
+    // inform about upcoming committee change
+    let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
+    bcast_c1
+        .send(Cmd::NextCommittee(t, a2.clone(), d2.1.clone()))
+        .unwrap();
+
+    // wait for current to become active
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let mut out2 = Vec::new();
@@ -192,9 +198,8 @@ async fn run_handover(
             loop {
                 select! {
                     cmd = cmd.recv() => match cmd {
-                        Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a.clone(), k).await.unwrap();
-                            c.set_next_committee(a.clone()).await.unwrap();
+                        Ok(Cmd::NextCommittee(_, _, _)) => {
+                            panic!("unexpected command")
                         }
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundle(bundle).await.unwrap();
@@ -242,12 +247,6 @@ async fn run_handover(
         });
         out2.push((label, rx))
     }
-
-    // inform about upcoming committee change (after c2 nodes are subscribed)
-    let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
-    bcast_c1
-        .send(Cmd::NextCommittee(t, a2.clone(), d2.1.clone()))
-        .unwrap();
 
     // wait for all decryption keys in next to be ready
     for (key, _, _) in &next {
@@ -422,7 +421,11 @@ async fn mk_configs(
         let sa = &sf_addrs[i];
         let da = &de_addrs[i];
         let pa = &cert_addrs[i];
-        let enc_key = ThresholdKeyCell::new();
+        let enc_key = if i < keep {
+            prev[i].0.clone()
+        } else {
+            ThresholdKeyCell::new()
+        };
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
