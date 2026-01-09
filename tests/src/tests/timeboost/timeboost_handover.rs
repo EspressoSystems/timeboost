@@ -109,7 +109,7 @@ async fn run_handover(
                                     Output::UseCommittee(round) => {
                                         c.use_committee(round).await.unwrap();
                                     },
-                                    Output::Catchup(_) => {}
+                                    Output::Catchup(_) | Output::AwaitingHandover => {}
                                 }
                             }
                             Err(_) => {
@@ -222,7 +222,7 @@ async fn run_handover(
                                     Output::UseCommittee(round) => {
                                         c.use_committee(round).await.unwrap();
                                     },
-                                    Output::Catchup(_) => {}
+                                    Output::Catchup(_) | Output::AwaitingHandover => {}
                                 }
                             }
                             Err(_) => {

@@ -59,6 +59,7 @@ pub enum Output {
     },
     UseCommittee(Round),
     Catchup(RoundNumber),
+    AwaitingHandover,
 }
 
 pub struct Sequencer {

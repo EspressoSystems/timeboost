@@ -11430,7 +11430,7 @@ dependencies = [
 [[package]]
 name = "timeboost-proto"
 version = "0.0.0"
-source = "git+https://github.com/EspressoSystems/timeboost-proto#920d01be55b8ddcf2faa2dbd7f2a825a3a81f69e"
+source = "git+https://github.com/EspressoSystems/timeboost-proto?branch=li%2Ftimeboost-state#09a92e2eb1968dcb6c33f308551838d413c5b60c"
 dependencies = [
  "prost 0.14.1",
  "tonic 0.14.2",

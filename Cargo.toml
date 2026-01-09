@@ -89,7 +89,7 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
 ] }
 thiserror = "2.0"
 timeboost-contract = { git = "https://github.com/EspressoSystems/timeboost-contracts" }
-timeboost-proto = { git = "https://github.com/EspressoSystems/timeboost-proto" }
+timeboost-proto = { git = "https://github.com/EspressoSystems/timeboost-proto", branch = "li/timeboost-state" }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots", "url"] }
