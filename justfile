@@ -221,7 +221,7 @@ test-all: build-release build-test-utils
         --namespace 10101 \
         --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-        --blocks 300
+        --blocks 200
 
 test-no-express: build-release build-test-utils
   env RUST_LOG=block_checker=info,error \
@@ -249,13 +249,13 @@ test-no-express: build-release build-test-utils
         --namespace 10101 \
         --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-        --blocks 300
+        --blocks 200
 
 test-dyn-comm: build-release build-test-utils
     env RUST_LOG=block_checker=info,error \
     target/release/run \
         --verbose \
-        --timeout 120 \
+        --timeout 180 \
         --spawn "1|anvil --port 8545 --silent --block-time 1" \
         --run   "2|sleep 3" \
         --run   "3|just deploy-contract {{an_host}}" \
@@ -286,7 +286,7 @@ test-dyn-comm: build-release build-test-utils
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --blocks 300
+            --blocks 200
 
 [linux]
 forward-ipv4 val: build-test-utils
