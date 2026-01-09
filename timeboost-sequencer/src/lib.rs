@@ -291,7 +291,7 @@ impl Task {
         } else {
             warn!(node = %self.label, "awaiting handover. sending catchup");
             self.output
-                .send(Output::Catchup(0.into()))
+                .send(Output::AwaitingHandover)
                 .await
                 .map_err(|_| TimeboostError::ChannelClosed)?;
         }
