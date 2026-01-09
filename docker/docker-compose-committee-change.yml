@@ -142,8 +142,7 @@ services:
     restart: on-failure
 networks:
   timeboost:
-    external:
-      name: timeboost
+    external: true
 
 volumes:
   config:

@@ -287,6 +287,12 @@ impl Task {
             if let Some(bundle) = self.decrypter.gen_dkg_bundle().await {
                 self.bundles.add_bundle(BundleVariant::Dkg(bundle));
             }
+        } else {
+            warn!(node = %self.label, "awaiting handover. sending catchup");
+            self.output
+                .send(Output::Catchup(0.into()))
+                .await
+                .map_err(|_| TimeboostError::ChannelClosed)?;
         }
 
         loop {
