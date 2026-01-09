@@ -12,10 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
 use cliquenet::{Address, AddressableCommittee};
-use multisig::Keypair;
-use multisig::{Committee, x25519};
+use multisig::{Committee, CommitteeId, Keypair, x25519};
 use parking_lot::Mutex;
-use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
+use sailfish_types::RoundNumber;
 use test_utils::ports::alloc_ports;
 use timeboost::builder::CertifierConfig;
 use timeboost::config::ChainConfig;
@@ -32,6 +31,7 @@ use url::Url;
 
 async fn make_configs(
     size: NonZeroUsize,
+    committee_id: CommitteeId,
 ) -> (
     Vec<ThresholdKeyCell>,
     Vec<(SequencerConfig, CertifierConfig)>,
@@ -53,7 +53,7 @@ async fn make_configs(
     }
 
     let committee = Committee::new(
-        UNKNOWN_COMMITTEE_ID,
+        committee_id,
         parts
             .iter()
             .enumerate()
@@ -142,6 +142,7 @@ async fn make_configs(
 async fn gen_bundles(
     tx: broadcast::Sender<BundleVariant>,
     chain_id: ChainId,
+    committee_id: CommitteeId,
     enc_key: ThresholdKeyCell,
     auction: Auction,
 ) {
@@ -153,6 +154,7 @@ async fn gen_bundles(
         );
         let Ok(b) = create_bundle(
             enc_key.get().map(|t| t.pubkey().clone()).as_ref(),
+            committee_id,
             &auction,
             t,
             0.5f64,

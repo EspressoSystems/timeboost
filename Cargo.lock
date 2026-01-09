@@ -11506,6 +11506,7 @@ dependencies = [
  "bincode 2.0.1",
  "bytes 1.11.0",
  "ethereum_ssz",
+ "multisig",
  "rand 0.9.2",
  "reqwest",
  "serde",

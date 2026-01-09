@@ -196,7 +196,11 @@ impl TxGenerator {
             .expect("update called without next committee scheduled")
             .1;
 
-        info!("switching to committee {}", next.id);
+        info!(
+            old_committee = %self.state.current.id,
+            new_committee = %next.id,
+            "switching committees"
+        );
 
         self.state.node_urls = urls_from_config(&next)?;
         self.state.provider = build_provider(
@@ -231,6 +235,7 @@ impl TxGenerator {
             SubmissionStrategy::Bundle(auction) => {
                 let bundle = create_bundle(
                     self.config.enc_key.as_ref(),
+                    self.state.current.id,
                     auction,
                     tx,
                     self.config.enc_ratio,
@@ -239,7 +244,12 @@ impl TxGenerator {
                 self.broadcast_bundle(&bundle).await;
             }
             SubmissionStrategy::RawTx => {
-                let tx = create_tx(self.config.enc_key.as_ref(), tx, self.config.enc_ratio)?;
+                let tx = create_tx(
+                    self.config.enc_key.as_ref(),
+                    self.state.current.id,
+                    tx,
+                    self.config.enc_ratio,
+                )?;
                 self.broadcast_tx(&tx).await;
             }
         }

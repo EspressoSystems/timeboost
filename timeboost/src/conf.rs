@@ -115,6 +115,11 @@ impl TimeboostConfig {
             .robusta(self.robusta.clone())
             .namespace(ns)
             .committee(self.sailfish_committee.committee().clone())
+            .maybe_prev_committee(
+                self.prev_committee
+                    .as_ref()
+                    .map(|c| c.sailfish().committee().clone()),
+            )
             .max_transaction_size(self.max_transaction_size)
             .build()
     }

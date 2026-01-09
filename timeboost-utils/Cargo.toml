@@ -12,6 +12,7 @@ ark-std = { workspace = true }
 bincode = { workspace = true }
 bytes = { workspace = true }
 ethereum_ssz = { workspace = true }
+multisig = { path = "../multisig" }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
