@@ -45,7 +45,12 @@ async fn main() -> Result<()> {
     let Ok(committee_config) = contract.active().await else {
         bail!("no active committee");
     };
-    let committees = CommitteeVec::<1>::new(committee_config.committee());
+
+    let prev_committee = contract.prev(committee_config.id).await?;
+    let committees = match prev_committee {
+        Some(prev) => CommitteeVec::<2>::new(prev.committee()).with(committee_config.committee()),
+        None => CommitteeVec::<2>::new(committee_config.committee()),
+    };
 
     let conf = Config::builder()
         .https_only(args.https_only)

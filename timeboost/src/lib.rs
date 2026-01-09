@@ -122,7 +122,13 @@ impl Timeboost {
                 },
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
-                        info!(node = %self.label, block = %b.data().round(), "certified block");
+                        info!(
+                            node = %self.label,
+                            block = %b.data().num(),
+                            round = %b.cert().data().round().num(),
+                            committee = %b.committee(),
+                            "certified block"
+                        );
                         #[cfg(feature = "metrics")]
                         self.metrics.update(b.data().round());
                         if let Err(e) = self.submitter.submit(b).await {
@@ -142,7 +148,8 @@ impl Timeboost {
                         let comm = committee.sailfish();
                         let store = committee.dkg_key_store();
                         self.sequencer.set_next_committee(time, comm.clone(), store).await?;
-                        self.certifier.set_next_committee(comm).await?
+                        self.certifier.set_next_committee(comm.clone()).await?;
+                        self.submitter.add_committee(comm.committee().clone()).await;
                     }
                     None => {
                         error!(node = %self.label, "committee config stream ended");

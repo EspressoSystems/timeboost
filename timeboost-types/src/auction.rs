@@ -1,6 +1,6 @@
 use crate::{Address, Epoch};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Auction {
     contract: Address,
 }

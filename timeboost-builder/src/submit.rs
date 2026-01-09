@@ -54,7 +54,12 @@ impl Drop for Submitter {
 impl Submitter {
     pub fn new(cfg: SubmitterConfig) -> Self {
         let verified = Verified::new();
-        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
+        let committees = match &cfg.prev_committee {
+            Some(prev) => Arc::new(Mutex::new(
+                CommitteeVec::new(prev.clone()).with(cfg.committee.clone()),
+            )),
+            None => Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone()))),
+        };
 
         #[cfg(feature = "metrics")]
         let metrics = BuilderMetrics::new().expect("valid metrics definitions");

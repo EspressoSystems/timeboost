@@ -26,7 +26,29 @@ use tokio::task::spawn_blocking;
 
 use crate::DkgBundle;
 
-const DKG_AAD: &[u8; 3] = b"dkg";
+/// Additional Authenticated Data binding a ciphertext to a specific operation and committee.
+#[derive(Debug, Clone, Copy)]
+pub enum Aad {
+    Dkg(CommitteeId),
+    Threshold(CommitteeId),
+}
+
+impl Aad {
+    pub fn to_bytes(self) -> Vec<u8> {
+        match self {
+            Aad::Dkg(committee_id) => {
+                let mut aad = b"dkg".to_vec();
+                aad.extend_from_slice(&u64::from(committee_id).to_le_bytes());
+                aad
+            }
+            Aad::Threshold(committee_id) => {
+                let mut aad = b"threshold".to_vec();
+                aad.extend_from_slice(&u64::from(committee_id).to_le_bytes());
+                aad
+            }
+        }
+    }
+}
 
 /// Key materials related to the decryption phase, including the public key for encryption,
 /// the per-node key share for decryption, and combiner key for hatching decryption shares into
@@ -409,6 +431,7 @@ impl DkgAccumulator {
         let mode = self.mode.clone();
 
         let bundle = spawn_blocking(move || {
+            let aad = Aad::Dkg(store.committee().id()).to_bytes();
             // verify the bundle based on the mode
             match mode {
                 AccumulatorMode::Dkg => {
@@ -417,7 +440,7 @@ impl DkgAccumulator {
                         store.sorted_keys(),
                         bundle.vess_ct(),
                         bundle.comm(),
-                        DKG_AAD,
+                        &aad,
                     )?;
                 }
                 AccumulatorMode::Resharing(combkey) => {
@@ -429,7 +452,7 @@ impl DkgAccumulator {
                         store.sorted_keys(),
                         bundle.vess_ct(),
                         bundle.comm(),
-                        DKG_AAD,
+                        &aad,
                         *pub_share,
                     )?;
                 }
@@ -573,11 +596,12 @@ impl<'a> DkgSubsetRef<'a> {
         prev: Option<&KeyStore>,
     ) -> anyhow::Result<ThresholdKey> {
         let vess = Vess::new_fast();
+        let aad = Aad::Dkg(curr.committee().id()).to_bytes();
 
         match &self.combkey {
             None => {
                 let mut dealings_iter = ResultIter::new(self.bundles.iter().map(|b| {
-                    vess.decrypt_share(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD)
+                    vess.decrypt_share(curr.committee(), dkg_sk, b.vess_ct(), &aad)
                         .map(|s| (s, b.comm().clone()))
                 }));
 
@@ -597,7 +621,7 @@ impl<'a> DkgSubsetRef<'a> {
                     let pub_share = combkey
                         .get_pub_share(node_idx)
                         .ok_or(VessError::FailedVerification)?;
-                    vess.decrypt_reshare(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD, *pub_share)
+                    vess.decrypt_reshare(curr.committee(), dkg_sk, b.vess_ct(), &aad, *pub_share)
                         .map(|s| (node_idx, s, b.comm().clone()))
                 }));
 

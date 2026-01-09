@@ -41,7 +41,8 @@ async fn run_handover(
     const NUM_OF_BLOCKS_PER_EPOCH: usize = 50;
 
     let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(1024);
+    let (bcast_c1, _) = broadcast::channel(1024);
+    let (bcast_c2, _) = broadcast::channel(1024);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
@@ -69,7 +70,7 @@ async fn run_handover(
         let cc = cert_conf.clone();
         let (tx, rx) = mpsc::unbounded_channel();
         let finish = finish.clone();
-        let mut cmd = bcast.subscribe();
+        let mut cmd = bcast_c1.subscribe();
         let label = sc.sign_keypair().public_key();
         let r2b = round2block.clone();
 
@@ -138,14 +139,15 @@ async fn run_handover(
         key.read().await;
     }
 
-    // generate bundles
-    tasks.spawn({
+    // generate bundles for c1
+    let c1_bundle_gen = tasks.spawn({
         let (key, _, _) = &curr[0];
         let key = key.clone();
-        let bcast = bcast.clone();
+        let bcast = bcast_c1.clone();
+        let auction = auction.clone();
         async move {
             let (tx, mut rx) = tokio::sync::broadcast::channel(200);
-            tokio::spawn(gen_bundles(tx, chain_id, key, auction));
+            tokio::spawn(gen_bundles(tx, chain_id, c1, key, auction));
             while let Ok(bundle) = rx.recv().await {
                 if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
                     warn!("Failed to send bundle: {}", e);
@@ -155,15 +157,16 @@ async fn run_handover(
         }
     });
 
-    // wait for the current to become active
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
     // inform about upcoming committee change
     let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
-    bcast.send(Cmd::NextCommittee(t, a2, d2.1)).unwrap();
+    bcast_c1
+        .send(Cmd::NextCommittee(t, a2.clone(), d2.1.clone()))
+        .unwrap();
+
+    // wait for current to become active
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     let mut out2 = Vec::new();
-
     // run committee 2 (next):
     for (_, seq_conf, cert_conf) in &next {
         let ours = seq_conf.sign_keypair().public_key();
@@ -178,7 +181,7 @@ async fn run_handover(
         let seq_conf = seq_conf.clone();
         let cert_conf = cert_conf.clone();
         let finish = finish.clone();
-        let mut cmd = bcast.subscribe();
+        let mut cmd = bcast_c2.subscribe();
         let label = seq_conf.sign_keypair().public_key();
         let r2b = round2block.clone();
 
@@ -195,9 +198,8 @@ async fn run_handover(
             loop {
                 select! {
                     cmd = cmd.recv() => match cmd {
-                        Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a.clone(), k).await.unwrap();
-                            c.set_next_committee(a.clone()).await.unwrap();
+                        Ok(Cmd::NextCommittee(_, _, _)) => {
+                            panic!("unexpected command")
                         }
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundle(bundle).await.unwrap();
@@ -246,13 +248,35 @@ async fn run_handover(
         out2.push((label, rx))
     }
 
+    // wait for all decryption keys in next to be ready
+    for (key, _, _) in &next {
+        key.read().await;
+    }
+
+    // generate bundles for c2
+    tasks.spawn({
+        let (key, _, _) = &next[0];
+        let key = key.clone();
+        let bcast = bcast_c2.clone();
+        async move {
+            let (tx, mut rx) = tokio::sync::broadcast::channel(200);
+            tokio::spawn(gen_bundles(tx, chain_id, c2, key, auction));
+            while let Ok(bundle) = rx.recv().await {
+                if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
+                    warn!("Failed to send bundle: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
     let mut map: HashMap<BlockInfo, usize> = HashMap::new();
 
     for b in 0..NUM_OF_BLOCKS_PER_EPOCH {
         map.clear();
         info!(block = %b);
         for (node, r) in &mut out1 {
-            debug!(%node, block = %b, "awaiting ...");
+            debug!(%node, block = %b, "awaiting...");
             let info = r.recv().await.unwrap();
             *map.entry(info).or_default() += 1
         }
@@ -265,11 +289,13 @@ async fn run_handover(
         panic!("outputs do not match")
     }
 
+    drop(c1_bundle_gen);
+
     for b in 0..NUM_OF_BLOCKS_PER_EPOCH {
         map.clear();
         info!(block = %b);
         for (node, r) in &mut out2 {
-            debug!(%node, block = %b, "awaiting ...");
+            debug!(%node, block = %b, "awaiting...");
             let info = r.recv().await.unwrap();
             *map.entry(info).or_default() += 1
         }
@@ -395,7 +421,11 @@ async fn mk_configs(
         let sa = &sf_addrs[i];
         let da = &de_addrs[i];
         let pa = &cert_addrs[i];
-        let enc_key = ThresholdKeyCell::new();
+        let enc_key = if i < keep {
+            prev[i].0.clone()
+        } else {
+            ThresholdKeyCell::new()
+        };
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
@@ -502,7 +532,6 @@ impl TestConfig {
 #[tokio::test]
 async fn handover_0_to_5() {
     init_logging();
-
     let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
@@ -511,7 +540,6 @@ async fn handover_0_to_5() {
         .set_previous_committee(true)
         .build()
         .await;
-
     run_handover(c1, c2).await;
 }
 

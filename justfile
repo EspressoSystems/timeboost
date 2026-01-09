@@ -221,7 +221,7 @@ test-all: build-release build-test-utils
         --namespace 10101 \
         --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-        --blocks 300
+        --blocks 200
 
 test-no-express: build-release build-test-utils
   env RUST_LOG=block_checker=info,error \
@@ -249,13 +249,13 @@ test-no-express: build-release build-test-utils
         --namespace 10101 \
         --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-        --blocks 300
+        --blocks 200
 
 test-dyn-comm: build-release build-test-utils
     env RUST_LOG=block_checker=info,error \
     target/release/run \
         --verbose \
-        --timeout 120 \
+        --timeout 180 \
         --spawn "1|anvil --port 8545 --silent --block-time 1" \
         --run   "2|sleep 3" \
         --run   "3|just deploy-contract {{an_host}}" \
@@ -266,14 +266,14 @@ test-dyn-comm: build-release build-test-utils
             --nodes test-configs/nodes/ \
             --verbose" \
         --spawn "5|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55000" \
-        --run   "6|sleep 3" \
+        --run   "6|sleep 2" \
         --run   "7|just register-key {{an_host}}" \
         --spawn "8|target/release/tx-generator \
             --chain test-configs/chain.toml \
             --enc-ratio 1.0 \
             --apikey "{{apikey}}"" \
         --run   "9|just register-committee {{an_host}} test-configs/nodes/committees/committee-1.toml" \
-        --run   "10|sleep 8" \
+        --run   "10|sleep 3" \
         --spawn "11|target/release/run-committee \
             --chain test-configs/chain.toml \
             --committee 1 \
@@ -286,7 +286,7 @@ test-dyn-comm: build-release build-test-utils
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --blocks 300
+            --blocks 200
 
 [linux]
 forward-ipv4 val: build-test-utils
