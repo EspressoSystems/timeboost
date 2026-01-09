@@ -9,6 +9,7 @@ use prost::bytes::Bytes;
 use sailfish::types::RoundNumber;
 use timeboost_proto::forward::CatchupRound;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
+use timeboost_sequencer::Output;
 use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
@@ -16,13 +17,24 @@ use tonic::transport::Endpoint;
 use worker::Worker;
 
 #[derive(Debug)]
-pub enum Output {
+pub enum ForwarderOutput {
     Inclusion(InclusionList),
     Catchup(CatchupRound),
+    AwaitingHandeover,
+}
+
+impl std::fmt::Display for ForwarderOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForwarderOutput::Inclusion(_) => write!(f, "InclusionList"),
+            ForwarderOutput::Catchup(_) => write!(f, "Catchup"),
+            ForwarderOutput::AwaitingHandeover => write!(f, "AwaitingHandover"),
+        }
+    }
 }
 
 pub struct NitroForwarder {
-    tx: Sender<Output>,
+    tx: Sender<ForwarderOutput>,
     jh: JoinHandle<()>,
 }
 
@@ -65,20 +77,24 @@ impl NitroForwarder {
             delayed_messages_read: u64::from(index) + 1,
         };
         self.tx
-            .send(Output::Inclusion(incl))
+            .send(ForwarderOutput::Inclusion(incl))
             .await
             .map_err(|_| Error::WorkerStopped)?;
         Ok(())
     }
 
-    pub async fn catchup(&mut self, round: RoundNumber) -> Result<(), Error> {
-        let r = CatchupRound {
-            round: round.into(),
+    pub async fn timeboost_state(&mut self, o: Output) -> Result<(), Error> {
+        let f = match o {
+            Output::AwaitingHandover => ForwarderOutput::AwaitingHandeover,
+            Output::Catchup(round) => {
+                let r = CatchupRound {
+                    round: round.into(),
+                };
+                ForwarderOutput::Catchup(r)
+            }
+            _ => return Err(Error::UnexpectedOutput(o)),
         };
-        self.tx
-            .send(Output::Catchup(r))
-            .await
-            .map_err(|_| Error::WorkerStopped)?;
+        self.tx.send(f).await.map_err(|_| Error::WorkerStopped)?;
         Ok(())
     }
 }
@@ -90,6 +106,9 @@ pub enum Error {
 
     #[error("invalid uri: {0}")]
     InvalidUri(String),
+
+    #[error("unexpected output type: {0:?}")]
+    UnexpectedOutput(Output),
 
     #[error("transport error: {0}")]
     TransportError(#[from] tonic::transport::Error),

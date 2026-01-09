@@ -113,8 +113,8 @@ impl Timeboost {
                             return Err(e.into())
                         }
                     }
-                    Ok(Output::Catchup(r)) => {
-                        self.nitro_forwarder.catchup(r).await?
+                    Ok(o @ (Output::Catchup(_) | Output::AwaitingHandover)) => {
+                        self.nitro_forwarder.timeboost_state(o).await?
                     }
                     Err(err) => {
                         return Err(err.into())
@@ -148,8 +148,8 @@ impl Timeboost {
                         let comm = committee.sailfish();
                         let store = committee.dkg_key_store();
                         self.sequencer.set_next_committee(time, comm.clone(), store).await?;
-                        self.certifier.set_next_committee(comm.clone()).await?;
-                        self.submitter.add_committee(comm.committee().clone()).await;
+                        self.certifier.set_next_committee(comm).await?;
+                        self.submitter.add_committee(committee.committee()).await;
                     }
                     None => {
                         error!(node = %self.label, "committee config stream ended");

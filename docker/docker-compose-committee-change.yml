@@ -1,0 +1,155 @@
+services:
+  config-producer-2:
+      user: root
+      image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+      environment:
+        - RUST_LOG=trace
+      volumes:
+        - "config:/config"
+      entrypoint: |
+        bash -c '
+          set -euo pipefail
+          t=$$(date -u -d "+2 minutes" "+%Y-%m-%dT%H:%M:%SZ")
+          cat <<EOF > /config/chain.toml
+        id = 1337
+        rpc-url = "http://demo-l1-network:8545/"
+        websocket-url = "ws://demo-l1-network:8546/"
+        key-management-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+        inbox-contract = "$$(jq -r ".inbox" /config/deployment.json)"
+        inbox-block-tag = "finalized"
+        EOF
+          for i in $$(seq 0 4); do
+            echo "Running configure for node $$i with seed $$((42 + i))"
+            /app/configure \
+              --seed $$((42 + i)) \
+              --bind "0.0.0.0:8000" \
+              --external "node$$i:8000" \
+              --nitro "nitro$$i:55000" \
+              --batchposter "nitro$$i:8547" \
+              --espresso-namespace 412346 \
+              --espresso-base-url "http://espresso-dev-node:41000/v1/" \
+              --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
+              --chain-rpc-url "http://demo-l1-network:8545" \
+              --chain-websocket-url "ws://demo-l1-network:8546" \
+              --chain-id 1337 \
+              --inbox-contract $$(jq -r ".inbox" /config/deployment.json) \
+              --committee-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+              --apikey "sEVxPYlY3Rwte9ZApZDZPd-K7TCiZnBlhZp7se8jVWM=" \
+              --output "/config"
+          done
+          /app/assemble \
+            --committee 1 \
+            --start $$t \
+            --output /config/committees/docker.toml \
+            /config/*.public.toml
+        '
+      networks:
+        - timeboost
+  contract-deployer-2:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    environment:
+      - RUST_LOG=debug
+    volumes:
+      - "config:/config"
+    entrypoint:
+      - sh
+      - -c
+      - >
+        /app/contract register-committee \
+          --committee /config/committees/docker.toml \
+          --index 0 \
+          --rpc-url "http://demo-l1-network:8545" \
+          --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+          --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
+        /app/funder \
+          --committee "/config/committees/docker.toml" \
+          --parent-rpc-url "http://demo-l1-network:8545"
+    networks:
+      - timeboost
+    depends_on:
+      config-producer-2:
+        condition: service_completed_successfully
+  nitro4:
+    pid: host
+    image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-systemd-notifier
+    entrypoint: /usr/local/bin/nitro
+    ports:
+      - "127.0.0.1:8587:8547"
+      - "127.0.0.1:8588:8548"
+      - "127.0.0.1:10042:9642"
+      - "127.0.0.1:55040:55000"
+    volumes:
+      - "nitro4:/home/user/.arbitrum/local/nitro"
+      - "l1keystore:/home/user/l1keystore"
+      - "config:/config"
+      - "./nitro-config:/nitro-config"
+    command:
+      - --conf.file=/nitro-config/sequencer_config.json
+      - --node.seq-coordinator.my-url=http://nitro4:8547
+      - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer,batcher
+      - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node4:8004
+      - --node.batch-poster.parent-chain-wallet.private-key=90a15749a30c7bbf9a835faab88aa16a93584699bc12c20cb43eec83d13bdde0
+    networks:
+      - timeboost
+    depends_on:
+      contract-deployer-2:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-s",
+          "-X",
+          "POST",
+          "--data",
+          '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}',
+          "-H",
+          "Content-Type: application/json",
+          "http://localhost:8547",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  node4:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    command:
+      [
+        "/app/timeboost",
+        "--https-only",
+        "false",
+        "--config",
+        "/config/i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam.toml",
+      ]
+    volumes:
+      - "config:/config"
+    networks:
+      - timeboost
+    environment:
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
+    ports:
+      - "8104:8003"
+      - "8804:8800"
+      - "9004:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://node4:8003/i/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      nitro4:
+        condition: service_healthy
+    restart: on-failure
+networks:
+  timeboost:
+    external: true
+
+volumes:
+  config:
+  l1keystore:
+  espresso_storage:
+  nitro0:
+  nitro1:
+  nitro2:
+  nitro3:
+  nitro4:

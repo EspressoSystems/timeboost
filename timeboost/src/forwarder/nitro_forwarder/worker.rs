@@ -1,22 +1,29 @@
 use std::{iter::repeat, time::Duration};
 
 use multisig::PublicKey;
-use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
+use timeboost_proto::{
+    forward::{TimeboostState, forward_api_client::ForwardApiClient, timeboost_state::State},
+    inclusion::InclusionList,
+};
 use tokio::{sync::mpsc::Receiver, time::sleep};
 use tonic::{Request, metadata::AsciiMetadataValue, transport::Channel};
 use tracing::warn;
 
-use crate::forwarder::nitro_forwarder::Output;
+use crate::forwarder::nitro_forwarder::ForwarderOutput;
 
 pub struct Worker {
     key: PublicKey,
     client: ForwardApiClient<Channel>,
-    rx: Receiver<Output>,
+    rx: Receiver<ForwarderOutput>,
     sender: AsciiMetadataValue,
 }
 
 impl Worker {
-    pub fn new(key: PublicKey, client: ForwardApiClient<Channel>, rx: Receiver<Output>) -> Self {
+    pub fn new(
+        key: PublicKey,
+        client: ForwardApiClient<Channel>,
+        rx: Receiver<ForwarderOutput>,
+    ) -> Self {
         Self {
             key,
             client,
@@ -29,6 +36,21 @@ impl Worker {
         }
     }
 
+    async fn update_timeboost_state_with_retry<D: Fn() -> I, I: Iterator<Item = u64>>(
+        client: &mut ForwardApiClient<Channel>,
+        key: &PublicKey,
+        s: TimeboostState,
+        out: &ForwarderOutput,
+        delays: D,
+    ) {
+        let mut d = delays();
+        while let Err(err) = client.update_timeboost_state(Request::new(s)).await {
+            warn!(node = %key, %err, operation=%out, "failed to forward to nitro");
+            let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+            sleep(t).await;
+        }
+    }
+
     pub async fn go(mut self) {
         let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
         let mk_req = |i: &InclusionList| {
@@ -38,7 +60,7 @@ impl Worker {
         };
         while let Some(o) = self.rx.recv().await {
             match o {
-                Output::Inclusion(incl) => {
+                ForwarderOutput::Inclusion(incl) => {
                     let mut d = delays();
                     while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
                         warn!(node = %self.key, %err, "failed to forward inclusion list to nitro");
@@ -46,13 +68,31 @@ impl Worker {
                         sleep(t).await;
                     }
                 }
-                Output::Catchup(r) => {
-                    let mut d = delays();
-                    while let Err(err) = self.client.catchup(Request::new(r)).await {
-                        warn!(node = %self.key, %err, "failed to forward catchup to nitro");
-                        let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
-                        sleep(t).await;
-                    }
+                ForwarderOutput::Catchup(r) => {
+                    let s = TimeboostState {
+                        state: Some(State::Catchup(r)),
+                    };
+                    Self::update_timeboost_state_with_retry(
+                        &mut self.client,
+                        &self.key,
+                        s,
+                        &o,
+                        delays,
+                    )
+                    .await;
+                }
+                ForwarderOutput::AwaitingHandeover => {
+                    let s = TimeboostState {
+                        state: Some(State::AwaitingHandover(true)),
+                    };
+                    Self::update_timeboost_state_with_retry(
+                        &mut self.client,
+                        &self.key,
+                        s,
+                        &o,
+                        delays,
+                    )
+                    .await;
                 }
             }
         }
@@ -74,7 +114,7 @@ mod tests {
     use test_utils::ports::alloc_port;
     use timeboost_proto::{
         forward::{
-            CatchupRound,
+            TimeboostState,
             forward_api_client::ForwardApiClient,
             forward_api_server::{ForwardApi, ForwardApiServer},
         },
@@ -90,7 +130,7 @@ mod tests {
         transport::{Channel, Server},
     };
 
-    use crate::forwarder::nitro_forwarder::Output;
+    use crate::forwarder::nitro_forwarder::ForwarderOutput;
 
     use super::Worker;
 
@@ -117,7 +157,10 @@ mod tests {
             return Ok(Response::new(()));
         }
 
-        async fn catchup(&self, _: Request<CatchupRound>) -> Result<Response<()>, Status> {
+        async fn update_timeboost_state(
+            &self,
+            _: Request<TimeboostState>,
+        ) -> Result<Response<()>, Status> {
             return Ok(Response::new(()));
         }
     }
@@ -168,7 +211,7 @@ mod tests {
                 encoded_txns: Vec::new(),
                 delayed_messages_read: 0,
             };
-            tx.send(Output::Inclusion(incl))
+            tx.send(ForwarderOutput::Inclusion(incl))
                 .await
                 .expect("inclusion to be sent");
             sleep(Duration::from_millis(10)).await;
@@ -190,7 +233,7 @@ mod tests {
             consensus_timestamp: max,
             delayed_messages_read: 0,
         };
-        tx.send(Output::Inclusion(incl))
+        tx.send(ForwarderOutput::Inclusion(incl))
             .await
             .expect("inclusion to be sent");
         let f = async {

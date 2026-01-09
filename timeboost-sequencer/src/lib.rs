@@ -59,6 +59,7 @@ pub enum Output {
     },
     UseCommittee(Round),
     Catchup(RoundNumber),
+    AwaitingHandover,
 }
 
 pub struct Sequencer {
@@ -287,6 +288,12 @@ impl Task {
             if let Some(bundle) = self.decrypter.gen_dkg_bundle().await {
                 self.bundles.add_bundle(BundleVariant::Dkg(bundle));
             }
+        } else {
+            warn!(node = %self.label, "awaiting handover. sending catchup");
+            self.output
+                .send(Output::AwaitingHandover)
+                .await
+                .map_err(|_| TimeboostError::ChannelClosed)?;
         }
 
         loop {
