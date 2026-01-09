@@ -25,5 +25,6 @@ pub struct SubmitterConfig {
     pub(crate) namespace: NamespaceId,
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
     pub(crate) committee: Committee,
+    pub(crate) prev_committee: Option<Committee>,
     pub(crate) max_transaction_size: usize,
 }

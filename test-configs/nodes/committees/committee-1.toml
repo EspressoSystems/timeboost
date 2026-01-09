@@ -1,5 +1,5 @@
 id = 1
-start = "+10s"
+start = "+5s"
 
 [[member]]
 config = "test-configs/nodes/h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq.public.toml"

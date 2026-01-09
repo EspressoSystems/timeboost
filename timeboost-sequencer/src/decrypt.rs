@@ -378,7 +378,7 @@ impl Decrypter {
                 let num_regular = dec_incl.regular_bundles().len();
                 let total_bundles = num_priority + num_regular;
 
-                info!(
+                trace!(
                     node = %self.label,
                     round = %round,
                     epoch = %dec_incl.epoch(),

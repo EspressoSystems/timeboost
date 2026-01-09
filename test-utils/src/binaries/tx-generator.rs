@@ -196,7 +196,11 @@ impl TxGenerator {
             .expect("update called without next committee scheduled")
             .1;
 
-        info!("switching to committee {}", next.id);
+        info!(
+            old_committee = %self.state.current.id,
+            new_committee = %next.id,
+            "switching committees"
+        );
 
         self.state.node_urls = urls_from_config(&next)?;
         self.state.provider = build_provider(
