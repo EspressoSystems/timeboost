@@ -87,6 +87,20 @@ impl Submitter {
             .build();
 
         let (tx, rx) = mpsc::channel(10_000);
+
+        #[cfg(feature = "metrics")]
+        let sender = Sender::builder()
+            .label(cfg.pubkey)
+            .nsid(cfg.namespace)
+            .verified(verified.clone())
+            .receiver(rx)
+            .clock(Instant::now())
+            .size_limit(cfg.max_transaction_size)
+            .config(cfg.robusta.0.clone())
+            .metrics(metrics.clone())
+            .build();
+
+        #[cfg(not(feature = "metrics"))]
         let sender = Sender::builder()
             .label(cfg.pubkey)
             .nsid(cfg.namespace)
@@ -96,8 +110,10 @@ impl Submitter {
             .size_limit(cfg.max_transaction_size)
             .config(cfg.robusta.0.clone())
             .build();
+
         let mut configs = vec![cfg.robusta.0.clone()];
         configs.extend(cfg.robusta.1.iter().cloned());
+
         Submitter {
             config: cfg,
             verified,
@@ -143,6 +159,8 @@ struct Sender {
     pending: BTreeMap<Instant, Vec<CertifiedBlock<Validated>>>,
     size_limit: usize,
     config: Config,
+    #[cfg(feature = "metrics")]
+    metrics: BuilderMetrics,
 }
 
 impl Sender {
@@ -171,6 +189,14 @@ impl Sender {
         checkpoints.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
+            #[cfg(feature = "metrics")]
+            {
+                self.metrics.pending_blocks.set(self.pending.len() as i64);
+                self.metrics
+                    .inbound_blocks_cap
+                    .set(self.receiver.capacity() as i64);
+            }
+
             select! {
                 k = self.receiver.recv_many(&mut inbox, 10) => {
                     if k == 0 { // channel is closed
