@@ -45,7 +45,7 @@ async-trait = "0.1"
 axum = "0.8.8"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
-blake3 = { version = "1.5", features = ["serde"] }
+blake3 = { version = "1.8", features = ["serde"] }
 bon = "3.6.4"
 bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
@@ -103,7 +103,7 @@ tower-http = { version = "0.6.8", features = ["auth", "trace", "request-id", "ut
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 turmoil = "0.7.0"
-url = { version = "2.5.4", features = ["serde"] }
+url = { version = "2.5.8", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
