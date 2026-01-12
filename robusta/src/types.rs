@@ -7,7 +7,7 @@ use std::{
 use bon::Builder;
 use data_encoding::BASE64URL_NOPAD;
 use espresso_types::{NsProof, Transaction};
-use hotshot_query_service::VidCommon;
+use hotshot_types::data::VidCommon;
 use minicbor::{Decode, Encode};
 use multisig::{Unchecked, Validated};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};

@@ -9260,7 +9260,7 @@ dependencies = [
  "either",
  "espresso-types",
  "futures",
- "hotshot-query-service",
+ "hotshot-types",
  "minicbor",
  "multisig",
  "reqwest",
