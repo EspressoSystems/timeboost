@@ -186,7 +186,10 @@ jobs:
       run: docker logs docker-block-checker-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-block-verifier-1
       if: always()
-      run: docker logs docker-block-verifier-1 || echo "(no logs or container not found)"
+      run: docker logs docker-contract-deployer-2-1 || echo "(no logs or container not found)"
+    - name: Docker logs - docker-contract-deployer-2-1
+      if: always()
+      run: docker logs docker-contract-deployer-2-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-block-verifier-2-1
       if: always()
       run: docker logs docker-block-verifier-2-1 || echo "(no logs or container not found)"
