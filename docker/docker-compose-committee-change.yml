@@ -69,7 +69,6 @@ services:
     depends_on:
       config-producer-2:
         condition: service_completed_successfully
-    restart: on-failure
   nitro4:
     pid: host
     image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node:li-timeboost-systemd-notifier
@@ -156,6 +155,7 @@ services:
         condition: service_healthy
 networks:
   timeboost:
+    name: timeboost
     external: true
 
 volumes:
