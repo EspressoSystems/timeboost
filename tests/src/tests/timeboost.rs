@@ -102,6 +102,7 @@ async fn make_configs(
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())
             .decrypt_committee((decrypt_committee.clone(), key_store.clone()))
+            .recover(false)
             .leash_len(100)
             .threshold_dec_key(enc_key.clone())
             .namespace(ChainId::default())
@@ -129,6 +130,7 @@ async fn make_configs(
             .sign_keypair(kpair)
             .dh_keypair(xpair)
             .address(pa)
+            .recover(false)
             .committee(produce_committee.clone())
             .build();
         enc_keys.push(enc_key);

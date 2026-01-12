@@ -64,7 +64,7 @@ fn mk_host<A, const N: usize>(
                     .build(),
             )
             .await?;
-            let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
+            let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).with_handshake(false);
             let rbc = Rbc::new(10, Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
             let mut coor = Coordinator::new(rbc, cons, false);
@@ -120,7 +120,7 @@ fn small_committee() {
                 .build()
         )
         .await?;
-        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).with_handshake(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons, false);
@@ -186,7 +186,7 @@ fn medium_committee() {
                 .parties(peers)
                 .build()
         ).await?;
-        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).with_handshake(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons, false);
@@ -251,7 +251,7 @@ fn medium_committee_partition_network() {
                 .parties(peers)
                 .build()
         ).await?;
-        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone());
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).with_handshake(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons, false);

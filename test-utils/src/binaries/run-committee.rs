@@ -166,11 +166,16 @@ async fn main() -> Result<()> {
                         .get(node)
                         .cloned()
                         .ok_or_else(|| anyhow!("{node:?} not found"))?;
+                    let stamp = format!("/tmp/timeboost.{node}.stamp");
                     nodes.insert(
                         node,
                         tasks.spawn(async move {
                             let mut cmd = Command::from(cmd);
-                            cmd.kill_on_drop(true);
+                            // NB: TIMEBOOST_STAMP_FILE is only effective if timeboost
+                            // depends on state-io with feature "fs". We include it here
+                            // in case recovery by stamp file is tested, the environment
+                            // variable has no effect otherwise.
+                            cmd.env("TIMEBOOST_STAMP_FILE", stamp).kill_on_drop(true);
                             let mut child = cmd.spawn()?;
                             child.wait().await
                         }),

@@ -88,7 +88,8 @@ async fn main() -> Result<()> {
 
     let committee = committee.committee();
 
-    let cfg = RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone());
+    let cfg = RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone())
+        .with_handshake(false);
 
     let rbc = Rbc::new(committee.size().get() * 5, Overlay::new(network), cfg);
 

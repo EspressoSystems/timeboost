@@ -153,7 +153,7 @@ impl Sequencer {
                 5 * cfg.sailfish_committee.committee().size().get(),
                 Overlay::new(net),
                 cfg.rbc_config()
-                    .with_handshake(cfg.previous_sailfish_committee.is_none()),
+                    .with_handshake(cfg.is_recover() && cfg.previous_sailfish_committee.is_none()),
             );
 
             let mut cons = Consensus::new(
@@ -289,7 +289,7 @@ impl Task {
                 self.bundles.add_bundle(BundleVariant::Dkg(bundle));
             }
         } else {
-            warn!(node = %self.label, "awaiting handover. sending catchup");
+            warn!(node = %self.label, "awaiting handover");
             self.output
                 .send(Output::AwaitingHandover)
                 .await

@@ -393,10 +393,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn start(&mut self) -> RbcResult<()> {
         if let WorkerState::Handshake { nonce, message, .. } = &mut self.state {
             debug_assert!(message.is_none());
+            info!(node = %self.key, %nonce, "broadcasting handshake request");
             let req = Protocol::<'_, T, Validated>::HandshakeRequest(*nonce);
             let bytes = serialize(&req)?;
             *message = Some(self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?);
-            debug!(node = %self.key, %nonce, "info request broadcasted");
+            debug!(node = %self.key, %nonce, "handshake request broadcasted");
         }
         Ok(())
     }
@@ -510,6 +511,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// We receveived a round number information request.
     async fn on_handshake_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, "handshake request received");
+
+        if self.barrier().is_gt() {
+            debug!(node = %self.key, %src, nonce = %n, "suppressed handshake response");
+            return Ok(())
+        }
+
         let (r, e) = &self.round;
         let proto = Protocol::<'_, T, Validated>::HandshakeResponse(n, *r, Cow::Borrowed(e));
         let bytes = serialize(&proto)?;
@@ -551,18 +558,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        let barrier =
-            if rounds.values().all(|r| r.is_genesis()) {
-                GENESIS_ROUND
-            } else {
-                rounds
-                .values()
-                .max()
-                .copied()
-                .expect("|rounds| >= quorum > 0")
-                .saturating_add(2)
-                .into()
-            };
+        let barrier = rounds
+            .values()
+            .max()
+            .copied()
+            .expect("|rounds| >= quorum > 0")
+            .saturating_add(2)
+            .into();
 
         if let Some(id) = message {
             self.comm.rm(overlay::MAX_BUCKET, *id);

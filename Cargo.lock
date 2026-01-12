@@ -10634,6 +10634,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "state-io"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11311,6 +11318,7 @@ dependencies = [
  "sailfish",
  "serde",
  "serde_json",
+ "state-io",
  "test-utils",
  "thiserror 2.0.17",
  "timeboost-builder",

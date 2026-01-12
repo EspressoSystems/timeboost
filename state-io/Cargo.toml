@@ -1,0 +1,13 @@
+[package]
+name = "state-io"
+description = "State I/O"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+fs    = []
+no-io = []
+
+[dependencies]
+tokio = { workspace = true }
