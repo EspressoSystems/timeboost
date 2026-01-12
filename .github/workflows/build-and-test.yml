@@ -146,6 +146,8 @@ jobs:
       run: |
         just docker run-integration-ci
         timeout 20m docker wait $(cd docker && docker compose -f docker-compose.yml ps -q block-verifier)
+        just docker run-integration-committee-change
+        timeout 20m docker wait $(cd docker && docker compose -f docker-compose-committee-change.yml ps -q block-verifier-2)
     - name: Docker logs - docker-node0-1
       if: always()
       run: docker logs docker-node0-1 || echo "(no logs or container not found)"
@@ -158,6 +160,9 @@ jobs:
     - name: Docker logs - docker-node3-1
       if: always()
       run: docker logs docker-node3-1 || echo "(no logs or container not found)"
+    - name: Docker logs - docker-node4-1
+      if: always()
+      run: docker logs docker-node4-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-nitro0-1
       if: always()
       run: docker logs docker-nitro0-1 || echo "(no logs or container not found)"
@@ -173,12 +178,18 @@ jobs:
     - name: Docker logs - docker-nitro3-1
       if: always()
       run: docker logs docker-nitro3-1 || echo "(no logs or container not found)"
+    - name: Docker logs - docker-nitro4-1
+      if: always()
+      run: docker logs docker-nitro4-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-block-checker-1
       if: always()
       run: docker logs docker-block-checker-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-block-verifier-1
       if: always()
       run: docker logs docker-block-verifier-1 || echo "(no logs or container not found)"
+    - name: Docker logs - docker-block-verifier-2-1
+      if: always()
+      run: docker logs docker-block-verifier-2-1 || echo "(no logs or container not found)"
     - name: Docker logs - docker-tx-generator-1
       if: always()
       run: docker logs docker-tx-generator-1 || echo "(no logs or container not found)"

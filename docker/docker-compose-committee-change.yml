@@ -140,6 +140,19 @@ services:
       nitro4:
         condition: service_healthy
     restart: on-failure
+  block-verifier-2:
+    image: ${TIMEBOOST_IMAGE:-ghcr.io/espressosystems/timeboost:main}
+    command:
+      - sh
+      - -c
+      - "sleep 180 && exec /app/block-verifier --nitro-urls 'http://nitro0:8547,http://nitro1:8547,http://nitro2:8547,http://nitro3:8547,http://nitro4:8547'"
+    environment:
+      - RUST_LOG=info
+    networks:
+      - timeboost
+    depends_on:
+      nitro4:
+        condition: service_healthy
 networks:
   timeboost:
     external: true
