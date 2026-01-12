@@ -95,6 +95,7 @@ impl Certifier {
                 NodeInfo::new(c, c.one_honest_threshold())
             })
             .history(cfg.committee.committee().quorum_size().get() as u64)
+            .recover(cfg.recover)
             .build();
 
         Ok(Self {
@@ -258,6 +259,9 @@ struct Worker {
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
 
+    /// Are we recovering from a crash?
+    recover: bool,
+
     /// Quorum of block numbers to use with garbage collection.
     info: NodeInfo<BlockNumber>,
 
@@ -357,6 +361,17 @@ impl Worker {
 
         if self.next_block.is_none() {
             self.next_block = Some(block.num());
+            if self.recover {
+                debug!(
+                    node  = %self.label,
+                    round = %block.round(),
+                    num   = %block.num(),
+                    hash  = %block.hash(),
+                    "recovering: stashing block until evidence is available"
+                );
+                self.pending.insert(block.num(), (block, info));
+                return Ok(());
+            }
         } else if evidence.is_none() {
             debug!(
                 node  = %self.label,

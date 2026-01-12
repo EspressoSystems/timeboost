@@ -71,7 +71,8 @@ impl TestableNetwork for BasicNetworkTest {
                     .build();
                 Network::create(cfg).await.expect("failed to make network")
             };
-            let cfg = RbcConfig::new(kpr.clone(), committee.id(), committee.clone());
+            let cfg = RbcConfig::new(kpr.clone(), committee.id(), committee.clone())
+                .with_handshake(false);
             let net = Rbc::new(committee.size().get() * 5, Overlay::new(net), cfg);
             tracing::debug!(%i, "created rbc");
             let test_net = TestNet::new(net, i as u64, self.interceptor.clone());

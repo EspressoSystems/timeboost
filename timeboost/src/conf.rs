@@ -54,6 +54,10 @@ pub struct TimeboostConfig {
     /// Max. size of an espresso transaction.
     pub(crate) max_transaction_size: usize,
 
+    /// Is this node recovering from a crash?
+    #[builder(default = true)]
+    pub(crate) recover: bool,
+
     /// Length of the leash between Sailfish an other phases.
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
@@ -84,6 +88,7 @@ impl TimeboostConfig {
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
+            .recover(self.recover)
             .maybe_previous_sailfish_committee(self.prev_committee.as_ref().map(|c| c.sailfish()))
             .maybe_previous_decrypt_committee(
                 self.prev_committee
@@ -104,6 +109,7 @@ impl TimeboostConfig {
             .address(self.certifier_addr.clone())
             .committee(self.certifier_committee.clone())
             .maybe_previous_committee(self.prev_committee.as_ref().map(|c| c.certify()))
+            .recover(self.recover)
             .build()
     }
 
