@@ -27,4 +27,5 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+rustls = { workspace = true }
 tracing-subscriber = { workspace = true }

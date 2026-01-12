@@ -30,6 +30,7 @@ multisig = { path = "../multisig" }
 prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_json = { workspace = true }

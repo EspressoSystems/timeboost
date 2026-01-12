@@ -31,6 +31,13 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .is_err()
+    {
+        bail!("could not install aws-lc as default crypto provider")
+    }
+
     logging::init_logging();
 
     let cli = Cli::parse();
@@ -68,9 +75,9 @@ async fn main() -> Result<()> {
     };
 
     let is_recover = {
-        let mut io = StateIo::create().await?;
+        let mut io = StateIo::create().await.context("state i/o")?;
 
-        if io.load().await?.is_none() {
+        if io.load().await.context("load state")?.is_none() {
             io.store(&[]).await?;
             false
         } else {

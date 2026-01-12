@@ -2,6 +2,8 @@ use std::{env, io, path::PathBuf};
 
 use tokio::fs;
 
+use crate::env::TIMEBOOST_STAMP;
+
 #[derive(Debug)]
 pub struct StateIo {
     path: PathBuf,
@@ -9,8 +11,8 @@ pub struct StateIo {
 
 impl StateIo {
     pub async fn create() -> io::Result<Self> {
-        let path = env::var_os("TIMEBOOST_STAMP_FILE").ok_or_else(|| {
-            let msg = "environment variable TIMEBOOST_STAMP_FILE not found";
+        let path = env::var_os(TIMEBOOST_STAMP).ok_or_else(|| {
+            let msg = format!("environment variable {TIMEBOOST_STAMP} not found");
             io::Error::new(io::ErrorKind::NotFound, msg)
         })?;
         Ok(Self { path: path.into() })

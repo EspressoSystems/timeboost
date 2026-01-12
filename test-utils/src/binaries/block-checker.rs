@@ -33,6 +33,13 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .is_err()
+    {
+        bail!("could not install aws-lc as default crypto provider")
+    }
+
     init_logging();
 
     let args = Args::parse();
