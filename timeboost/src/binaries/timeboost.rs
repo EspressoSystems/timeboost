@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use multisig::{Keypair, x25519};
+use state_io::StateIo;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_config::CommitteeContract;
@@ -66,6 +67,17 @@ async fn main() -> Result<()> {
         &member.clone()
     };
 
+    let is_recover = {
+        let mut io = StateIo::create().await?;
+
+        if io.load().await?.is_none() {
+            io.store(&[]).await?;
+            false
+        } else {
+            true
+        }
+    };
+
     let pubkey = sign_keypair.public_key();
 
     let tb_config = TimeboostConfig::builder()
@@ -82,6 +94,7 @@ async fn main() -> Result<()> {
         .certifier_addr(config.net.bind.clone().with_offset(CERTIFIER_PORT_OFFSET))
         .nitro_addr(config.net.nitro.clone())
         .batcher_addr(member.batchposter.clone())
+        .recover(is_recover)
         .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
             robusta::Config::builder()

@@ -8,6 +8,7 @@ members = [
     "sailfish-consensus",
     "sailfish-rbc",
     "sailfish-types",
+    "state-io",
     "tests",
     "test-utils",
     "timeboost",
