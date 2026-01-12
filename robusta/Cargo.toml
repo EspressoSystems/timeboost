@@ -12,7 +12,7 @@ data-encoding = { workspace = true }
 either = { workspace = true }
 espresso-types = { workspace = true }
 futures = { workspace = true }
-hotshot-query-service = { workspace = true }
+hotshot-types = { workspace = true }
 minicbor = { workspace = true }
 multisig = { path = "../multisig" }
 reqwest = { workspace = true }

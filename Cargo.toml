@@ -108,7 +108,7 @@ url = { version = "2.5.8", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
-hotshot-query-service = { git = "https://github.com/EspressoSystems/espresso-network.git" }
+hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 
 [workspace.dependencies.alloy]
 version  = "1.1"
