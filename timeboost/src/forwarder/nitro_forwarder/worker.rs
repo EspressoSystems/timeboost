@@ -36,35 +36,34 @@ impl Worker {
         }
     }
 
-    async fn update_timeboost_state_with_retry<D: Fn() -> I, I: Iterator<Item = u64>>(
-        client: &mut ForwardApiClient<Channel>,
-        key: &PublicKey,
+    async fn update_timeboost_state_with_retry<I: Iterator<Item = u64>>(
+        &mut self,
         s: TimeboostState,
         out: &ForwarderOutput,
-        delays: D,
+        d: &mut I,
     ) {
-        let mut d = delays();
-        while let Err(err) = client.update_timeboost_state(Request::new(s)).await {
-            warn!(node = %key, %err, operation=%out, "failed to forward to nitro");
+        while let Err(err) = self.client.update_timeboost_state(Request::new(s)).await {
+            warn!(node = %self.key, %err, operation=%out, "failed to forward to nitro");
             let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
             sleep(t).await;
         }
     }
 
     pub async fn go(mut self) {
-        let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let mut delays = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let s = self.sender.clone();
         let mk_req = |i: &InclusionList| {
             let mut r = Request::new(i.clone());
-            r.metadata_mut().insert("src", self.sender.clone());
+            r.metadata_mut().insert("src", s.clone());
             r
         };
         while let Some(o) = self.rx.recv().await {
             match o {
                 ForwarderOutput::Inclusion(incl) => {
-                    let mut d = delays();
                     while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
                         warn!(node = %self.key, %err, "failed to forward inclusion list to nitro");
-                        let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+                        let t =
+                            Duration::from_secs(delays.next().expect("iterator repeats endlessly"));
                         sleep(t).await;
                     }
                 }
@@ -72,27 +71,15 @@ impl Worker {
                     let s = TimeboostState {
                         state: Some(State::Catchup(r)),
                     };
-                    Self::update_timeboost_state_with_retry(
-                        &mut self.client,
-                        &self.key,
-                        s,
-                        &o,
-                        delays,
-                    )
-                    .await;
+                    self.update_timeboost_state_with_retry(s, &o, &mut delays)
+                        .await;
                 }
-                ForwarderOutput::AwaitingHandeover => {
+                ForwarderOutput::AwaitingHandover => {
                     let s = TimeboostState {
-                        state: Some(State::AwaitingHandover(true)),
+                        state: Some(State::AwaitingHandover(())),
                     };
-                    Self::update_timeboost_state_with_retry(
-                        &mut self.client,
-                        &self.key,
-                        s,
-                        &o,
-                        delays,
-                    )
-                    .await;
+                    self.update_timeboost_state_with_retry(s, &o, &mut delays)
+                        .await;
                 }
             }
         }

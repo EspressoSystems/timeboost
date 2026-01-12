@@ -20,7 +20,7 @@ use worker::Worker;
 pub enum ForwarderOutput {
     Inclusion(InclusionList),
     Catchup(CatchupRound),
-    AwaitingHandeover,
+    AwaitingHandover,
 }
 
 impl std::fmt::Display for ForwarderOutput {
@@ -28,7 +28,7 @@ impl std::fmt::Display for ForwarderOutput {
         match self {
             ForwarderOutput::Inclusion(_) => write!(f, "InclusionList"),
             ForwarderOutput::Catchup(_) => write!(f, "Catchup"),
-            ForwarderOutput::AwaitingHandeover => write!(f, "AwaitingHandover"),
+            ForwarderOutput::AwaitingHandover => write!(f, "AwaitingHandover"),
         }
     }
 }
@@ -85,7 +85,7 @@ impl NitroForwarder {
 
     pub async fn timeboost_state(&mut self, o: Output) -> Result<(), Error> {
         let f = match o {
-            Output::AwaitingHandover => ForwarderOutput::AwaitingHandeover,
+            Output::AwaitingHandover => ForwarderOutput::AwaitingHandover,
             Output::Catchup(round) => {
                 let r = CatchupRound {
                     round: round.into(),
