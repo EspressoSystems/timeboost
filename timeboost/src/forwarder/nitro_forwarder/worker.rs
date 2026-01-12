@@ -40,7 +40,7 @@ impl Worker {
         &mut self,
         s: TimeboostState,
         out: &ForwarderOutput,
-        d: &mut I,
+        mut d: I,
     ) {
         while let Err(err) = self.client.update_timeboost_state(Request::new(s)).await {
             warn!(node = %self.key, %err, operation=%out, "failed to forward to nitro");
@@ -50,7 +50,7 @@ impl Worker {
     }
 
     pub async fn go(mut self) {
-        let mut delays = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
         let s = self.sender.clone();
         let mk_req = |i: &InclusionList| {
             let mut r = Request::new(i.clone());
@@ -60,10 +60,10 @@ impl Worker {
         while let Some(o) = self.rx.recv().await {
             match o {
                 ForwarderOutput::Inclusion(incl) => {
+                    let mut d = delays();
                     while let Err(err) = self.client.submit_inclusion_list(mk_req(&incl)).await {
                         warn!(node = %self.key, %err, "failed to forward inclusion list to nitro");
-                        let t =
-                            Duration::from_secs(delays.next().expect("iterator repeats endlessly"));
+                        let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
                         sleep(t).await;
                     }
                 }
@@ -71,14 +71,14 @@ impl Worker {
                     let s = TimeboostState {
                         state: Some(State::Catchup(r)),
                     };
-                    self.update_timeboost_state_with_retry(s, &o, &mut delays)
+                    self.update_timeboost_state_with_retry(s, &o, delays())
                         .await;
                 }
                 ForwarderOutput::AwaitingHandover => {
                     let s = TimeboostState {
                         state: Some(State::AwaitingHandover(())),
                     };
-                    self.update_timeboost_state_with_retry(s, &o, &mut delays)
+                    self.update_timeboost_state_with_retry(s, &o, delays())
                         .await;
                 }
             }
