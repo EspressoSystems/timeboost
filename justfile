@@ -26,7 +26,7 @@ build-test-utils:
   cargo build --release -p test-utils --all-features
 
 clippy:
-  cargo clippy --workspace --lib --tests --benches -- -D warnings
+  cargo clippy --workspace --lib --tests --benches -F {{state_mode}} -- -D warnings
 
 check:
   cargo check --all
