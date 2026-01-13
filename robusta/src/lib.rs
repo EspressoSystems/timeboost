@@ -282,6 +282,10 @@ mod tests {
 
     #[tokio::test]
     async fn decaf_smoke() {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .unwrap();
+
         let _ = tracing_subscriber::fmt()
             .with_env_filter("robusta=debug")
             .try_init();
