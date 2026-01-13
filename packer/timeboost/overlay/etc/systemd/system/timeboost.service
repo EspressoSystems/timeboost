@@ -8,6 +8,7 @@ BindsTo=nitro.service
 ExecStart=/usr/local/bin/timeboost -c /etc/timeboost/timeboost.toml
 Environment=RUST_LOG_FORMAT=json
 Environment=RUST_LOG={{LOG_DIRECTIVES}}
+Environment=TIMEBOOST_STAMP={{TIMEBOOST_STAMP}}
 Restart=always
 RestartSec=5
 

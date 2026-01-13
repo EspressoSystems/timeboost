@@ -7,7 +7,7 @@ COPY .. .
 RUN apt update && apt-get install -y libssl-dev jq
 RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 ENV PATH="/root/.foundry/bin:${PATH}"
-RUN cargo build --release --bins
+RUN cargo build --release --bins -F metrics,nostate
 
 FROM debian:bookworm-slim
 

@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
+statedb = ["state-io/dynamodb"]
+statefs = ["state-io/fs"]
+nostate = ["state-io/no-io"]
 metrics = [
     "dep:prometheus",
     "dep:times",
@@ -34,7 +37,7 @@ rustls = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-state-io = { path = "../state-io", features = ["no-io"] }
+state-io = { path = "../state-io" }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }

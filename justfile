@@ -9,31 +9,37 @@ km_mnemonic := "attend year erase basket blind adapt stove broccoli isolate unve
 km_addr     := "0x36561082951eed7ffd59cfd82d70570c57072d02"
 km_contract := "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 km_comm_abi := "getCommitteeById(uint64)((uint64,uint64,uint256,(bytes,bytes,bytes,address,string,string)[]))"
+state_mode  := "nostate"
 
-build *ARGS:
-  cargo build {{ARGS}}
+build state_mode=state_mode:
+  cargo build -F {{state_mode}}
 
-build-release *ARGS:
-  cargo build --release --workspace --all-targets {{ARGS}} --features metrics
+build-release state_mode=state_mode:
+  cargo build --release --workspace --all-targets -F "metrics,{{state_mode}}"
 
 [private]
 build-port-alloc:
-  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
+  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features -F ports
 
 [private]
 build-test-utils:
   cargo build --release -p test-utils --all-features
 
 clippy:
-  cargo clippy --workspace --lib --tests --benches -- -D warnings
+  cargo clippy --workspace --lib --tests --benches -F {{state_mode}} -- -D warnings
 
 check:
   cargo check --all
 
 check-individually:
-  @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
-    echo "Checking $pkg"; \
-    cargo check -p $pkg || exit 1; \
+  #!/usr/bin/env bash
+  for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do
+    echo "Checking $pkg";
+    if [[ $pkg = "timeboost" ]]; then
+        cargo check -F {{state_mode}} -p $pkg || exit 1;
+    else
+        cargo check -p $pkg || exit 1;
+    fi
   done
 
 fmt *ARGS='--all':
@@ -177,25 +183,25 @@ fetch-active host contract:
     just fetch-committee {{host}} {{contract}} $committee_id
 
 test *ARGS: build-port-alloc
-  target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
-  @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
+  target/release/run --spawn target/release/port-alloc cargo nextest run -- -F {{state_mode}} {{ARGS}}
+  @if [ "{{ARGS}}" == "" ]; then cargo test -F {{state_mode}} --doc; fi
 
 test-ci *ARGS: build-port-alloc
   env {{log_levels}} NO_COLOR=1 target/release/run \
     --spawn target/release/port-alloc \
-    cargo nextest run -- --workspace {{ARGS}}
-  env {{log_levels}} NO_COLOR=1 cargo test --doc {{ARGS}}
+    cargo nextest run -- -F {{state_mode}} --workspace {{ARGS}}
+  env {{log_levels}} NO_COLOR=1 cargo test -F {{state_mode}} --doc {{ARGS}}
 
 test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
     $(target/release/run \
         --spawn target/release/port-alloc \
-        cargo nextest run -- --no-tests=pass -p $pkg) || exit 1; \
+        cargo nextest run -- -F {{state_mode}} --no-tests=pass -p $pkg) || exit 1; \
   done
 
-test-all: build-release build-test-utils
-  env RUST_LOG=block_checker=info,error \
+test-all: (build-release "statefs") build-test-utils
+  env RUST_LOG=block_checker=info,error,sailfish_rbc=info \
   target/release/run \
     --verbose \
     --timeout 120 \
@@ -223,8 +229,8 @@ test-all: build-release build-test-utils
         --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
         --blocks 200
 
-test-no-express: build-release build-test-utils
-  env RUST_LOG=block_checker=info,error \
+test-no-express: (build-release "statefs") build-test-utils
+  env RUST_LOG=block_checker=info,error,sailfish_rbc=info \
   target/release/run \
     --verbose \
     --timeout 180 \
