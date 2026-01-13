@@ -18,7 +18,7 @@ services:
         inbox-contract = "$$(jq -r ".inbox" /config/deployment.json)"
         inbox-block-tag = "finalized"
         EOF
-          for i in $$(seq 0 4); do
+          for i in $$(seq 0 2); do
             echo "Running configure for node $$i with seed $$((42 + i))"
             /app/configure \
               --seed $$((42 + i)) \
@@ -38,7 +38,7 @@ services:
               --output "/config"
           done
           /app/assemble \
-            --committee 1 \
+            --committee 3 \
             --start $$t \
             --output /config/committees/docker.toml \
             /config/*.public.toml
@@ -58,12 +58,12 @@ services:
         /app/contract register-committee \
           --committee /config/committees/docker.toml \
           --index 0 \
-          --rpc-url "http://demo-l1-network:8545" \
+          --rpc-url "127.0.0.1:8545" \
           --contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --mnemonic "attend year erase basket blind adapt stove broccoli isolate unveil acquire category" && \
         /app/funder \
           --committee "/config/committees/docker.toml" \
-          --parent-rpc-url "http://demo-l1-network:8545"
+          --parent-rpc-url "http://127.0.0.1:8545"
     networks:
       - timeboost
     depends_on:
