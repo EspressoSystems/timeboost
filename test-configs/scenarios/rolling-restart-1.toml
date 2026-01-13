@@ -1,0 +1,103 @@
+# Start whole committee one by one:
+
+[[step]]
+action = {
+    kind = "start-node",
+    node = "h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq"
+}
+
+[[step]]
+action = {
+    kind = "start-node",
+    node = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
+}
+
+[[step]]
+action = {
+    kind = "start-node",
+    node = "mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8"
+}
+
+[[step]]
+action = {
+    kind = "start-node",
+    node = "o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD"
+}
+
+[[step]]
+action = {
+    kind = "start-node",
+    node = "pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3"
+}
+
+# Stop and start all nodes one by one:
+
+[[step]]
+delay  = "+20s"
+action = {
+    kind = "stop-node",
+    node = "h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq"
+}
+
+[[step]]
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq"
+}
+
+[[step]]
+delay  = "+20s"
+action = {
+    kind = "stop-node",
+    node = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
+}
+
+[[step]]
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
+}
+
+[[step]]
+delay  = "+20s"
+action = {
+    kind = "stop-node",
+    node = "mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8"
+}
+
+[[step]]
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "mjL4pJF2jqy4TAht8UveAF9H7xUYYyP16aDH6Rnu8Zi8"
+}
+
+[[step]]
+delay  = "+20s"
+action = {
+    kind = "stop-node",
+    node = "o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD"
+}
+
+[[step]]
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "o5HJvYeQHUn28Y2149t1CLZeMfK6gqWf62BtErxghPvD"
+}
+
+[[step]]
+delay  = "+20s"
+action = {
+    kind = "stop-node",
+    node = "pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3"
+}
+
+[[step]]
+delay  = "+10s"
+action = {
+    kind = "start-node",
+    node = "pBxmET1WX6b1cFpEsoHKBpn8mcQavX3dh8zotDUDjVi3"
+}

@@ -575,16 +575,6 @@ impl DkgSubset {
             combkey: self.combkey.as_ref().cloned(),
         }
     }
-
-    /// Extract the new threshold decryption key from the subset.
-    pub fn extract_key(
-        &self,
-        curr: &KeyStore,
-        dkg_sk: &LabeledDkgDecKey,
-        prev: Option<&KeyStore>,
-    ) -> anyhow::Result<ThresholdKey> {
-        self.as_ref().extract_key(curr, dkg_sk, prev)
-    }
 }
 
 impl<'a> DkgSubsetRef<'a> {
@@ -594,7 +584,7 @@ impl<'a> DkgSubsetRef<'a> {
         curr: &KeyStore,
         dkg_sk: &LabeledDkgDecKey,
         prev: Option<&KeyStore>,
-    ) -> anyhow::Result<ThresholdKey> {
+    ) -> Result<ThresholdKey, DkgExtractError> {
         let vess = Vess::new_fast();
         let aad = Aad::Dkg(curr.committee().id()).to_bytes();
 
@@ -615,7 +605,7 @@ impl<'a> DkgSubsetRef<'a> {
                 Ok(dec_key)
             }
             Some(combkey) => {
-                let prev = prev.ok_or_else(|| anyhow!("previous key store missing"))?;
+                let prev = prev.ok_or(DkgExtractError::PreviousKeyStoreMissing)?;
                 let mut dealings_iter = ResultIter::new(self.bundles.iter().map(|b| {
                     let node_idx = b.origin().0.into();
                     let pub_share = combkey
@@ -637,6 +627,18 @@ impl<'a> DkgSubsetRef<'a> {
             }
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DkgExtractError {
+    #[error("previous key store missing")]
+    PreviousKeyStoreMissing,
+
+    #[error("vess error: {0}")]
+    Vess(#[from] VessError),
+
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 /// Wrapper iterator that bridges type conversion
