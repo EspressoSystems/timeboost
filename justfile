@@ -273,20 +273,21 @@ test-dyn-comm: build-release build-test-utils
             --enc-ratio 1.0 \
             --apikey "{{apikey}}"" \
         --run   "9|just register-committee {{an_host}} test-configs/nodes/committees/committee-1.toml" \
-        --run   "10|sleep 3" \
+        --run   "10|sleep 2" \
         --spawn "11|target/release/run-committee \
             --chain test-configs/chain.toml \
             --committee 1 \
+            --scenario test-configs/scenarios/rolling-restart-1.toml \
             --nodes test-configs/nodes/ \
             --verbose" \
-        --run   "12|sleep 3" \
+        --run   "12|sleep 10" \
         --spawn "13|target/release/block-maker --chain test-configs/chain.toml --bind 127.0.0.1:55010" \
         target/release/block-checker -- \
             --chain test-configs/chain.toml \
             --namespace 10101 \
             --espresso-base-url https://query.decaf.testnet.espresso.network/v1/ \
             --espresso-websocket-base-url wss://query.decaf.testnet.espresso.network/v1/ \
-            --blocks 200
+            --blocks 500
 
 [linux]
 forward-ipv4 val: build-test-utils

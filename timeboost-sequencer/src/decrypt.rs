@@ -21,8 +21,8 @@ use timeboost_crypto::prelude::{
     ThresholdEncError, ThresholdEncScheme, ThresholdScheme, Vess, VssSecret,
 };
 use timeboost_types::{
-    Aad, AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, DkgSubsetRef, InclusionList,
-    KeyStore, KeyStoreVec, ThresholdKey, ThresholdKeyCell,
+    Aad, AccumulatorMode, DkgAccumulator, DkgBundle, DkgExtractError, DkgSubset, DkgSubsetRef,
+    InclusionList, KeyStore, KeyStoreVec, ThresholdKey, ThresholdKeyCell,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -576,6 +576,9 @@ impl Worker {
                         match self.on_inbound(src, data).await {
                             Ok(updated) => cache_modified |= updated,
                             Err(DecrypterError::End(end)) => return end,
+                            Err(err @ DecrypterError::PreviousKeyStoreMissing) => {
+                                info!(node = %self.label, %err)
+                            }
                             Err(err) => warn!(node = %self.label, %err, %src, "error on message")
                         }
                     },
@@ -776,9 +779,7 @@ impl Worker {
             let mode = acc.mode().clone();
             self.tracker.insert(committee.id(), acc);
 
-            let dec_key = subset_ref
-                .extract_key(current, &self.dkg_sk, prev.as_ref())
-                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            let dec_key = subset_ref.extract_key(current, &self.dkg_sk, prev.as_ref())?;
 
             self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
@@ -863,9 +864,7 @@ impl Worker {
         // for initial DKG, try to finalize if we have enough bundles
         if matches!(mode, AccumulatorMode::Dkg) {
             if let Some(subset) = acc.try_finalize() {
-                let dec_key = subset
-                    .extract_key(&key_store, &self.dkg_sk, None)
-                    .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+                let dec_key = subset.extract_key(&key_store, &self.dkg_sk, None)?;
                 self.dec_key.set(dec_key);
                 self.state = WorkerState::Running;
                 info!(committee_id = %key_store.committee().id(), node = %self.label, "initial DKG completed");
@@ -1280,9 +1279,7 @@ impl Worker {
             };
 
             let new_dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(new_node_idx.into());
-            let new_dec_key = subset
-                .extract_key(&new, &new_dkg_sk, Some(&old))
-                .map_err(|e| DecrypterError::Dkg(format!("key extraction failed: {e}")))?;
+            let new_dec_key = subset.extract_key(&new, &new_dkg_sk, Some(&old))?;
 
             self.next_committee =
                 NextCommittee::Use(round, Some(Box::new(NextKey::new(new_dkg_sk, new_dec_key))));
@@ -1531,6 +1528,9 @@ pub enum DecrypterError {
     #[error("dkg/resharing not yet complete")]
     DkgPending,
 
+    #[error("previous key store missing")]
+    PreviousKeyStoreMissing,
+
     #[error("dkg err: {0}")]
     Dkg(String),
 }
@@ -1547,6 +1547,16 @@ pub enum EndOfPlay {
 impl From<NetworkDown> for EndOfPlay {
     fn from(_: NetworkDown) -> Self {
         Self::NetworkDown
+    }
+}
+
+impl From<DkgExtractError> for DecrypterError {
+    fn from(err: DkgExtractError) -> Self {
+        match err {
+            DkgExtractError::PreviousKeyStoreMissing => DecrypterError::PreviousKeyStoreMissing,
+            DkgExtractError::Vess(e) => DecrypterError::Dkg(e.to_string()),
+            DkgExtractError::Other(e) => DecrypterError::Dkg(e.to_string()),
+        }
     }
 }
 

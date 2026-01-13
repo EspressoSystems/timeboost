@@ -24,8 +24,8 @@ pub use bundle::{
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
 pub use decryption::{
-    Aad, AccumulatorMode, DkgAccumulator, DkgSubset, DkgSubsetRef, KeyStore, KeyStoreVec,
-    ResultIter, ThresholdKey, ThresholdKeyCell,
+    Aad, AccumulatorMode, DkgAccumulator, DkgExtractError, DkgSubset, DkgSubsetRef, KeyStore,
+    KeyStoreVec, ResultIter, ThresholdKey, ThresholdKeyCell,
 };
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
