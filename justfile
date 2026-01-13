@@ -34,7 +34,11 @@ check:
 check-individually:
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Checking $pkg"; \
-    cargo check -p $pkg || exit 1; \
+    if [[ $pkg == "timeboost" ]]; then \
+        cargo check -F {{state_mode}} -p $pkg || exit 1; \
+    else \
+        cargo check -p $pkg || exit 1; \
+    fi \
   done
 
 fmt *ARGS='--all':
