@@ -1,32 +1,26 @@
-use std::{env, io, path::PathBuf};
+use std::{io, path::Path};
 
 use tokio::fs;
 
-use crate::env::TIMEBOOST_STAMP;
-
 #[derive(Debug)]
-pub struct StateIo {
-    path: PathBuf,
-}
+pub struct StateIo(());
 
 impl StateIo {
     pub async fn create() -> io::Result<Self> {
-        let path = env::var_os(TIMEBOOST_STAMP).ok_or_else(|| {
-            let msg = format!("environment variable {TIMEBOOST_STAMP} not found");
-            io::Error::new(io::ErrorKind::NotFound, msg)
-        })?;
-        Ok(Self { path: path.into() })
+        Ok(Self(()))
     }
 
-    pub async fn load(&mut self) -> io::Result<Option<Vec<u8>>> {
-        if !self.path.is_file() {
+    pub async fn load(&mut self, key: &str) -> io::Result<Option<Vec<u8>>> {
+        let path = &Path::new(key);
+        if !path.is_file() {
             return Ok(None);
         }
-        let vec = fs::read(&self.path).await?;
+        let vec = fs::read(path).await?;
         Ok(Some(vec))
     }
 
-    pub async fn store(&mut self, v: &[u8]) -> io::Result<()> {
-        fs::write(&self.path, v).await
+    pub async fn store(&mut self, k: &str, v: &[u8]) -> io::Result<()> {
+        let path = &Path::new(k);
+        fs::write(path, v).await
     }
 }
