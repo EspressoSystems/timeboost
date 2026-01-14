@@ -35,11 +35,12 @@ source "amazon-ebs" "linux" {
 
   source_ami_filter {
     filters = {
-      name                = "al2023-ami-*-x86_64"
+      name                = "Fedora-Cloud-Base-AmazonEC2.x86_64-43-*"
+      architecture        = "x86_64"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
-    owners      = ["amazon"]
+    owners      = ["125523088429"]
     most_recent = true
   }
 
@@ -51,6 +52,7 @@ source "amazon-ebs" "linux" {
   }
 
   ssh_username = var.ssh_user
+  temporary_key_pair_type = "ed25519"
 }
 
 build {
@@ -59,8 +61,8 @@ build {
   provisioner "shell" {
     inline = [
       "echo upgrading base and installing dependencies ...",
-      "sudo yum update -y",
-      "sudo rpm -i https://yum.vector.dev/stable/vector-0/x86_64/vector-${var.vector-version}-1.x86_64.rpm"
+      "sudo dnf upgrade -y --refresh",
+      "sudo rpm -i https://packages.timber.io/vector/${var.vector-version}/vector-${var.vector-version}-1.x86_64.rpm"
     ]
   }
 

@@ -1,7 +1,7 @@
 version         := shell('git rev-parse --short HEAD')
 vector-version  := "0.52.0"
 overlay-archive := "tx-generator-overlay.tar.gz"
-ssh_user        := "ec2-user"
+ssh_user        := "fedora"
 regions         := '["eu-west-1"]'
 
 init:
