@@ -75,10 +75,11 @@ async fn main() -> Result<()> {
     };
 
     let is_recover = {
+        let stamp = format!("{sign_pubkey}.stamp");
         let mut io = StateIo::create().await.context("state i/o")?;
 
-        if io.load().await.context("load state")?.is_none() {
-            io.store(&[]).await?;
+        if io.load(&stamp).await.context("load state")?.is_none() {
+            io.store(&stamp, &[]).await?;
             false
         } else {
             true

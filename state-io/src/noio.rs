@@ -8,11 +8,11 @@ impl StateIo {
         Ok(Self)
     }
 
-    pub async fn load(&mut self) -> io::Result<Option<Vec<u8>>> {
+    pub async fn load(&mut self, _: &str) -> io::Result<Option<Vec<u8>>> {
         Ok(None)
     }
 
-    pub async fn store(&mut self, _: &[u8]) -> io::Result<()> {
+    pub async fn store(&mut self, _: &str, _: &[u8]) -> io::Result<()> {
         Ok(())
     }
 }
