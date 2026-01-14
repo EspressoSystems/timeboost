@@ -15,6 +15,7 @@ use prometheus::{IntGauge, register_int_gauge};
 use thiserror::Error;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, Instant};
 use tracing::warn;
@@ -39,11 +40,7 @@ pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
 ///
 /// Note that if malicious parties modify the trailer and have it point to a
 /// different message, they can only remove themselves from the set of parties
-/// the sender is expecting an acknowledgement from. However, if they change the
-/// tag of a message, client code may classify the data incorrectly. The tag
-/// can thus not be trusted and client code needs to be able to handle data that
-/// does not match its tag. It is best used for data that the sender can anyway
-/// easily produce.
+/// the sender is expecting an acknowledgement from.
 #[derive(Debug)]
 pub struct Overlay {
     this: PublicKey,
@@ -53,6 +50,7 @@ pub struct Overlay {
     buffer: Buffer,
     encoded: [u8; Trailer::MAX_LEN],
     retry: JoinHandle<Infallible>,
+    pending: Option<Pending>,
 }
 
 impl Drop for Overlay {
@@ -64,8 +62,7 @@ impl Drop for Overlay {
 /// Data wraps some length-checked, tagged bytes.
 ///
 /// This exists to allow clients to construct a message item that will
-/// not be rejected by the network due to size violations (see the
-/// `TryFrom<(Tag, BytesMut)>` impl for details).
+/// not be rejected by the network due to size violations.
 #[derive(Debug, Clone)]
 pub struct Data {
     bytes: BytesMut,
@@ -105,6 +102,14 @@ struct Trailer {
     id: Id,
 }
 
+/// Data we have received but could not acknowledge yet.
+#[derive(Debug)]
+struct Pending {
+    src: PublicKey,
+    data: Bytes,
+    trailer: Bytes,
+}
+
 enum Target {
     Single(PublicKey),
     Multi(Vec<PublicKey>),
@@ -134,6 +139,7 @@ impl Overlay {
             encoded: [0; Trailer::MAX_LEN],
             id: Id::from(0),
             retry,
+            pending: None,
         }
     }
 
@@ -175,7 +181,19 @@ impl Overlay {
     }
 
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
+        if let Some(Pending { src, data, trailer }) = &self.pending {
+            self.sender
+                .send(Command::Unicast(*src, None, trailer.clone()))
+                .await
+                .map_err(|_| NetworkDown(()))?;
+            let src = *src;
+            let dat = data.clone();
+            self.pending = None;
+            return Ok((src, dat));
+        }
         loop {
+            debug_assert!(self.pending.is_none());
+
             let (src, mut bytes) = self.net.receive().await.map_err(|_| NetworkDown(()))?;
 
             let Some(trailer_bytes) = Trailer::split_off(&mut bytes) else {
@@ -193,11 +211,32 @@ impl Overlay {
 
             if !bytes.is_empty() {
                 // Send the trailer back as acknowledgement:
-                self.sender
-                    .send(Command::Unicast(src, None, trailer_bytes))
-                    .await
-                    .map_err(|_| NetworkDown(()))?;
-                return Ok((src, bytes));
+                match self
+                    .sender
+                    .try_send(Command::Unicast(src, None, trailer_bytes))
+                {
+                    Ok(()) => return Ok((src, bytes)),
+                    Err(TrySendError::Closed(_)) => return Err(NetworkDown(())),
+                    Err(TrySendError::Full(Command::Unicast(src, _, trailer_bytes))) => {
+                        // Save received data for cancellation safety:
+                        self.pending = Some(Pending {
+                            src,
+                            data: bytes.clone(),
+                            trailer: trailer_bytes.clone(),
+                        });
+                        self.sender
+                            .send(Command::Unicast(src, None, trailer_bytes))
+                            .await
+                            .map_err(|_| NetworkDown(()))?;
+                        self.pending = None;
+                        return Ok((src, bytes));
+                    }
+                    Err(TrySendError::Full(_)) => {
+                        unreachable!(
+                            "We tried sending a Command::Unicast so this is what we get back."
+                        )
+                    }
+                }
             }
 
             let mut messages = self.buffer.0.lock();

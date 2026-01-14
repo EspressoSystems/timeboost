@@ -77,8 +77,7 @@ channel to the respective write task. The capacity of every channel is bounded.
 If the one the application uses is full, backpressure is exercised, i.e. the
 application has to wait. This can happen for example, if no connection is available
 for some time. The channel to an I/O write task is also bounded, but if full, the
-connection is considered slow and unhealthy and will be dropped, resulting in a new
-connect task to re-establish the connection.
+oldest item will be dropped.
 
 ## Data frame
 
