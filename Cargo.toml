@@ -44,7 +44,7 @@ ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
 async-trait = "0.1"
 aws-config = { version = "1.8.12", features = ["behavior-version-latest"] }
-aws-sdk-dynamodb = { version = "1.101.0" }
+aws-sdk-dynamodb = { version = "1.102.0" }
 axum = "0.8.8"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
