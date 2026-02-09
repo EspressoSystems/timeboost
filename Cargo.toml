@@ -49,7 +49,7 @@ axum = "0.8.8"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.8", features = ["serde"] }
-bon = "3.6.4"
+bon = "3.8.2"
 bs58 = "0.5.1"
 bytes = { version = "1.11.1", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
