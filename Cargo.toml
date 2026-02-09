@@ -114,7 +114,7 @@ espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.gi
 hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 
 [workspace.dependencies.alloy]
-version  = "1.4"
+version  = "1.6"
 features = [
     "arbitrary",
     "default",
