@@ -25,7 +25,7 @@ run-integration-main:
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 run-integration-committee-change:
-  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose-committee-change.yml up -d
+  env TIMEBOOST_IMAGE=timeboost:latest docker compose -f docker-compose-committee-change.yml -p docker up -d
 
 run-integration-committee-change-main:
   docker compose -f docker-compose-committee-change.yml up -d
